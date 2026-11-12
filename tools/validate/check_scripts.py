@@ -38,12 +38,38 @@ SKIP_DIRS = {
 }
 WORKFLOW_DIR = os.path.join(".github", "workflows")
 
-# One CI run at a time is the project's hard rule, enforced by every workflow sharing this
-# concurrency group with cancellation off. Nothing checked that the workflows actually agreed:
-# a single workflow declaring its own group would silently allow two runs at once, which is the
-# one thing the rule exists to prevent, and it would be invisible in review.
-SERIAL_GROUP = "ci-serial"
-SERIAL_GROUPS_SEEN = []
+# The concurrency policy, per workflow file. This replaced a single rule — "every workflow shares
+# the group ci-serial" — that was wrong in a way worth recording.
+#
+# A concurrency group is itself the mechanism that DROPS runs: GitHub keeps one running and one
+# pending per group, and a newer arrival replaces the pending one. A shared group therefore let a
+# push-triggered validate replace a queued manual Phase 0 or history-purge dispatch, and the
+# manual run was never created at all. Sharing one group across every workflow made that worse
+# than it needed to be.
+#
+# So the policy is now per workflow, and a workflow that is not listed here FAILS the check:
+# adding one forces a deliberate decision about what happens when two runs collide.
+#
+#   None                     -> the workflow must declare no concurrency block at all, so every
+#                               dispatch executes. For runs that must never be dropped.
+#   cancel_in_progress True  -> superseded runs are cancelled mid-way. Only correct when the
+#                               answer is worthless once a newer commit exists.
+#   cancel_in_progress False -> a running run always finishes; a second waits.
+CONCURRENCY_POLICY = {
+    # Answers "does this tree pass?". A run superseded by a newer commit on the same branch has
+    # no value, and cancelling is visible in the UI rather than silent.
+    "validate.yml": {"cancel_in_progress": True},
+    # A gate. A run killed half way is a run wasted, which is how 120 minutes were burned before.
+    "phase0-tool-evaluation.yml": {"cancel_in_progress": False},
+    # Rewrites history and force-pushes. A dropped apply would look like it did nothing, so every
+    # dispatch must execute. Two applies at once are prevented by an explicit in-flight check in
+    # the workflow itself, not by a group that can drop runs.
+    "history-purge.yml": None,
+}
+
+# Every group seen, so two workflows sharing one can be caught: that is the failure this policy
+# exists to prevent, and it is invisible in review because each file looks correct alone.
+CONCURRENCY_GROUPS = {}
 
 # Sampler hints Godot 4 actually accepts, from its shading-language reference. `hint_black`
 # looks plausible and is not a hint at all; it fails to compile. A static check catches that in
@@ -248,26 +274,47 @@ def check_workflow(path):
             if error:
                 return error
 
+    name = os.path.basename(path)
+    if name not in CONCURRENCY_POLICY:
+        return (
+            "%s: no concurrency policy for this workflow. Add it to CONCURRENCY_POLICY in "
+            "tools/validate/check_scripts.py so the decision about colliding runs is deliberate "
+            "rather than inherited" % path
+        )
+
     concurrency = data.get("concurrency")
+    expected = CONCURRENCY_POLICY[name]
+
+    if expected is None:
+        if concurrency is not None:
+            return (
+                "%s: must declare NO concurrency block. This workflow's runs must never be "
+                "dropped, and a group is what drops them: GitHub keeps one pending run per group "
+                "and a newer arrival replaces it" % path
+            )
+        return None
+
     if not isinstance(concurrency, dict):
-        return "%s: no concurrency block; the one-run-at-a-time rule is not enforced" % path
+        return "%s: no concurrency block, but its policy expects one" % path
     group = concurrency.get("group")
     if not group:
         return "%s: concurrency block has no group" % path
-    if group != SERIAL_GROUP:
+    # A group shared with another workflow is the bug this policy replaced: it makes one
+    # workflow able to replace another's queued run.
+    if group in CONCURRENCY_GROUPS:
         return (
-            "%s: concurrency group is %r, not %r; a different group lets this workflow run "
-            "alongside the others, which the project's one-run-at-a-time rule forbids"
-            % (path, group, SERIAL_GROUP)
+            "%s: concurrency group %r is already used by %s. Sharing a group across workflows "
+            "lets one replace another's queued run" % (path, group, CONCURRENCY_GROUPS[group])
         )
-    # PyYAML reads `false` as Python False. Anything else — including the string "false" —
-    # would be a non-empty value that GitHub treats as true.
-    if concurrency.get("cancel-in-progress") is not False:
+    CONCURRENCY_GROUPS[group] = name
+    # PyYAML reads `false` as Python False. Anything else — including the string "false" — is a
+    # non-empty value GitHub treats as true.
+    want = expected["cancel_in_progress"]
+    if concurrency.get("cancel-in-progress") is not want:
         return (
-            "%s: cancel-in-progress must be false, got %r; a newer run would cancel a running "
-            "one mid-way" % (path, concurrency.get("cancel-in-progress"))
+            "%s: cancel-in-progress must be %s for this workflow's policy, got %r"
+            % (path, "true" if want else "false", concurrency.get("cancel-in-progress"))
         )
-    SERIAL_GROUPS_SEEN.append(path)
     return None
 
 
@@ -441,11 +488,18 @@ def main():
         problems.append(
             "no workflow run block was shell-checked; the run-block check is not running"
         )
-    if counts["yaml"] and len(SERIAL_GROUPS_SEEN) != counts["yaml"]:
+    # A policy entry for a workflow that no longer exists means a workflow was renamed and its
+    # concurrency decision was silently lost. The missing-policy case is reported per file above,
+    # so it is not duplicated here.
+    on_disk = {
+        os.path.basename(path)
+        for path in walk(".yml")
+        if os.path.dirname(os.path.abspath(path)) == os.path.abspath(WORKFLOW_DIR)
+    }
+    stale = sorted(set(CONCURRENCY_POLICY) - on_disk)
+    if stale:
         problems.append(
-            "%d of %d workflows do not declare the %r concurrency group with "
-            "cancel-in-progress: false"
-            % (counts["yaml"] - len(SERIAL_GROUPS_SEEN), counts["yaml"], SERIAL_GROUP)
+            "concurrency policies for workflows that do not exist: %s" % stale
         )
 
     if counts["yaml"] and not ACTIONS_PINNED:

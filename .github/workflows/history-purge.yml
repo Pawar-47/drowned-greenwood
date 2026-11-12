@@ -45,10 +45,21 @@ on:
 
 permissions:
   contents: write
+  # Needed to ask whether another purge is already running. The guard below is what replaces the
+  # concurrency group this workflow used to share.
+  actions: read
 
-concurrency:
-  group: ci-serial
-  cancel-in-progress: false
+# NO concurrency block, deliberately.
+#
+# A concurrency group is the mechanism that drops runs: GitHub keeps one running and one pending
+# per group, and a newer arrival replaces the pending one. For this workflow that is the one
+# outcome that must never happen — a dropped `apply` leaves the remote untouched while looking
+# like it did nothing, and a dropped dry run silently invalidates a review that was never made.
+#
+# So every dispatch executes. The safety that a group would have given (never two rewrites at
+# once) is provided instead by an explicit in-flight check inside the force-push step, which
+# refuses rather than queueing. That check is a narrower guarantee than a group — it narrows the
+# window rather than closing it — and it is described as such in docs/HISTORY_PURGE.md.
 
 jobs:
   purge:
@@ -213,9 +224,30 @@ jobs:
         if: ${{ inputs.mode == 'apply' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           cd purge-work
+
+          # This workflow has no concurrency group, so that no dispatch is ever dropped. The cost
+          # is that two applies could in principle run at once and push conflicting histories, so
+          # that case is checked explicitly here, immediately before the irreversible step.
+          #
+          # It narrows the window rather than closing it: two dispatches starting within the same
+          # few seconds could both see zero. The typed FORCE-PUSH confirmation and the manual
+          # environment remain the real gates. See docs/HISTORY_PURGE.md.
+          others=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/history-purge.yml/runs?status=in_progress&per_page=100" \
+            --jq "[.workflow_runs[] | select(.id != ${GITHUB_RUN_ID})] | length")
+          echo "other in-progress history-purge runs: ${others}"
+          if [ "${others}" -ne 0 ]; then
+            echo "REFUSING to push: another history-purge run is in progress."
+            echo ""
+            echo "Two rewrites at once would push conflicting histories, and the second to finish"
+            echo "would silently undo the first. Nothing on the remote has been changed."
+            echo "Wait for the other run to finish, then dispatch apply again."
+            exit 1
+          fi
 
           # GITHUB_TOKEN may not push commits that touch .github/workflows/. Rewriting history
           # rewrites every commit, so any repository whose history contains workflow files — this

@@ -32,9 +32,15 @@ happens when it is broken, because a rule with no consequence is a comment.
 
 ### Concurrency
 
-9. **One CI run at a time, repository-wide**, enforced by every workflow sharing the `ci-serial`
-   group with `cancel-in-progress: false`. `check_scripts.py` now fails if any workflow declares
-   a different group or turns cancellation on, so the rule is checked rather than assumed.
+9. **Never silently drop a run. Prefer a slow queue to a vanished dispatch.** A concurrency group
+   is the mechanism that drops runs: GitHub keeps one running and one pending per group, and a
+   third arrival replaces the pending one. So no group is shared between workflows, and the one
+   workflow whose every dispatch must execute declares none at all. The policy is per workflow,
+   held in `CONCURRENCY_POLICY` in `check_scripts.py`, which fails the static gate if a workflow
+   has no policy, if two workflows share a group, or if `cancel-in-progress` disagrees with the
+   policy. **This replaced rule 9's predecessor**, "one CI run at a time, repository-wide", which
+   was the owner's original instruction and caused the very dropping it was meant to prevent: a
+   push-triggered validate could replace a queued manual Phase 0 or purge dispatch.
 
 ### Provenance and licensing
 
@@ -73,13 +79,6 @@ happens when it is broken, because a rule with no consequence is a comment.
     next to PASS. Detail fields are cleared when they no longer apply.
 
 ## Not adopted, with reasons
-
-**Per-workflow concurrency groups.** The audit is right that a shared `ci-serial` group lets a
-newer queued run replace an older one, so a manual Phase 0 or purge dispatch can be silently
-dropped. Giving each workflow its own group fixes that but permits simultaneous runs, which
-contradicts the owner's one-run-at-a-time rule. **This is an owner decision**, not an engineering
-one: either the rule relaxes, or the queue can drop and we accept it. Until the owner decides,
-the rule is enforced and this consequence is documented in `README.md`.
 
 **Sparse checkout.** Deferred because the asset directory layout does not exist yet, so any
 `sparse-checkout` pattern today would be a guess that silently omits a directory later — and a

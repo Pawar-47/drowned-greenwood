@@ -24,11 +24,20 @@ on:
 permissions:
   contents: read
 
-# One CI run at a time, repository-wide. A run that arrives while another is executing waits
-# for it instead of starting alongside it. See "CI rules" in README.md.
+# This workflow's OWN concurrency group. It no longer shares one with Phase 0 or history-purge,
+# so a validate run can never replace a queued Phase 0 or purge dispatch — which the old shared
+# `ci-serial` group allowed, silently, because GitHub keeps only one pending run per group.
+#
+# `cancel-in-progress: true` is deliberate here and only here. Validate answers one question —
+# "does this tree pass?" — so a run superseded by a newer commit on the same branch has no value:
+# its commit is already history. Cancelling it is visible in the UI as "cancelled", which is a
+# different thing from a pending run being replaced without a trace.
+#
+# The group includes `github.event_name` so a manual dispatch is never cancelled by a push: the
+# two land in different groups and both run.
 concurrency:
-  group: ci-serial
-  cancel-in-progress: false
+  group: validate-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Seconds. Catches syntax errors in every script before any expensive workflow runs.

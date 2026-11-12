@@ -37,10 +37,18 @@ on:
 permissions:
   contents: read
 
-# One CI run at a time, repository-wide. A run that arrives while another is executing waits
-# for it instead of starting alongside it. See "CI rules" in README.md.
+# This workflow's OWN concurrency group, keyed by event and ref. It no longer shares one with
+# validate or history-purge, so a push-triggered validate can never replace a queued Phase 0
+# dispatch — the failure the old shared `ci-serial` group caused.
+#
+# `cancel-in-progress: false`: this is a gate, and a run killed half way is a run wasted, which is
+# exactly how 120 minutes were burned before. A running Phase 0 always finishes.
+#
+# `github.event_name` in the group means a manual dispatch and a push never share a group, so a
+# push cannot replace a queued manual run either. Two runs of the same event and ref can still
+# collide — GitHub keeps one pending — and that is stated in README.md rather than papered over.
 concurrency:
-  group: ci-serial
+  group: phase0-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:

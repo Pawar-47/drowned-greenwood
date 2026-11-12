@@ -94,46 +94,59 @@ human, both over budget). Everything else — decimation, LODs, rig remapping, r
 
 ## CI rules
 
-**One CI run at a time.** A new push is made only after the previous run has finished.
+**A dropped run is worse than a slow one.** That is the rule now. It replaced an earlier one
+("one CI run at a time, repository-wide") that caused the failure it was meant to prevent.
 
-This is enforced, not just a habit: every workflow shares the concurrency group `ci-serial`
-with `cancel-in-progress: false`, so a run that arrives while another is executing waits its
-turn rather than starting alongside it, and never two runs racing to write the same report.
+### What was wrong with a shared concurrency group
 
-**The cost of that choice, stated plainly:** GitHub keeps only the most recent waiting run per
-group and drops older ones. So a push-triggered run can replace a *queued* manual Phase 0 or
-history-purge dispatch, and the manual run is simply never created — it is not cancelled, it is
-silently absent. That is a real consequence of a repository-wide group, and it is why a manual
-workflow must be dispatched when nothing else is running. The alternative — one group per
-workflow — removes the dropped-queue risk but permits two runs at once, which the owner's rule
-forbids; it is recorded as a decision for the owner in `docs/POLICY.md`, not adopted unilaterally.
+A concurrency group is the mechanism that **drops** runs. GitHub keeps one running and one
+**pending** run per group, and a third arrival replaces the pending one. So the old arrangement —
+every workflow sharing `ci-serial` — let a push-triggered `validate` replace a queued manual
+Phase 0 or history-purge dispatch. That run was never created: not cancelled, not failed, just
+silently absent, and the queue looked empty afterwards.
+
+Sharing one group across three unrelated workflows made that far more likely than it needed to
+be, because they were all competing for a single pending slot.
+
+### The policy now
+
+Each workflow has its own concurrency decision, and `tools/validate/check_scripts.py` **fails the
+static gate** if a workflow has none, if two workflows share a group, or if `cancel-in-progress`
+does not match the decision. A new workflow cannot inherit a default by accident.
+
+| Workflow | Group | Cancel in progress? | Why |
+|---|---|---|---|
+| `validate` | `validate-<event>-<ref>` | **yes** | It answers one question — does this tree pass? A run superseded by a newer commit on the same branch has no value. Cancelling shows as "cancelled", which is not the same as a pending run vanishing. |
+| `phase0-tool-evaluation` | `phase0-<event>-<ref>` | **no** | It is a gate, and a run killed half way is a run wasted — which is how 120 minutes were burned. A running Phase 0 always finishes. |
+| `history-purge` | **none** | — | Every dispatch must execute. A dropped `apply` would leave the remote untouched while looking like it did nothing. |
+
+The event name is part of both groups, so a **manual dispatch and a push never share a group**: a
+push cannot replace a queued manual run, which was the specific failure worth fixing.
+
+### What is still not guaranteed, stated plainly
+
+Two runs of the **same** workflow, from the **same** event, on the **same** ref can still collide:
+GitHub keeps one pending, and a third arrival replaces it. Nothing in a workflow file can change
+that — it is how concurrency groups work. So:
+
+- **A queued manual Phase 0 dispatch can still be replaced** by a second manual Phase 0 dispatch on
+  the same branch. Dispatch when the queue is empty.
+- **`validate` cancels its own superseded runs**, deliberately, as above.
+- **`history-purge` has no group at all**, so no dispatch is ever dropped. The safety a group would
+  have given — never two rewrites at once — comes instead from an explicit in-flight check in the
+  workflow, immediately before the force-push. That check narrows the window rather than closing
+  it: two dispatches starting within the same few seconds could both see an empty queue. The typed
+  `FORCE-PUSH` confirmation remains the real gate.
 
 The rule covers workflow **runs**. Jobs *inside* one run still execute in parallel (the Phase 0
 workflow's four jobs, for example), because they are one run, not two.
 
-`tools/validate/check_scripts.py` now enforces the rule rather than assuming it: a workflow that
-declares any other concurrency group, or sets `cancel-in-progress` to anything but `false`, fails
-the static gate. Before that, one workflow with its own group would have quietly allowed two runs
-to execute at once, and nothing would have said so.
+### The old rule was not retroactive either
 
-### The rule is not retroactive
-
-A run's concurrency group is read from the workflow file **at the commit that run executes**.
-So the rule only governs runs created from a commit that already contains it. Runs created
-from earlier commits keep running side by side and cannot be recalled.
-
-That is exactly what happened on this repository: commits `173958e` and `fe39869` both
-predate the rule, so both Phase 0 runs executed at once and each ran its own 120-minute
-Infinigen job — duplicated work on the free runner pool. Nothing can cancel them from here;
-the fix is to let them finish and never push again mid-run.
-
-The practical rule that follows: **before pushing, check that no run is in progress.** The
-concurrency group protects later runs from each other, not from a push made while an
-unsynchronised run is still going.
-
-Consequence worth knowing: because the group is repository-wide, a short run such as the
-manifest check will queue behind a long one such as Phase 0. That is the intended cost of the
-rule.
+A run's concurrency group is read from the workflow file **at the commit that run executes**. Runs
+created from earlier commits kept the shared group and still ran side by side — which is why
+commits `173958e` and `fe39869` each ran their own 120-minute Infinigen job at the same time.
+Nothing could cancel them from here.
 
 ## CI
 

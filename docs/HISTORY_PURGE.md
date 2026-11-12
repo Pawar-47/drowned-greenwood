@@ -55,10 +55,9 @@ An apply run makes its **own** fresh backup and pushes from its own mirror. It d
 dry run's artifact, so approving a dry run is a judgement that the path list is correct, not a
 guarantee that apply operates on identical bytes.
 
-## Two things an apply run needs before it can work
+## Three things an apply run needs before it can work
 
-Neither is configured, and the workflow refuses rather than failing halfway.
-
+None is configured, and the workflow refuses rather than failing halfway.
 **1. A token that may push workflow files.** `GITHUB_TOKEN` is not permitted to push commits
 touching `.github/workflows/`. Rewriting history rewrites *every* commit, and this repository's
 history contains workflow commits from its first commit — so an apply run with `GITHUB_TOKEN`
@@ -81,6 +80,17 @@ something the pipeline should do quietly.
   repository, adding yourself as the required reviewer would deadlock this workflow. Either
   leave required reviewers unset and rely on the typed `FORCE-PUSH` confirmation, or add a second
   account as reviewer. Do not configure it and then wonder why an apply run never starts.
+
+**3. Nothing else running, and you are the only purge in flight.** This workflow declares **no
+concurrency group**, deliberately: a group keeps one running and one pending run, and a third
+arrival replaces the pending one, so a dropped `apply` would leave the remote untouched while
+looking like it did nothing. Every dispatch therefore executes.
+
+The cost is that two applies could in principle run at once and push conflicting histories. The
+force-push step now refuses if another history-purge run is already in progress, checked through
+the API immediately before the irreversible push. **That narrows the window, it does not close
+it**: two dispatches starting within the same few seconds could both see an empty queue. The typed
+`FORCE-PUSH` confirmation is still the real gate, and so is not dispatching twice.
 
 ## Rehearse it on a throwaway fork first
 
