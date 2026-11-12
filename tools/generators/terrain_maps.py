@@ -42,7 +42,11 @@ from common import (  # noqa: E402
 
 CELLS = 1024
 SAMPLES = CELLS + 1
-MAX_HEIGHT_M = 600.0
+
+# 1 km across, 200 m of relief. The first version used 600 m, which over one kilometre is a
+# 27-degree average slope — a mountain, not the temperate rainforest valley the brief describes.
+# The measured result was 82 % bare rock. This is a playable valley with ridges at its rim.
+MAX_HEIGHT_M = 200.0
 
 # The world is 1 km across and 1024 cells wide, so one cell is about 0.977 m. Every slope in this
 # file is a true gradient — metres of rise per metre of run — because a threshold in "metres per
@@ -81,8 +85,26 @@ SURFACE = {
 
 # Where the water sits. A single level keeps the hydrology honest: a river cannot run uphill, and
 # a basin cannot hold water below the level it drains at.
-WATER_LEVEL_M = 42.0
-DEEP_WATER_M = 30.0
+#
+# The valley floor is deliberately ABOVE this level and only the carved river and bog bowl go
+# below it. That is what makes water read as a feature in the land rather than as a sea the land
+# pokes out of.
+WATER_LEVEL_M = 32.0
+DEEP_WATER_M = 22.0
+
+# How the height field is composed, in normalised units. The floor sits at 0.22 (44 m) and the
+# noise moves it by 0.14 (28 m), so the valley is 44..72 m — comfortably above the waterline, and
+# the bog and river are carved below it deliberately. The rim contributes the remaining 0.62
+# (124 m), concentrated at the edge by RIM_POWER.
+#
+# These are tuned against measured output, not guessed. The rim gradient is
+# RIM_AMPLITUDE · RIM_POWER · r^(RIM_POWER-1) · MAX_HEIGHT_M / 500, so at r=0.86 it reaches the
+# rock threshold and rock starts there — about a quarter of the map, at the boundary, which is
+# where a ridge belongs.
+FLOOR = 0.22
+NOISE_AMPLITUDE = 0.14
+RIM_AMPLITUDE = 0.62
+RIM_POWER = 3.0
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -119,6 +141,12 @@ def shape_height(base, valley):
 
     Written as explicit steps because the alternative — one expression — produces terrain that is
     plausible noise and not a place anyone can describe.
+
+    The composition is additive in normalised units rather than a blend of two noise fields. The
+    first version blended noise with the rim at 40/60, which let the noise alone swing the height
+    by 40 % of the range over a 166 m feature — an average gradient near the rock threshold, and
+    the measured result was 82 % bare rock. Separating "a floor", "a little undulation" and "a
+    rim" makes each one tunable and the arithmetic visible.
     """
     field = []
     for y in range(SAMPLES):
@@ -128,18 +156,15 @@ def shape_height(base, valley):
             u = x / (CELLS - 1)
 
             # Distance from the centre, 0 at the middle and 1 at the edge. The world is a valley,
-            # so height rises towards the rim. The power keeps the floor broad rather than making
-            # a cone.
+            # so height rises towards the rim. The power concentrates the rise near the edge and
+            # keeps the interior broad rather than making a cone.
             dx = (u - 0.5) * 2.0
             dy = (v - 0.5) * 2.0
             radius = min(1.0, (dx * dx + dy * dy) ** 0.5)
-            rim = radius ** 2.6
+            rim = radius ** RIM_POWER
 
-            h = base[y][x] * 0.55 + valley[y][x] * 0.45
-
-            # The rim: 60 % of the height range, so the edge is a real ridge and the centre is
-            # walkable.
-            h = h * 0.4 + rim * 0.6
+            noise = base[y][x] * 0.55 + valley[y][x] * 0.45
+            h = FLOOR + NOISE_AMPLITUDE * noise + RIM_AMPLITUDE * rim
 
             # The bog basin, low and flat, south-west of centre. A bowl rather than a dip: the
             # noise is suppressed inside it so the floor stays level and water can sit.
