@@ -111,11 +111,13 @@ jobs:
             unzip -q -o tools/vendor/gltfpack.zip -d tools/vendor/gltfpack
             chmod +x tools/vendor/gltfpack/gltfpack || true
           fi
-          # gltfpack -h exits non-zero, so the exit code alone is not the signal: what counts
-          # is that the binary ran and printed its usage.
+          # gltfpack -h exits non-zero, and GitHub's default shell is `bash -e`, so the call
+          # has to be guarded or it aborts the step before the simplification probe runs.
           probe="$(mktemp)"
+          set +e
           ./tools/vendor/gltfpack/gltfpack -h >"$probe" 2>&1
           code=$?
+          set -e
           cat "$probe" >>"$LOG"
           if grep -qi "usage" "$probe"; then code=0; fi
           echo "RESULT gltfpack_help exit=${code}" | tee -a "$LOG"
@@ -129,14 +131,16 @@ jobs:
           source tools/phase0/lib.sh
           du -ab artifacts/phase0 | sort -k1 -n | tail -20 >>"$LOG" 2>&1
 
+      - name: Collect the log alongside the probe outputs
+        run: cp -f phase0_log.txt artifacts/phase0/phase0_log.txt
+
       - name: Upload Phase 0 probe outputs
         uses: actions/upload-artifact@v4
         with:
           name: phase0-blender
-          path: |
-            phase0_log.txt
-            artifacts/phase0/*.glb
-            artifacts/phase0/*.png
+          # One directory only. A multi-path upload roots the artifact at the least common
+          # ancestor of its paths, which re-nests the files when the artifact is downloaded.
+          path: artifacts/phase0/
           retention-days: 3
           if-no-files-found: warn
 
@@ -175,6 +179,11 @@ jobs:
         run: |
           source tools/phase0/lib.sh
           GODOT="$PWD/tools/vendor/godot/godot"
+          if [ ! -f artifacts/phase0/probe_sphere.glb ]; then
+            echo "RESULT godot_import exit=1 reason=blender_glb_missing" | tee -a "$LOG"
+            echo "The Blender job produced no probe_sphere.glb; its log says why."
+            exit 1
+          fi
           cp artifacts/phase0/probe_sphere.glb tools/phase0/godot_probe/probe_sphere.glb
           # --headless uses a dummy renderer: no pixels, but a real import and load.
           run_capture godot_import "$GODOT" --headless --path tools/phase0/godot_probe --import
@@ -184,6 +193,11 @@ jobs:
         run: |
           source tools/phase0/lib.sh
           GODOT="$PWD/tools/vendor/godot/godot"
+          if [ ! -f artifacts/phase0/probe_sphere_simplified.glb ]; then
+            echo "RESULT godot_import_gltfpack exit=1 reason=gltfpack_output_missing" | tee -a "$LOG"
+            echo "gltfpack produced nothing; see the Blender job's gltfpack_simplify result."
+            exit 1
+          fi
           rm -rf tools/phase0/godot_probe_simplified
           cp -r tools/phase0/godot_probe tools/phase0/godot_probe_simplified
           # Start from a clean import cache so the swap cannot be masked by a stale hash.
@@ -196,11 +210,14 @@ jobs:
           run_capture godot_load_gltfpack "$GODOT" --headless \
             --path tools/phase0/godot_probe_simplified
 
+      - name: Collect the log alongside the probe outputs
+        run: cp -f phase0_log.txt artifacts/phase0/phase0_log.txt
+
       - name: Upload Phase 0 Godot log
         uses: actions/upload-artifact@v4
         with:
           name: phase0-godot
-          path: phase0_log.txt
+          path: artifacts/phase0/
           retention-days: 3
 
   tools:
@@ -315,14 +332,19 @@ jobs:
           run_capture infinigen_import python -c "import infinigen, sys; print(infinigen.__file__); print(sys.version)"
           run_capture infinigen_cli python -m infinigen_examples.generate_individual_assets --help
 
+      - name: Collect the log alongside the probe outputs
+        if: always()
+        run: |
+          mkdir -p artifacts/phase0
+          cp -f phase0_log.txt artifacts/phase0/phase0_log.txt || true
+
       - name: Upload Phase 0 tools log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phase0-tools
-          path: |
-            phase0_log.txt
-            artifacts/phase0/probe_human.glb
-            artifacts/phase0/polyhaven_sample.jpg
+          # One directory only: a multi-path upload re-nests files on download.
+          path: artifacts/phase0/
           retention-days: 3
           if-no-files-found: warn
 
