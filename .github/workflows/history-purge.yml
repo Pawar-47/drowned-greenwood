@@ -24,6 +24,12 @@ on:
 permissions:
   contents: write
 
+# One CI run at a time, repository-wide. A run that arrives while another is executing waits
+# for it instead of starting alongside it. See "CI rules" in README.md.
+concurrency:
+  group: ci-serial
+  cancel-in-progress: false
+
 jobs:
   purge:
     name: Remove paths from history and force-push

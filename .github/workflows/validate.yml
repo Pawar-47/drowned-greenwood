@@ -20,6 +20,12 @@ on:
 permissions:
   contents: read
 
+# One CI run at a time, repository-wide. A run that arrives while another is executing waits
+# for it instead of starting alongside it. See "CI rules" in README.md.
+concurrency:
+  group: ci-serial
+  cancel-in-progress: false
+
 jobs:
   manifest:
     name: Manifest integrity

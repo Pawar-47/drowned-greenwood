@@ -63,6 +63,23 @@ force-pushes and must not be run without explicit approval.
 | 8 | VFX, shaders, UI | pending |
 | 9 | Biome scatter, audio, final 1 km test world, debug APK | pending |
 
+## CI rules
+
+**One CI run at a time.** A new push is made only after the previous run has finished.
+
+This is enforced, not just a habit: every workflow shares the concurrency group `ci-serial`
+with `cancel-in-progress: false`, so a run that arrives while another is executing waits its
+turn rather than starting alongside it. GitHub keeps only the most recent waiting run per
+group and drops older ones, which is the behaviour we want — no pile-up, and never two runs
+racing to write the same report.
+
+The rule covers workflow **runs**. Jobs *inside* one run still execute in parallel (the Phase 0
+workflow's four jobs, for example), because they are one run, not two.
+
+Consequence worth knowing: because the group is repository-wide, a short run such as the
+manifest check will queue behind a long one such as Phase 0. That is the intended cost of the
+rule.
+
 ## CI
 
 All building happens on GitHub-hosted runners (CPU only, no GPU, no display). Nothing is
