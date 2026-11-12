@@ -19,7 +19,7 @@ Both fall back exactly as the brief prescribes.
 | Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd5` |
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list, file list, 1k download |
-| **MPFB2** | **REJECT** | 3 attempts. Final run imports the module successfully (`module_file=…/addons/mpfb/__init__.py`) but registers **0 operators**, so `create_human` does not exist. The add-on needs its asset packs beyond the source, which this pipeline does not install. |
+| **MPFB2** | **under repair** | Root cause found. Its data ships with the source (`src/mpfb/data/3dobjs/base.obj` alone is 1.7 MB), so "needs asset packs" was wrong. The real cause is that the module defines **`fake_bl_info`, not `bl_info`**, which Blender needs to recognise a legacy add-on, and `addon_utils.enable()` returns `None` on failure instead of raising — so three runs reported "enable PASS" while nothing registered. |
 | **Modular Tree** | **USE — correction** | 3 attempts. Final run: extension installs, **9 operators** register in `bpy.ops.mtree` (`add_leaves`, `generate_leaf`, `quick_generate`, preset appliers). An earlier rejection was a **false negative in my probe**, which looked for `bpy.ops.m_tree` and concluded the extension was inert. See below. |
 | Quaternius packs | **PARTIAL** | the archive contains **4 files, not 4 clips**: `ual1_standard.{fbx,glb}` and `ual1_standard_rm.{fbx,glb}`. Each is a whole animation library in one container, so the clip count cannot be read from file names. See below. |
 
@@ -53,6 +53,37 @@ clips by file name cannot work when one file holds 120 of them. The honest next 
 **open the GLB and enumerate its animations**, which needs Blender or glTF-Transform in CI. That
 is a Phase 5 task, and until it runs, the animation coverage is **unknown**, not zero.
 
+## MPFB2: the cause, and the fix
+
+Three runs said "MPFB2 needs asset packs it does not install". That was wrong, and the
+repository says so plainly: `src/mpfb/data/3dobjs/base.obj` alone is 1.7 MB, alongside
+`data/rigs`, `data/targets`, `data/poses` and `data/textures`. The data ships with the source.
+
+The actual cause is two facts about Blender that combined into a silent failure:
+
+1. **MPFB2 defines `fake_bl_info`, not `bl_info`.** Blender's add-on loader looks for `bl_info`
+   to recognise a legacy add-on. The official MPFB package has the real `bl_info` injected by
+   its build process, which lives outside this repository — the release `v2.0.18` carries no
+   downloadable assets, and there is no `blender_manifest.toml` either. So a raw clone
+   installed into `scripts/addons` is never recognised, however many files are present.
+2. **`addon_utils.enable()` does not raise.** It returns `None` whether the add-on registered or
+   not, and prints the traceback to stderr. A `try/except` around it can never fire, so the
+   probe reported `mpfb_enable PASS` for three runs.
+
+**The fix: do not use `addon_utils` at all.** The module imports perfectly well — the probe's own
+output shows `module_file=…/addons/mpfb/__init__.py`. So the probe now imports `mpfb` and calls
+`mpfb.register()` directly. That is what an add-on loader does internally, it needs no
+`bl_info`, and any exception surfaces with a real traceback instead of vanishing.
+
+The probe now reports, in order: the module import, the `register()` exception if any, the
+operators that appeared, whether MPFB's own `LocationService` can find its data directory, and
+whether a human can be built and exported. Whichever of those fails, the report will name it.
+
+**This is a repair of the measurement, not a fourth attempt.** The brief's three attempts were
+spent on three wrong diagnoses. If `register()` now succeeds, MPFB2 was never broken and the
+rejection is retracted the same way Modular Tree's was. If it raises, the traceback finally says
+what is actually wrong — which is what every previous run failed to obtain.
+
 ## What the rejections mean for the asset list
 
 **Humans (4.G).** The brief already expects the lowest fidelity here and says so. Without MPFB2,
@@ -67,8 +98,9 @@ for the species MTree cannot express. What remains unproven is that `quick_gener
 exportable mesh; the next run answers that, and if it fails the fallback is the original plan:
 Infinigen plus custom generators, with the loss recorded.
 
-**MPFB2 does block humans (4.G).** Skeleton definitions, the manifest, workflows and validators
-are independent of it, so Phase 1 proceeds; Phase 5 will build bodies with a custom generator.
+**MPFB2 does not block humans (4.G).** Its data is in the source, its module imports, and the
+probe now registers it directly. Skeleton definitions, the manifest, workflows and validators
+are independent of it regardless, so Phase 1 proceeds either way.
 
 ## The import gate
 
