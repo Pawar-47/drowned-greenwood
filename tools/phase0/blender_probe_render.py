@@ -119,7 +119,7 @@ def main():
         }
 
     result(
-        step="render",
+        step="render_%s" % engine.lower(),
         engine=engine,
         ok=exists,
         path=out,

@@ -277,9 +277,11 @@ jobs:
             git clone --depth 1 https://github.com/GoodPie/modular_tree tools/vendor/modular_tree
           fi
           echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
-          bash tools/phase0/install_blender_addon.sh tools/vendor/modular_tree modular_tree | tee -a "$LOG"
+          # The installer always exits 0 and reports the layout it found, so a failure here
+          # cannot abort the step before the probe runs.
+          bash tools/phase0/install_blender_addon.sh tools/vendor/modular_tree modular_tree 2>&1 | tee -a "$LOG"
           run_capture mtree_register "$BLENDER" -b --factory-startup \
-            --python-expr "import addon_utils; print([m.__name__ for m in addon_utils.modules()])"
+            --python-expr "import addon_utils; addon_utils.enable('modular_tree', default_set=True); import bpy; print('mtree_ops', hasattr(bpy.ops, 'm_tree'))"
 
       - name: glTF-Transform CLI
         continue-on-error: true

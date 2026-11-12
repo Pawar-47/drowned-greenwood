@@ -15,14 +15,14 @@ is switched from "resolve" to "verify".
 
 | Tool | Pin | How verified | Used for |
 |---|---|---|---|
-| Blender | `4.2.23` LTS, linux-x64 | present in `download.blender.org/release/Blender4.2/` index; checksum fetched and checked at build time | conversion hub: bake, realise instances, LODs, glTF export, previews |
-| Godot | `4.7.2-stable`, linux.x86_64 | `api.github.com/repos/godotengine/godot/releases/latest` | headless import gate, software-render previews, later Android export |
+| Blender | `4.2.23` LTS, linux-x64 | present in `download.blender.org/release/Blender4.2/` index; **SHA-256 verified in CI** | conversion hub: bake, realise instances, LODs, glTF export, previews |
+| Godot | `4.7.2-stable`, linux.x86_64 | `api.github.com/repos/godotengine/godot/releases/latest`; **`--version` confirmed in CI** | headless import gate, software-render previews, later Android export |
 | gltfpack (meshoptimizer) | `v1.3`, `gltfpack-ubuntu.zip` | `api.github.com/repos/zeux/meshoptimizer/releases/latest` | LOD simplification (`-si`), cleanup. **No `-cc`, no `-tc`** until Godot accepts them |
 | glTF-Transform CLI | `@gltf-transform/cli@4` (exact version recorded from run) | npm | dedup, prune, weld, resample animations, texture resize |
 | Python | `3.11` | `actions/setup-python` | Infinigen (its supported interpreter), pipeline scripts |
-| MPFB2 | commit recorded from first run | `git clone` of `makehumancommunity/mpfb2` | human bodies, heads, base clothing, auto-rig |
-| Modular Tree (MTree) | commit recorded from first run | `git clone` of `GoodPie/modular_tree` | procedural trees |
-| Infinigen | commit recorded from first run | `git clone` of `princeton-vl/infinigen` | rocks, plants, mushrooms, clouds, materials |
+| MPFB2 | commit recorded from first run | `git clone` of `makehumancommunity/mpfb2`; **enables but registers 0 operators — cause pending** | human bodies, heads, base clothing, auto-rig |
+| Modular Tree (MTree) | commit `faf77c1538ce8af3d70aed036b8a540058521347` | resolved by CI run 43207155426; **no `bl_info`, looks like a 4.2+ extension** | procedural trees |
+| Infinigen | commit recorded in the Phase 0 log | resolved by CI; **install, import and CLI all pass** | rocks, plants, mushrooms, clouds, materials |
 | Poly Haven API | live, asset IDs recorded per download | `api.polyhaven.com` | CC0 PBR textures, HDRIs, scanned models |
 | Quaternius animation libraries | pack version recorded per clip | quaternius.com / OpenGameArt | CC0 humanoid animation clips |
 

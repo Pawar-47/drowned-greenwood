@@ -36,9 +36,34 @@ def main():
     if not enabled:
         return 1
 
+    # addon_utils.enable() swallows an import error and returns as if it worked, so a
+    # zero-operator add-on looks like a success. Import the module directly to get the real
+    # traceback: that is what tells the report why MPFB2 is unusable, not just that it is.
+    import traceback
+
+    import_error = ""
+    module_file = ""
+    try:
+        import mpfb  # noqa: F401
+
+        module_file = getattr(mpfb, "__file__", "")
+    except Exception:  # noqa: BLE001
+        import_error = traceback.format_exc()[-800:]
+    result(
+        step="mpfb_import",
+        ok=not import_error,
+        module_file=module_file,
+        error=import_error.replace("\n", " | ")[:500],
+    )
+
     has_namespace = hasattr(bpy.ops, "mpfb")
     names = sorted(name for name in dir(bpy.ops.mpfb)) if has_namespace else []
-    result(step="mpfb_operators", ok=has_namespace, count=len(names), names=names[:60])
+    result(
+        step="mpfb_operators",
+        ok=has_namespace and len(names) > 0,
+        count=len(names),
+        names=names[:60],
+    )
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     created = False
