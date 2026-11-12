@@ -194,6 +194,14 @@ jobs:
           echo "RESULT gltfpack_simplify exit=${simplify_code}" | tee -a "$LOG"
           echo "RESULT gltfpack_noq exit=${noq_code}" | tee -a "$LOG"
 
+          # What does -noq actually cost? The decision to drop quantization rests on a single
+          # 2,208-triangle sphere, so at least record the bytes it saves or spends: if the
+          # quantized file is much smaller, that is a real price paid for compatibility, and it
+          # belongs in the report rather than in a comment.
+          quantized_bytes=$(stat -c%s artifacts/phase0/probe_sphere_simplified.glb 2>/dev/null || echo 0)
+          noq_bytes=$(stat -c%s artifacts/phase0/probe_sphere_noq.glb 2>/dev/null || echo 0)
+          echo "RESULT gltfpack_size_cost ok=True quantized_bytes=${quantized_bytes} noq_bytes=${noq_bytes}" | tee -a "$LOG"
+
       - name: Collect the log alongside the probe outputs
         if: always()
         run: |

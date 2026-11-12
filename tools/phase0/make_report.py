@@ -35,6 +35,7 @@ DECISIONS = {
     "gltfpack_help": ("gltfpack", "LOD simplification; -cc and -tc stay off until Godot accepts them"),
     "gltfpack_simplify": ("gltfpack -si", "LOD generation"),
     "gltfpack_noq": ("gltfpack -si -noq", "the control run that separates quantization from the tool"),
+    "gltfpack_size_cost": ("gltfpack -noq size cost", "the bytes -noq spends compared with quantized output"),
     "godot_version": ("Godot", "import gate and later the game runtime"),
     "godot_import": ("Godot headless import", "proves Godot accepts Blender's GLB output"),
     "godot_load": ("Godot headless load", "proves the imported mesh survives to a scene node"),
@@ -136,21 +137,23 @@ FAILURE_CONSEQUENCE = {
     "godot_import_human": "the human file does not import; MPFB2 output is unusable",
 }
 
-# Probes that are SUPPOSED to fail, and why.
+# Negative controls: probes whose PASSING condition is that the thing they test FAILS.
 #
-# Only two kinds belong here, and both must name the reason:
+# These were labelled "EXPECTED FAIL" and rendered red, which was the wrong design. A row that
+# is permanently red teaches a reader to skim past red rows, and then the one that matters gets
+# missed too. The test is doing its job when the failure happens, so it should read green.
 #
-#   * control runs that prove a decision. The quantized gltfpack load is meant to fail; that
-#     failure is the evidence for using -noq. Counting it as a defect inverts its meaning.
-#   * a tool currently under repair, whose failure is the known starting state.
+# The control: `godot_scene_gltfpack` loads a GLB written by gltfpack with default
+# quantization. Godot's importer accepts the file and then builds no scene from it, so LODs are
+# written with -noq. If a future Godot ever loads it, that is not a defect — it is an
+# opportunity, because quantization shrinks vertex data, and the row says so.
 #
-# Modular Tree was removed from this list when its rejection was retracted. Leaving a retained
-# tool here would have hidden a genuine regression as "expected", which is the worst possible
-# failure mode for a report whose job is to notice regressions.
-EXPECTED_FAILURES = {
-    "godot_scene_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
-    "godot_load_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
-    "godot_import_gltfpack": "the control run for the LOD decision",
+# Each entry is (what the expected failure proves, what a change would mean).
+NEGATIVE_CONTROLS = {
+    "godot_scene_gltfpack": (
+        "Godot builds no scene from gltfpack's quantized output, which is why LODs use -noq",
+        "quantized gltfpack output NOW LOADS — -noq may no longer be needed, and LODs could shrink",
+    ),
 }
 
 # Probes that report a state but must not fail the build, because their failure is not a
@@ -329,14 +332,19 @@ def main():
     for row in ordered:
         label, purpose = DECISIONS.get(row["name"], (row["name"], ""))
         status = "PASS" if row["ok"] else "FAIL"
-        # A failed probe has one of two meanings, and conflating them is what made this report
-        # read as a wall of failure. Either the pipeline is broken (a defect), or the probe was
-        # the control run proving that the fallback is correct (a decision, not a defect).
-        if row["ok"]:
+        meaning = purpose
+
+        if row["name"] in NEGATIVE_CONTROLS:
+            proves, changed = NEGATIVE_CONTROLS[row["name"]]
+            if row["ok"]:
+                # The control stopped failing. That is news, not breakage.
+                status = "CHANGED"
+                meaning = changed
+            else:
+                status = "PASS (control)"
+                meaning = "control, doing its job: " + proves
+        elif row["ok"]:
             meaning = purpose
-        elif row["name"] in EXPECTED_FAILURES:
-            status = "EXPECTED FAIL"
-            meaning = EXPECTED_FAILURES[row["name"]]
         elif row["name"] in INFORMATIONAL_PROBES:
             status = "INFO"
             meaning = "reported for context; does not fail the build — " + purpose
@@ -345,33 +353,43 @@ def main():
         lines.append("| %s | %s | %s | %s |" % (label, status, row["detail"], meaning))
     lines.append("")
 
-    expected = [r for r in ordered if not r["ok"] and r["name"] in EXPECTED_FAILURES]
+    # A control is green when it fails, and its own outcome line says so.
+    controls = [r for r in ordered if r["name"] in NEGATIVE_CONTROLS]
+    controls_holding = [r for r in controls if not r["ok"]]
     informational = [r for r in ordered if not r["ok"] and r["name"] in INFORMATIONAL_PROBES]
     defects = [
         r
         for r in ordered
         if not r["ok"]
-        and r["name"] not in EXPECTED_FAILURES
+        and r["name"] not in NEGATIVE_CONTROLS
         and r["name"] not in INFORMATIONAL_PROBES
     ]
+    # The four counts sum to the number of probes run, exactly. A control that is holding is
+    # reported on its own line rather than folded into "Passed", because folding it in made
+    # 49 passes plus 1 control read as 50 of 50 — true, but not arithmetic a reader can check.
+    passed = len(ordered) - len(controls_holding) - len(informational) - len(defects)
 
     lines.append("## Outcome")
     lines.append("")
     lines.append("- Probes run: **%d**" % len(ordered))
+    lines.append("- Passed: **%d**" % passed)
     lines.append(
-        "- Passed: **%d**"
-        % (len(ordered) - len(expected) - len(informational) - len(defects))
+        "- Negative controls holding (a test that passes by failing): **%d**"
+        % len(controls_holding)
     )
-    lines.append("- Expected failures (controls that prove a decision): **%d**" % len(expected))
     lines.append("- Informational failures (context, not defects): **%d**" % len(informational))
     lines.append("- Defects (something is actually broken): **%d**" % len(defects))
     lines.append("")
-    if expected:
-        lines.append("### Expected failures")
+    if controls:
+        lines.append("### Negative controls")
         lines.append("")
-        for row in expected:
+        for row in controls:
             label, _ = DECISIONS.get(row["name"], (row["name"], ""))
-            lines.append("- **%s** — %s" % (label, EXPECTED_FAILURES[row["name"]]))
+            proves, changed = NEGATIVE_CONTROLS[row["name"]]
+            if row["ok"]:
+                lines.append("- **%s** — %s" % (label, changed))
+            else:
+                lines.append("- **%s** — %s" % (label, proves))
         lines.append("")
     if informational:
         lines.append("### Informational failures")

@@ -19,7 +19,7 @@ defects**, and the gate passes.
 | Cycles CPU | **USE — official preview renderer** | 640x360, 32 samples, denoise, clipping 0.0 |
 | Workbench / EEVEE via Xvfb | available, not depended on | both render under llvmpipe |
 | Godot 4.7.2 | **USE — import gate and shader compile gate** | imports and loads Blender's GLB: `tris=2208`; compiles both shader includes |
-| gltfpack v1.3 | **USE with `-noq`** | quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50 %) |
+| gltfpack v1.3 | **USE with `-noq`** | quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50 %). A negative control, below |
 | Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd` |
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list (869 assets), file list, 1k download |
@@ -89,6 +89,34 @@ is expected for procedural output and is why the gate checks for non-zero geomet
 fixed count.
 
 That is the end-to-end proof the earlier "9 operators registered" never was.
+
+## The gltfpack control: why a failing test is the correct result
+
+One row in the probe table reads:
+
+```
+Godot load of gltfpack output   PASS (control)   reason=load_returned_null
+```
+
+That looks wrong at a glance, and it used to be labelled `EXPECTED FAIL` in red, which was a
+worse design than it sounds: a row that is permanently red teaches a reader to skim past red
+rows, and then the one that matters gets skimmed too.
+
+It is a **negative control** — a test whose passing condition is that the thing it tests fails.
+Godot's importer accepts gltfpack's default (quantized) output and then builds no scene from it,
+so `load()` returns null. That is the measured evidence for writing LODs with `-noq`, and the
+probe is green precisely because the failure happened.
+
+The row carries the other direction too. If a future Godot ever loads quantized output, the row
+turns `CHANGED` and says *"quantized gltfpack output NOW LOADS — -noq may no longer be needed, and
+LODs could shrink"*. Neither outcome fails the build, because neither is breakage: one is the
+status quo, the other is an opportunity.
+
+**What this does not yet prove.** The decision rests on a single 2,208-triangle sphere. CI now
+records the byte cost of `-noq` against the quantized file (`gltfpack_size_cost`), so the price
+of compatibility is a number in the report rather than an assumption. If it turns out to be
+large, the answer is not to drop `-noq` — it is to revisit whether a Godot version that reads
+quantized input is worth pinning to.
 
 ## Quaternius: measured, at last
 
