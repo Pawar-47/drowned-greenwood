@@ -28,7 +28,7 @@ reports/         tool_evaluation.md, quality_report.md, below_target.md
 Planned, not present: `tools/generators/` and `tools/config/` (Phase 2 onward), an APK build
 workflow (Phase 9), and a `staging` branch. The staging branch is the intended path for binaries
 to reach `main`; until it exists, nothing binary is committed at all, which is why the repository
-is currently about 260 KB of tooling and definitions.
+is currently about 0.4 MB of tooling and definitions.
 
 ## The asset list
 

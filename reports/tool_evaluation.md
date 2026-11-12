@@ -26,7 +26,7 @@ defects**, and the gate passes.
 | **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 1 |
 | **MPFB2** | **USE — builds and rigs** | human exports and loads: `meshes=1, tris=36972, armatures=1, bones=137`. Both counts over budget |
 | **Modular Tree** | **USE — verified end to end** | generates a tree Godot loads: `meshes=2, tris=1840066`. Installed from the prebuilt release, which carries the compiled `m_tree` module |
-| Quaternius packs | **MEASURED** | **43 clips, 16 of 41 families covered.** 25 families missing, including every melee weapon, skinning, butchering and the bow |
+| Quaternius packs | **MEASURED** | **43 clips.** The family-coverage figure recorded here (16 of 41) came from substring matching, which was optimistic: `bow` matched `Elbow`. Matching is now by clip-name token, so the next run's number will be lower and is the one to trust. The report artifact from that run is the current figure, not this line |
 
 ## Withdrawn claims
 

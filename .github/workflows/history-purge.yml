@@ -58,14 +58,20 @@ jobs:
     # An `apply` run force-pushes every ref and invalidates every clone and fork. It must not be
     # one click away from a dry run.
     #
-    # The owner has to configure this environment in Settings → Environments with themselves as
-    # a required reviewer; the name alone does not gate anything, it only creates the environment
-    # on first use. With a reviewer set, an apply run waits for an explicit approval by a human
-    # who is not the person who dispatched it.
+    # This gates the WHOLE job, dry run included — GitHub environments are job-level, and there
+    # is no way to attach one to a single step. That is a deliberate trade: approving any run of
+    # a history-rewriting workflow is cheap, and a dry run that nobody looked at is not a
+    # safeguard. It is also inert until the owner configures it: declaring the name only creates
+    # the environment on first use.
     #
-    # A PAT or GitHub App token with the `workflows` scope is also required for an apply that
-    # rewrites a commit touching .github/workflows/: GITHUB_TOKEN is not permitted to push those,
-    # by design. The guard below detects that case and refuses rather than half-pushing.
+    # If the owner does add themselves as a required reviewer, note that GitHub does not let the
+    # person who dispatched a run approve it. On a single-maintainer repository that would
+    # deadlock this workflow — so on this repository, leave required reviewers unset and rely on
+    # the typed FORCE-PUSH confirmation, or add a second account as reviewer.
+    #
+    # A token with the `workflows` scope is also required: GITHUB_TOKEN may not push commits
+    # touching .github/workflows/, and rewriting history rewrites every commit. The guard below
+    # detects that and refuses before touching the remote.
     environment: history-purge
     steps:
       # Inputs arrive as environment variables, so nothing a user types is ever parsed as

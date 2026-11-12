@@ -70,9 +70,17 @@ place of `secrets.GITHUB_TOKEN`. That is a deliberate change requiring an explic
 something the pipeline should do quietly.
 
 **2. A protected environment with a required reviewer.** The job declares
-`environment: history-purge`. The name alone gates nothing: it must be configured in
-**Settings → Environments → history-purge** with a required reviewer. Until it is, an apply run
-starts immediately once dispatched with the right confirmation string.
+`environment: history-purge`. Two caveats, both real:
+
+- Declaring the name gates **nothing** on its own; it only creates the environment on first use.
+  It must be configured in **Settings → Environments → history-purge**.
+- It gates the **whole job, dry run included**, because GitHub environments are job-level. A dry
+  run therefore needs approval too. That is accepted: approving a run of a history-rewriting
+  workflow is cheap, and a dry run nobody looked at is not a safeguard.
+- **GitHub does not let the person who dispatched a run approve it.** On a single-maintainer
+  repository, adding yourself as the required reviewer would deadlock this workflow. Either
+  leave required reviewers unset and rely on the typed `FORCE-PUSH` confirmation, or add a second
+  account as reviewer. Do not configure it and then wonder why an apply run never starts.
 
 ## Rehearse it on a throwaway fork first
 

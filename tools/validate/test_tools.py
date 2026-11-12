@@ -243,11 +243,15 @@ TESTS = [
 def main():
     failures = []
     for label, test in TESTS:
+        # Any exception, not just AssertionError: a test that crashes on a TypeError is a
+        # failing test, and an uncaught traceback would abort the remaining tests and report
+        # one cause instead of all of them.
         try:
             test()
-        except AssertionError as exc:
-            failures.append((label, str(exc) or "assertion failed"))
-            print("FAIL " + label + ": " + (str(exc) or "assertion failed"))
+        except Exception as exc:  # noqa: BLE001 - a test failure of any kind is a failure
+            detail = "%s: %s" % (type(exc).__name__, exc)
+            failures.append((label, detail))
+            print("FAIL " + label + ": " + detail)
         else:
             print("ok   " + label)
 
