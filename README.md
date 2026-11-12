@@ -20,7 +20,7 @@ listed so the intended shape is visible without being mistaken for present.
 assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skeleton definitions
 tools/           build_manifest.py, TOOLS.md, phase0/ (probes), validate/ (checks)
 shaders/         shared shader includes and SHADER_GLOBALS.md
-docs/            HISTORY_PURGE.md, LESSONS.md
+docs/            HISTORY_PURGE.md, LESSONS.md, POLICY.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
