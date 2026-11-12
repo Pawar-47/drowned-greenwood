@@ -314,53 +314,71 @@ def main():
     products.append(("terrain_shore_mask", shore_path,
                      {"texture_sizes": {"r8": [SAMPLES, SAMPLES]}}))
 
-    # The river centreline: trace the channel from its highest headwater down to the outlet.
+    # The river centreline: the main stem, from its headwater down to where it leaves the map.
     #
-    # The first version took the highest-flow cell in each row. That is not a centreline: where
-    # the channel runs across a row, several cells have similar flow and the winner jumps between
-    # them, so consecutive points do not descend — the measured result was "477 of 941 segments go
-    # downhill", which is a polyline zig-zagging up and down the same reach. Following `downhill`
-    # instead gives a path that is monotonic and spatially connected by construction.
-    headwater = -1
-    best_height = -1
+    # Two earlier attempts were wrong in instructive ways:
+    #   1. The highest-flow cell in each row. Not a centreline: where a channel runs across a row
+    #      several cells have similar flow and the winner jumps between them, so consecutive
+    #      points do not descend. Measured: "477 of 941 segments go uphill".
+    #   2. Start from the highest cell with flow above the threshold. That cell is almost always a
+    #      PIT, because flow accumulates into sinks — so the trace stopped after one point.
+    #
+    # So: find the outlet (the single cell that collects the most water), then walk UPSTREAM by
+    # repeatedly taking the neighbour that drains into the current cell with the most flow. That
+    # finds the main stem by construction, and reversing it gives a path that descends at every
+    # step.
+    outlet = -1
+    best_flow = -1.0
     for cell, flow_cells in enumerate(flow):
-        if flow_cells >= RIVER_FLOW_CELLS and metres[cell] >= water_level_m:
-            if metres[cell] > best_height:
-                best_height = metres[cell]
-                headwater = cell
+        if flow_cells > best_flow:
+            best_flow = flow_cells
+            outlet = cell
 
-    spline = []
-    if headwater >= 0:
-        cell = headwater
-        # Bounded: a channel cannot be longer than the diagonal of the map.
+    path = []
+    if outlet >= 0:
+        cell = outlet
         for _step in range(SAMPLES * 2):
+            path.append(cell)
             x = cell % SAMPLES
             y = cell // SAMPLES
-            spline.append(
-                {
-                    "x": x,
-                    "y": y,
-                    "u": round(x / CELLS, 5),
-                    "v": round(y / CELLS, 5),
-                    "height_m": round(metres[cell], 2),
-                    "flow_cells": int(flow[cell]),
-                }
-            )
-            target = downhill[cell]
-            # Stop at a pit, or when the channel reaches standing water — below that the water
-            # body takes over and the centreline has served its purpose.
-            if target < 0 or metres[target] < water_level_m:
+            upstream = -1
+            upstream_flow = 0.0
+            for dx, dy in NEIGHBOURS:
+                nx = x + dx
+                ny = y + dy
+                if 0 <= nx < SAMPLES and 0 <= ny < SAMPLES:
+                    other = ny * SAMPLES + nx
+                    if downhill[other] == cell and flow[other] > upstream_flow:
+                        upstream_flow = flow[other]
+                        upstream = other
+            if upstream < 0:
                 break
-            cell = target
+            cell = upstream
+        path.reverse()
+
+    spline = []
+    for cell in path:
+        x = cell % SAMPLES
+        y = cell // SAMPLES
+        spline.append(
+            {
+                "x": x,
+                "y": y,
+                "u": round(x / CELLS, 5),
+                "v": round(y / CELLS, 5),
+                "height_m": round(metres[cell], 2),
+                "flow_cells": int(flow[cell]),
+            }
+        )
 
     spline_path = os.path.join(args.out, "terrain_river_splines.json")
     with open(spline_path, "w", encoding="utf-8") as handle:
         json.dump(
             {
                 "name": "terrain_river_splines",
-                "note": "The main channel, traced from its highest headwater down the steepest "
-                "descent until it reaches standing water or a pit. Consecutive points descend by "
-                "construction; flow is in upstream cells.",
+                "note": "The main stem: the highest-flow cell's upstream chain, reversed, so it "
+                "runs from headwater to outlet and descends at every step. Flow is in upstream "
+                "cells.",
                 "samples": SAMPLES,
                 "flow_threshold_cells": int(RIVER_FLOW_CELLS),
                 "points": spline,
