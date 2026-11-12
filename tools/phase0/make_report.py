@@ -37,6 +37,9 @@ DECISIONS = {
     "gltfpack_noq": ("gltfpack -si -noq", "the control run that separates quantization from the tool"),
     "gltfpack_size_cost": ("gltfpack -noq size cost", "the bytes -noq spends compared with quantized output"),
     "godot_version": ("Godot", "import gate and later the game runtime"),
+    "godot_checksum": ("Godot archive checksum", "whether the Godot download is pinned to known bytes"),
+    "gltfpack_checksum": ("gltfpack archive checksum", "whether the gltfpack download is pinned to known bytes"),
+    "quaternius_checksum": ("Quaternius archive checksum", "whether the release asset matches the recorded hash"),
     "godot_import": ("Godot headless import", "proves Godot accepts Blender's GLB output"),
     "godot_load": ("Godot headless load", "proves the imported mesh survives to a scene node"),
     "godot_scene_plain": ("Godot load of the Blender GLB", "the import gate itself: meshes and triangles that arrive"),
@@ -133,6 +136,9 @@ FAILURE_CONSEQUENCE = {
     "shader_compile_tech_wetness_include": "the wetness include does not build; every ground material fails at runtime",
     "shader_probe_error": "the probe itself failed, so the shaders remain uncompiled and unverified",
     "shader_summary": "one or more shader includes failed to compile",
+    "godot_checksum": "the Godot archive is not pinned to known bytes; a replaced download would run unchecked",
+    "gltfpack_checksum": "the gltfpack archive is not pinned to known bytes; a replaced download would run unchecked",
+    "quaternius_checksum": "the Quaternius release asset does not match the recorded hash; do not trust the clip inventory until it does",
     "godot_scene_tree": "MTree generates a tree that Godot cannot load; the tree pipeline is unverified",
     "godot_scene_human": "MPFB2 builds a human that Godot cannot load; the human pipeline is unverified",
     "godot_import_tree": "the tree file does not import; MTree output is unusable",
@@ -212,6 +218,14 @@ REQUIRED_PROBES = {
     "mpfb_export",
     "godot_scene_human",
     "godot_import_human",
+    # The retarget map was written from a naming convention — Mixamo-style `LeftUpLeg`,
+    # `Spine1` — and never diffed against the pack's real skin joints. Quaternius's UAL rig may
+    # well use Unreal-mannequin names instead, in which case every mapping is wrong and
+    # retargeting would silently do nothing. quaternius_inventory.py reads the joints out of the
+    # GLB and diffs them, so gating it turns "we assume the names are right" into a measurement.
+    # If this fails, the fix is to rewrite assets/char_retarget_map.json from the joint names the
+    # same probe prints.
+    "retarget_bones",
 }
 
 
@@ -298,6 +312,20 @@ def parse(path):
                 )
                 continue
 
+            # A line that starts a JSON object but did not match PY_RESULT is a truncated or
+            # otherwise broken JSON result — a probe that died mid-print. It must not fall
+            # through to the key=value branch, where it would be reported as "no ok= verdict"
+            # and lose the fact that it was meant to be JSON at all.
+            if line[len("RESULT "):].lstrip().startswith("{"):
+                rows.append(
+                    {
+                        "name": "malformed_result",
+                        "ok": False,
+                        "detail": "JSON result is not a complete object: %r" % line[:200],
+                    }
+                )
+                continue
+
             match = GENERIC_RESULT.match(line)
             if match:
                 name = match.group(1)
@@ -331,15 +359,35 @@ def parse(path):
 
 
 def collapse_exit_rows(rows):
-    """Drop the bare exit-code row that run_capture adds beside a probe's own result.
+    """Turn the bare exit-code row that run_capture adds beside a probe's own result into a row
+    that says what happened.
 
-    run_capture only emits `<name>_exit` when the command already printed a RESULT line and
-    then exited non-zero, so the row is always redundant. It was only being dropped when
-    `<name>` also matched a probe name, which it does not: run_capture is called with
-    `mtree` while the probe reports `mtree_operators`, so `mtree_exit` survived and was
-    counted as a defect. Drop them unconditionally.
+    run_capture emits `<name>_exit exit=<code>` when the command printed a RESULT line and then
+    exited non-zero. Those rows used to be dropped unconditionally, on the reasoning that the
+    probe had already reported and the row was redundant. It is not redundant: it is the only
+    evidence that the process crashed *after* reporting, which means the result above it may be
+    a partial one. Dropping it made a crash look like a clean pass.
+
+    An `exit=0` row after a probe's own result genuinely is redundant, and is still dropped.
     """
-    return [row for row in rows if not row["name"].endswith("_exit")]
+    out = []
+    for row in rows:
+        name = row["name"]
+        if not name.endswith("_exit"):
+            out.append(row)
+            continue
+        if row["ok"]:
+            continue
+        base = name[: -len("_exit")]
+        out.append(
+            {
+                "name": base + "_crash_after_result",
+                "ok": False,
+                "detail": "printed its own result, then exited non-zero (%s) — it crashed after "
+                "reporting, so the result above it may be incomplete" % row["detail"],
+            }
+        )
+    return out
 
 
 def main():
@@ -471,7 +519,19 @@ def main():
     # where silence is indistinguishable from success unless it is treated as neither.
     seen = {row["name"] for row in ordered}
     missing_required = sorted(REQUIRED_PROBES - seen)
-    required_failures = [row for row in defects if row["name"] in REQUIRED_PROBES]
+
+    def is_required(name):
+        """A probe is required if it is listed, or if its crash-after-reporting row is.
+
+        A required probe that prints a result and then crashes has reported, so it is not
+        "missing" — but the result may be partial, so it must still fail the build.
+        """
+        if name in REQUIRED_PROBES:
+            return True
+        suffix = "_crash_after_result"
+        return name.endswith(suffix) and name[: -len(suffix)] in REQUIRED_PROBES
+
+    required_failures = [row for row in defects if is_required(row["name"])]
 
     exit_code = 0
     if missing_required:

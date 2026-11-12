@@ -38,6 +38,13 @@ SKIP_DIRS = {
 }
 WORKFLOW_DIR = os.path.join(".github", "workflows")
 
+# One CI run at a time is the project's hard rule, enforced by every workflow sharing this
+# concurrency group with cancellation off. Nothing checked that the workflows actually agreed:
+# a single workflow declaring its own group would silently allow two runs at once, which is the
+# one thing the rule exists to prevent, and it would be invisible in review.
+SERIAL_GROUP = "ci-serial"
+SERIAL_GROUPS_SEEN = []
+
 # Sampler hints Godot 4 actually accepts, from its shading-language reference. `hint_black`
 # looks plausible and is not a hint at all; it fails to compile. A static check catches that in
 # seconds instead of waiting for a Godot run.
@@ -210,6 +217,27 @@ def check_workflow(path):
             error = check_run_block(step, path, job_name)
             if error:
                 return error
+
+    concurrency = data.get("concurrency")
+    if not isinstance(concurrency, dict):
+        return "%s: no concurrency block; the one-run-at-a-time rule is not enforced" % path
+    group = concurrency.get("group")
+    if not group:
+        return "%s: concurrency block has no group" % path
+    if group != SERIAL_GROUP:
+        return (
+            "%s: concurrency group is %r, not %r; a different group lets this workflow run "
+            "alongside the others, which the project's one-run-at-a-time rule forbids"
+            % (path, group, SERIAL_GROUP)
+        )
+    # PyYAML reads `false` as Python False. Anything else — including the string "false" —
+    # would be a non-empty value that GitHub treats as true.
+    if concurrency.get("cancel-in-progress") is not False:
+        return (
+            "%s: cancel-in-progress must be false, got %r; a newer run would cancel a running "
+            "one mid-way" % (path, concurrency.get("cancel-in-progress"))
+        )
+    SERIAL_GROUPS_SEEN.append(path)
     return None
 
 
@@ -380,6 +408,12 @@ def main():
     if counts["yaml"] and not RUN_BLOCKS_CHECKED:
         problems.append(
             "no workflow run block was shell-checked; the run-block check is not running"
+        )
+    if counts["yaml"] and len(SERIAL_GROUPS_SEEN) != counts["yaml"]:
+        problems.append(
+            "%d of %d workflows do not declare the %r concurrency group with "
+            "cancel-in-progress: false"
+            % (counts["yaml"] - len(SERIAL_GROUPS_SEEN), counts["yaml"], SERIAL_GROUP)
         )
 
     problems.extend(check_repo_hygiene())

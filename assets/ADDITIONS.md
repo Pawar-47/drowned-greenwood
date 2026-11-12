@@ -5,10 +5,17 @@ The brief's asset list is final and named. The additions below are **approved ad
 built: all are **P1** and all are scheduled into the phases shown. They are in
 `assets/manifest.json` like any other asset.
 
-**Six additions, in six table rows.** The four from the review, plus two animal skeleton families
-found while writing the validator. Those two were not in the review; they are listed separately
-because they are separate assets, and they are recorded here rather than slipped into the
-manifest unannounced. This is the count the README uses.
+**Six approved additions, in six table rows.** The four from the review, plus two animal skeleton
+families found while writing the validator. Those two were not in the review; they are listed
+separately because they are separate assets, and they are recorded here rather than slipped into
+the manifest unannounced.
+
+A row is a decision, not one asset: the first row is nine environment presets, and the fourth is
+the skeleton, the retarget map, eight animal families and the retarget report. The number of
+manifest records those six rows expand to is whatever `tools/build_manifest.py` reports — it is
+the authoritative count and it changes whenever a family is added, so it is not repeated here
+where it would drift. The count that must not drift is **six decisions**, and this table has six
+rows.
 
 | Asset | Category | Tier | Priority | Phase | Why it is needed |
 |---|---|---|---|---|---|
@@ -18,9 +25,6 @@ manifest unannounced. This is the count the README uses.
 | `char_skeleton_definition`, `char_retarget_map`, `animal_skeleton_<family>`, `anim_retarget_report` | 4.G.rig | C | P1 | 1 | The brief mandates one shared humanoid skeleton (≤ 65 bones) and per-family animal skeletons (≤ 50), but no artifact defined them. Written in Phase 1, before any human or animation work: bones, hierarchy, rest pose, naming, the mapping to Godot `SkeletonProfileHumanoid`, the Quaternius → MPFB2/Rigify → shared-skeleton retarget map, per-family animal definitions, and root-speed metadata recorded in the retarget report. |
 | `animal_skeleton_amphibian` | 4.G.rig | C | P1 | 1 | Found while writing the coverage check: frogs, toads and salamanders were in the manifest with no skeleton family of their own. A frog's hind limbs fold in two planes for the crouch and the jump, which a small-mammal leg chain cannot express, so they get a **23-bone** family rather than being forced into one that cannot animate them. |
 | `animal_skeleton_bat` | 4.G.rig | C | P1 | 1 | Found the same way: `animal_bat_pipistrelle` was covered by no family. A bat's wing is a membrane over elongated fingers, so the bird skeleton's beak, crest and three-segment wing cannot express it; 14 bones. |
-
-Six additions in total, not four: the two skeleton families above were found while writing the
-validator, and each is recorded here rather than being slipped into the manifest unannounced.
 
 ## Naming decisions (not new assets)
 

@@ -47,7 +47,8 @@ a SHA-256 now fails `check_manifest.py`.
 
 ```bash
 python tools/build_manifest.py            # expand
-python tools/validate/check_scripts.py    # every script, shader and workflow parses
+python tools/validate/check_scripts.py    # every script, shader, workflow and run block parses
+python tools/validate/test_tools.py       # unit tests for the manifest builder and report parser
 python tools/validate/check_manifest.py   # structure, budgets, licences
 python tools/validate/check_skeletons.py  # bone caps, humanoid hierarchy, LOD and cloth budgets, animal coverage
 ```
@@ -73,7 +74,7 @@ pushed.
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests | **CLOSED — 0 defects.** Verified end to end: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import/load, both shader includes compile, **MTree generates a tree that Godot loads**, **MPFB2 builds and rigs a human that Godot loads**, gltfpack `-noq`, Infinigen, glTF-Transform, Poly Haven, and the report gate (it fails the job on a defect). **Carried into later phases, all measured and all over budget:** MTree's raw tree is hundreds of thousands of triangles and tens of MB against a 10k–16k tri hero budget and a 1.5 MB per-species cap (the exact count varies per generated seed, so the current figure lives in `reports/tool_evaluation.md` rather than here); MPFB2's human is **36,972 tris / 137 bones** against 12k–18k and 65. Decimation and bone reduction are Phase 3 and Phase 5 work. Quaternius supplies 43 clips covering **16 of 41** families. See `reports/tool_evaluation.md` |
+| 0 | Tool smoke tests | **CLOSED — 0 defects.** Verified end to end: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import/load, both shader includes compile, **MTree generates a tree that Godot loads**, **MPFB2 builds and rigs a human that Godot loads**, gltfpack `-noq`, Infinigen, glTF-Transform, Poly Haven, and the report gate (it fails the job on a defect). **Carried into later phases, all measured and all over budget:** MTree's raw tree is hundreds of thousands of triangles and tens of MB against a 10k–16k tri hero budget and a 1.5 MB per-species cap (the exact count varies per generated seed, so the current figure lives in `reports/tool_evaluation.md` rather than here); MPFB2's human is **36,972 tris / 137 bones** against 12k–18k and 65. Decimation and bone reduction are Phase 3 and Phase 5 work. Quaternius supplies 43 clips; family coverage is measured by matching clip-name **tokens**, and the count in `reports/tool_evaluation.md` is from the last run — the matching was tightened after the first figure, so it will move. The retarget map is diffed against the pack's real skin joints on every run and that diff is a required probe. See `reports/tool_evaluation.md` |
 | 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | in progress |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |
@@ -97,12 +98,23 @@ human, both over budget). Everything else — decimation, LODs, rig remapping, r
 
 This is enforced, not just a habit: every workflow shares the concurrency group `ci-serial`
 with `cancel-in-progress: false`, so a run that arrives while another is executing waits its
-turn rather than starting alongside it. GitHub keeps only the most recent waiting run per
-group and drops older ones, which is the behaviour we want — no pile-up, and never two runs
-racing to write the same report.
+turn rather than starting alongside it, and never two runs racing to write the same report.
+
+**The cost of that choice, stated plainly:** GitHub keeps only the most recent waiting run per
+group and drops older ones. So a push-triggered run can replace a *queued* manual Phase 0 or
+history-purge dispatch, and the manual run is simply never created — it is not cancelled, it is
+silently absent. That is a real consequence of a repository-wide group, and it is why a manual
+workflow must be dispatched when nothing else is running. The alternative — one group per
+workflow — removes the dropped-queue risk but permits two runs at once, which the owner's rule
+forbids; it is recorded as a decision for the owner in `docs/POLICY.md`, not adopted unilaterally.
 
 The rule covers workflow **runs**. Jobs *inside* one run still execute in parallel (the Phase 0
 workflow's four jobs, for example), because they are one run, not two.
+
+`tools/validate/check_scripts.py` now enforces the rule rather than assuming it: a workflow that
+declares any other concurrency group, or sets `cancel-in-progress` to anything but `false`, fails
+the static gate. Before that, one workflow with its own group would have quietly allowed two runs
+to execute at once, and nothing would have said so.
 
 ### The rule is not retroactive
 

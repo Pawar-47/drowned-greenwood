@@ -55,6 +55,18 @@ jobs:
     name: Purge history (dry run by default)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # An `apply` run force-pushes every ref and invalidates every clone and fork. It must not be
+    # one click away from a dry run.
+    #
+    # The owner has to configure this environment in Settings → Environments with themselves as
+    # a required reviewer; the name alone does not gate anything, it only creates the environment
+    # on first use. With a reviewer set, an apply run waits for an explicit approval by a human
+    # who is not the person who dispatched it.
+    #
+    # A PAT or GitHub App token with the `workflows` scope is also required for an apply that
+    # rewrites a commit touching .github/workflows/: GITHUB_TOKEN is not permitted to push those,
+    # by design. The guard below detects that case and refuses rather than half-pushing.
+    environment: history-purge
     steps:
       # Inputs arrive as environment variables, so nothing a user types is ever parsed as
       # shell source. `${{ }}` interpolation inside `run:` is what created the injection.
@@ -198,8 +210,28 @@ jobs:
         run: |
           set -euo pipefail
           cd purge-work
+
+          # GITHUB_TOKEN may not push commits that touch .github/workflows/. Rewriting history
+          # rewrites every commit, so any repository whose history contains workflow files — this
+          # one does, from its first commit — cannot be force-pushed with GITHUB_TOKEN at all.
+          # This is not an edge case here; it is the expected outcome, so it says so plainly and
+          # stops before touching the remote rather than failing partway through.
+          if git log --oneline --all -- .github/workflows | head -1 | grep -q .; then
+            echo "REFUSING to push: the rewritten history contains commits that touch"
+            echo ".github/workflows, which GITHUB_TOKEN is not permitted to push."
+            echo ""
+            echo "Nothing on the remote has been changed. This repository's history contains"
+            echo "workflow commits from its first commit, so an apply run will always stop here"
+            echo "until a token with the 'workflows' scope is supplied."
+            echo ""
+            echo "To proceed: create a fine-grained PAT with Contents: write and Workflows: write"
+            echo "on this repository, store it as the HISTORY_PURGE_TOKEN secret, and change the"
+            echo "push step below to use it. See docs/HISTORY_PURGE.md."
+            exit 1
+          fi
+
           # `git filter-repo` removes the origin remote as a safety measure, so `set-url` alone
-          # would fail with "No such remote 'origin'" on an apply run. Add it if it is gone.
+          # would fail with "No such remote 'origin'". Add it if it is gone.
           auth_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           if git remote get-url origin >/dev/null 2>&1; then
             git remote set-url origin "$auth_url"

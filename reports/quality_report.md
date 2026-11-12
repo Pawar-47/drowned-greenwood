@@ -3,9 +3,11 @@
 Per-asset quality results against the brief's section 2A. **Empty until assets exist**: Phase 0
 built no assets, and Phase 1 is definitions and tooling.
 
-CI writes the machine-generated tables into this file when a build runs. This header and the
-sections below are the shape that output takes, so the file is never a broken link and the
-structure is agreed before the first asset is judged.
+**No workflow writes this file yet.** An earlier version of this header said CI filled in the
+tables when a build ran, which was not true — there is no build workflow until Phase 2, so the
+tables below are the agreed shape and nothing has ever written to them. The writer lands with the
+first generator that produces an asset; until then this file is written by hand, and saying so is
+better than a reader assuming the numbers were measured.
 
 ## How an asset is recorded
 

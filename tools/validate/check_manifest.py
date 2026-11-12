@@ -11,6 +11,7 @@ budget table within the hard cap, and the P1 set non-empty per built phase.
 """
 
 import json
+import os
 import sys
 
 EXPANDED = "assets/manifest.expanded.json"
@@ -207,6 +208,24 @@ def main():
                 "%s: status %s but missing %s"
                 % (record["name"], record["status"], ", ".join(missing))
             )
+
+    # How much of the plan depends on generators that do not exist yet.
+    #
+    # `source_tool: custom` means "one of our own scripts makes this". No script in
+    # tools/generators/ exists — that directory is planned, not present — and Phase 0 tested no
+    # tool that could produce these assets. So every custom asset is unbuildable today, and the
+    # number is large enough that it should be visible on every run rather than discovered in
+    # Phase 2. Not a failure: a plan may schedule work that is not written yet. A failure only
+    # if one of them claims to be built, which the evidence check above already catches.
+    generators_dir = os.path.join("tools", "generators")
+    custom = [r["name"] for r in assets if r.get("source_tool") == "custom"]
+    if custom and not os.path.isdir(generators_dir):
+        print(
+            "warning: %d of %d assets (%.0f%%) are `source custom` and no generator exists yet "
+            "(%s is not present), so none of them can be built today"
+            % (len(custom), len(assets), 100.0 * len(custom) / len(assets), generators_dir),
+            file=sys.stderr,
+        )
 
     p1_by_phase = {}
     for record in assets:

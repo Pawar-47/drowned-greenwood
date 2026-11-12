@@ -27,6 +27,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import struct
 import sys
 import zipfile
@@ -92,6 +93,38 @@ MANIFEST = "assets/manifest.json"
 NON_ANIMATION_ASSETS = {
     "anim_retarget_report": "a report, not a clip",
 }
+
+# Matching a keyword against a clip name.
+#
+# The obvious version — `keyword in name.lower()` — is why "16 of 41 families" was an upper
+# bound rather than a measurement: "bow" matches inside "Elbow", so a boxing clip counted as
+# archery, and any family with a short keyword matched clips that had nothing to do with it.
+#
+# So a clip name is split into tokens first (on punctuation, spaces, and camelCase), and:
+#   * a keyword matches when it is a whole token ("bow" in "2H_Bow_Aim", not in "Elbow_Strike");
+#   * a keyword of four or more characters may also match as a token prefix, so "spear" finds
+#     "spearhead" while "bow" cannot find "bowling" — short keywords are the ones that caused
+#     the false positives, so only long ones get the looser rule.
+CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+NON_TOKEN = re.compile(r"[^a-z0-9]+")
+
+
+def clip_tokens(name):
+    """The lower-case word tokens of a clip name."""
+    spaced = CAMEL_BOUNDARY.sub(" ", name)
+    return {token for token in NON_TOKEN.split(spaced.lower()) if token}
+
+
+def family_hits(keywords, clip_name):
+    """True when any keyword names this clip, on a token boundary rather than a substring."""
+    tokens = clip_tokens(clip_name)
+    for keyword in keywords:
+        keyword = keyword.lower()
+        if keyword in tokens:
+            return True
+        if len(keyword) >= 4 and any(token.startswith(keyword) for token in tokens):
+            return True
+    return False
 
 
 def load_families(manifest_path=MANIFEST):
@@ -303,6 +336,9 @@ def main():
     for joints in joints_by_source.values():
         all_joints.update(joints)
     joint_list = sorted(all_joints)
+    matched = []
+    unmatched = []
+    unmapped = []
 
     if joint_list:
         expected = load_retarget_sources().get("quaternius", set())
@@ -319,7 +355,9 @@ def main():
             "matched": len(matched),
             "unmatched_map_entries": unmatched[:25],
             "sample_joints": joint_list[:25],
-            "note": "matched = map entries that exist as real joints in the GLB",
+            "note": "matched = map entries that exist as real joints in the GLB. On failure, "
+            "rewrite assets/char_retarget_map.json from joint_names in this run's JSON output "
+            "rather than from a naming convention.",
         }))
         if unmatched:
             print(
@@ -327,6 +365,7 @@ def main():
                 "the map was written from a naming convention, not from this file. "
                 "First few: %s" % (len(unmatched), unmatched[:10])
             )
+            print("The pack's real joint names: " + ", ".join(joint_list[:40]))
     else:
         print("RESULT " + json.dumps({
             "step": "retarget_bones",
@@ -343,8 +382,12 @@ def main():
         print("note: " + note)
 
     covered = {}
+    clips_per_family = {}
     for family, keywords in families.items():
-        covered[family] = sum(1 for name in clip_list if any(k in name.lower() for k in keywords))
+        hits = [name for name in clip_list if family_hits(keywords, name)]
+        covered[family] = len(hits)
+        if hits:
+            clips_per_family[family] = hits[:10]
     present = sorted(f for f, n in covered.items() if n > 0)
     missing = sorted(f for f, n in covered.items() if n == 0)
 
@@ -370,7 +413,9 @@ def main():
         "families_covered": len(present),
         "families_missing": len(missing),
         "missing": missing,
-        "note": "name-keyword matching, not semantic: Pistol_Aim counts as a bow aim",
+        "clips_per_family": clips_per_family,
+        "note": "token matching, not substring: a keyword must be a whole token, or a prefix of "
+        "one when it is four characters or longer, so 'bow' no longer matches 'Elbow'",
     }))
 
     if args.out:
@@ -387,6 +432,13 @@ def main():
                     "coverage": covered,
                     "present": present,
                     "missing": missing,
+                    "clips_per_family": clips_per_family,
+                    # The pack's real bone names, so the retarget map can be rewritten from a
+                    # measurement instead of from an assumed naming convention.
+                    "joint_names": joint_list,
+                    "retarget_matched": matched,
+                    "retarget_unmatched": unmatched,
+                    "retarget_unmapped": unmapped,
                 },
                 handle,
                 indent=2,

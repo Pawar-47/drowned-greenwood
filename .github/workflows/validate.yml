@@ -49,6 +49,12 @@ jobs:
       - name: Every script parses
         run: python tools/validate/check_scripts.py
 
+      # The two scripts that decide what the pipeline believes. check_scripts.py proves they
+      # parse; it cannot prove they behave. Both have silently lied before — a duplicate asset
+      # name overwritten without a word, and a passing probe reported as "produced no result".
+      - name: Tool unit tests
+        run: python tools/validate/test_tools.py
+
   manifest:
     name: Manifest integrity
     runs-on: ubuntu-latest

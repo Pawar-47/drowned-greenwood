@@ -20,6 +20,10 @@ on:
         description: "Re-run the Infinigen install probe (about 10 minutes; it has already passed)"
         type: boolean
         default: false
+      commit_report:
+        description: "Commit reports/tool_evaluation.md back to main when the gate passes"
+        type: boolean
+        default: false
   push:
     paths:
       - "tools/phase0/**"
@@ -43,19 +47,43 @@ env:
   BLENDER_VERSION: "4.2.23"
   BLENDER_DIR: "blender-4.2.23-linux-x64"
   BLENDER_URL: "https://download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz"
+  # The expected SHA-256, pinned here rather than fetched at build time.
+  #
+  # The previous version downloaded Blender's .sha256 file and compared, which is right, but
+  # only on a cache MISS: on a hit the tarball was never downloaded, the comparison never ran,
+  # and the step still printed `RESULT blender_checksum exit=0`. A cached, tampered or truncated
+  # Blender was therefore reported as verified. This value is checked on every run, cache or not,
+  # because the cache now holds the archive rather than the extracted tree.
+  # Source: https://download.blender.org/release/Blender4.2/blender-4.2.23.sha256
+  BLENDER_SHA256: "bea0eb3146be13eae6225409a117b215184f41b7f79e799f97cb3abb8f6dc404"
   # Modular Tree is a Blender 4.2+ extension declaring blender_version_min = 4.5.0, so it gets
   # its own Blender version. The brief allows one pinned Blender per job.
   BLENDER45_VERSION: "4.5.16"
   BLENDER45_DIR: "blender-4.5.16-linux-x64"
   BLENDER45_URL: "https://download.blender.org/release/Blender4.5/blender-4.5.16-linux-x64.tar.xz"
+  # Source: https://download.blender.org/release/Blender4.5/blender-4.5.16.sha256
+  BLENDER45_SHA256: "23432b064977908beb1ab4b7b32f024e7331105c875c187dce002aff84b10c11"
   GODOT_VERSION: "4.7.2-stable"
   GODOT_URL: "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
+  # Godot publishes no checksum file with its GitHub release assets — there is no
+  # SHA256-SUMS.txt at that tag, it returns 404 — so this cannot be vendor-verified the way
+  # Blender's can. Left empty on purpose: the download step then computes the hash, reports it
+  # as UNPINNED rather than as verified, and writes it into the run summary so it can be pasted
+  # here once. An empty value must never read as "checked and fine"; see `godot_checksum` in
+  # reports/tool_evaluation.md.
+  GODOT_SHA256: ""
   GLTFPACK_URL: "https://github.com/zeux/meshoptimizer/releases/download/v1.3/gltfpack-ubuntu.zip"
+  # Same situation as Godot: meshoptimizer publishes no checksum for its release assets.
+  GLTFPACK_SHA256: ""
   # Git dependencies are pinned to an exact commit or tag. A HEAD clone means an upstream
   # commit can change a generated asset without this repository changing.
   MPFB2_TAG: "v2.0.18"
   INFINIGEN_COMMIT: "53033dd55c7191cbc436be6ffbb63c026935a509"
   GLTF_TRANSFORM_VERSION: "4.2.1"
+  # The Quaternius release is fetched with `gh release download`. Its archive hash was measured
+  # once and written into tools/TOOLS.md but never checked by anything, so a replaced release
+  # asset would have gone unnoticed. The inventory step verifies it now.
+  QUATERNIUS_ZIP_SHA256: "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724"
   # Modular Tree ships a compiled pybind11 extension (`m_tree`), so a source clone can never
   # work: `import m_tree` finds the C++ source directory, not a built module, which is exactly
   # the "cannot import name 'm_tree' from 'm_tree'" failure. Its CD workflow publishes a
@@ -88,28 +116,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Blender
+      - name: Cache the Blender archive
         uses: actions/cache@v4
         with:
-          path: tools/vendor/${{ env.BLENDER_DIR }}
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+          # The ARCHIVE, not the extracted tree. Caching the tree meant a cache hit skipped the
+          # download and therefore skipped the checksum, while the step still printed
+          # `RESULT blender_checksum exit=0` — a verified-looking result for bytes nobody
+          # checked. The key carries the expected hash, so a cache entry can only ever match the
+          # Blender this workflow pins.
+          path: tools/vendor/blender.tar.xz
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-${{ env.BLENDER_SHA256 }}
 
-      - name: Fetch Blender ${{ env.BLENDER_VERSION }}
+      - name: Verify and unpack Blender ${{ env.BLENDER_VERSION }}
         run: |
           set -euo pipefail
           source tools/phase0/lib.sh
           mkdir -p tools/vendor artifacts/phase0
-          if [ ! -x "tools/vendor/${BLENDER_DIR}/blender" ]; then
+          if [ ! -f tools/vendor/blender.tar.xz ]; then
             curl -fsSL -o tools/vendor/blender.tar.xz "$BLENDER_URL"
-            curl -fsSL -o tools/vendor/blender.tar.xz.sha256 \
-              "https://download.blender.org/release/Blender4.2/blender-${BLENDER_VERSION}.sha256"
-            expected=$(grep -F "blender-${BLENDER_VERSION}-linux-x64.tar.xz" tools/vendor/blender.tar.xz.sha256 | awk '{print $1}')
-            actual=$(sha256sum tools/vendor/blender.tar.xz | awk '{print $1}')
-            echo "blender expected=${expected} actual=${actual}" | tee -a "$LOG"
-            [ "$expected" = "$actual" ] || { echo "RESULT blender_checksum exit=1" | tee -a "$LOG"; exit 1; }
+          fi
+          # Checked on every run, cache hit or miss. This is the whole point of caching the
+          # archive instead of the tree.
+          actual=$(sha256sum tools/vendor/blender.tar.xz | awk '{print $1}')
+          echo "blender expected=${BLENDER_SHA256} actual=${actual}" | tee -a "$LOG"
+          if [ "$actual" != "${BLENDER_SHA256}" ]; then
+            echo "RESULT blender_checksum exit=1" | tee -a "$LOG"
+            exit 1
+          fi
+          echo "RESULT blender_checksum exit=0 version=${BLENDER_VERSION}" | tee -a "$LOG"
+          if [ ! -x "tools/vendor/${BLENDER_DIR}/blender" ]; then
             tar -xJf tools/vendor/blender.tar.xz -C tools/vendor
           fi
-          echo "RESULT blender_checksum exit=0" | tee -a "$LOG"
           echo "tools/vendor/${BLENDER_DIR}" > tools/vendor/.blender_path
 
       - name: Blender environment and glTF export probe
@@ -163,6 +200,18 @@ jobs:
           mkdir -p tools/vendor/gltfpack
           if [ ! -x tools/vendor/gltfpack/gltfpack ]; then
             curl -fsSL -o tools/vendor/gltfpack.zip "$GLTFPACK_URL"
+            archive_sha=$(sha256sum tools/vendor/gltfpack.zip | awk '{print $1}')
+            if [ -n "${GLTFPACK_SHA256}" ]; then
+              if [ "$archive_sha" != "${GLTFPACK_SHA256}" ]; then
+                echo "RESULT gltfpack_checksum ok=False reason=checksum_mismatch expected=${GLTFPACK_SHA256} actual=${archive_sha}" | tee -a "$LOG"
+                exit 1
+              fi
+              echo "RESULT gltfpack_checksum ok=True pinned=True sha256=${archive_sha}" | tee -a "$LOG"
+            else
+              echo "::warning title=gltfpack archive is not pinned::computed sha256 ${archive_sha}. Paste it into GLTFPACK_SHA256 in this workflow."
+              echo "RESULT gltfpack_checksum ok=False reason=unpinned sha256=${archive_sha}" | tee -a "$LOG"
+              echo "- **gltfpack archive is UNPINNED.** This run measured \`${archive_sha}\` for \`gltfpack-ubuntu.zip\` v1.3. Paste it into \`GLTFPACK_SHA256\` to make the pin real." >> "$GITHUB_STEP_SUMMARY"
+            fi
             unzip -q -o tools/vendor/gltfpack.zip -d tools/vendor/gltfpack
             chmod +x tools/vendor/gltfpack/gltfpack || true
           fi
@@ -261,6 +310,20 @@ jobs:
           mkdir -p tools/vendor/godot
           if [ ! -x tools/vendor/godot/godot ]; then
             curl -fsSL -o tools/vendor/godot.zip "$GODOT_URL"
+            archive_sha=$(sha256sum tools/vendor/godot.zip | awk '{print $1}')
+            if [ -n "${GODOT_SHA256}" ]; then
+              if [ "$archive_sha" != "${GODOT_SHA256}" ]; then
+                echo "RESULT godot_checksum ok=False reason=checksum_mismatch expected=${GODOT_SHA256} actual=${archive_sha}" | tee -a "$LOG"
+                exit 1
+              fi
+              echo "RESULT godot_checksum ok=True pinned=True sha256=${archive_sha}" | tee -a "$LOG"
+            else
+              # Reported, never assumed. An empty GODOT_SHA256 used to be indistinguishable from
+              # a verified one in every document this pipeline produces.
+              echo "::warning title=Godot archive is not pinned::computed sha256 ${archive_sha}. Paste it into GODOT_SHA256 in this workflow."
+              echo "RESULT godot_checksum ok=False reason=unpinned sha256=${archive_sha}" | tee -a "$LOG"
+              echo "- **Godot archive is UNPINNED.** This run measured \`${archive_sha}\` for \`Godot_v${GODOT_VERSION}_linux.x86_64.zip\`. Paste it into \`GODOT_SHA256\` to make the pin real." >> "$GITHUB_STEP_SUMMARY"
+            fi
             unzip -q -o tools/vendor/godot.zip -d tools/vendor/godot
             chmod +x tools/vendor/godot/Godot_v4.7.2-stable_linux.x86_64
             ln -sf Godot_v4.7.2-stable_linux.x86_64 tools/vendor/godot/godot
@@ -380,39 +443,52 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Cache Blender 4.2
+      - name: Cache the Blender archives
         uses: actions/cache@v4
         with:
-          path: tools/vendor/${{ env.BLENDER_DIR }}
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+          path: |
+            tools/vendor/blender.tar.xz
+            tools/vendor/blender45.tar.xz
+          key: blender-pair-${{ env.BLENDER_VERSION }}-${{ env.BLENDER45_VERSION }}
 
-      - name: Cache Blender 4.5
-        uses: actions/cache@v4
-        with:
-          path: tools/vendor/${{ env.BLENDER45_DIR }}
-          key: blender-${{ env.BLENDER45_VERSION }}-linux-x64
-
-      - name: Fetch Blender 4.2 and 4.5
+      - name: Verify and unpack Blender 4.2 and 4.5
         run: |
           set -euo pipefail
           source tools/phase0/lib.sh
           mkdir -p tools/vendor artifacts/phase0
-          if [ ! -x "tools/vendor/${BLENDER_DIR}/blender" ]; then
+
+          # 4.2 had NO checksum in this job at all, while the main job verified it — so the same
+          # binary was trusted here and checked there, for no reason beyond copy-paste drift.
+          if [ ! -f tools/vendor/blender.tar.xz ]; then
             curl -fsSL -o tools/vendor/blender.tar.xz "$BLENDER_URL"
+          fi
+          actual=$(sha256sum tools/vendor/blender.tar.xz | awk '{print $1}')
+          echo "blender expected=${BLENDER_SHA256} actual=${actual}" | tee -a "$LOG"
+          if [ "$actual" != "${BLENDER_SHA256}" ]; then
+            echo "RESULT blender_checksum exit=1" | tee -a "$LOG"
+            exit 1
+          fi
+          echo "RESULT blender_checksum exit=0 version=${BLENDER_VERSION}" | tee -a "$LOG"
+          if [ ! -x "tools/vendor/${BLENDER_DIR}/blender" ]; then
             tar -xJf tools/vendor/blender.tar.xz -C tools/vendor
           fi
           echo "tools/vendor/${BLENDER_DIR}" > tools/vendor/.blender_path
-          if [ ! -x "tools/vendor/${BLENDER45_DIR}/blender" ]; then
+
+          if [ ! -f tools/vendor/blender45.tar.xz ]; then
             curl -fsSL -o tools/vendor/blender45.tar.xz "$BLENDER45_URL"
-            curl -fsSL -o tools/vendor/blender45.tar.xz.sha256 \
-              "https://download.blender.org/release/Blender4.5/blender-${BLENDER45_VERSION}.sha256"
-            expected=$(grep -F "blender-${BLENDER45_VERSION}-linux-x64.tar.xz" tools/vendor/blender45.tar.xz.sha256 | awk '{print $1}')
-            actual=$(sha256sum tools/vendor/blender45.tar.xz | awk '{print $1}')
-            echo "blender45 expected=${expected} actual=${actual}" | tee -a "$LOG"
-            [ "$expected" = "$actual" ] || { echo "RESULT blender45_checksum exit=1" | tee -a "$LOG"; exit 0; }
-            tar -xJf tools/vendor/blender45.tar.xz -C tools/vendor
+          fi
+          actual45=$(sha256sum tools/vendor/blender45.tar.xz | awk '{print $1}')
+          echo "blender45 expected=${BLENDER45_SHA256} actual=${actual45}" | tee -a "$LOG"
+          if [ "$actual45" != "${BLENDER45_SHA256}" ]; then
+            # This used to `exit 0` — a checksum mismatch passed the step and the job carried on
+            # with a Blender that was not the pinned one. A mismatch is a failure, not a note.
+            echo "RESULT blender45_checksum exit=1" | tee -a "$LOG"
+            exit 1
           fi
           echo "RESULT blender45_checksum exit=0 version=${BLENDER45_VERSION}" | tee -a "$LOG"
+          if [ ! -x "tools/vendor/${BLENDER45_DIR}/blender" ]; then
+            tar -xJf tools/vendor/blender45.tar.xz -C tools/vendor
+          fi
 
       - name: MPFB2 install as extension, register, build and export a human
         continue-on-error: true
@@ -526,6 +602,33 @@ jobs:
           gh release download third-party-quaternius --dir artifacts/phase0/quaternius --clobber >>"$LOG" 2>&1
           echo "RESULT quaternius_download exit=$?" | tee -a "$LOG"
           find artifacts/phase0/quaternius -maxdepth 1 -type f -printf '%f %s\n' | sort >>"$LOG" 2>&1
+
+          # The archive hash was measured once and written into tools/TOOLS.md, where nothing
+          # read it. A release asset can be replaced by whoever controls it, so an unverified
+          # "pinned" hash is a comment, not a pin. Verify it here.
+          verified=0
+          total=0
+          for archive in artifacts/phase0/quaternius/*.zip; do
+            [ -f "$archive" ] || continue
+            total=$((total + 1))
+            archive_sha=$(sha256sum "$archive" | awk '{print $1}')
+            if [ "$archive_sha" = "${QUATERNIUS_ZIP_SHA256}" ]; then
+              verified=$((verified + 1))
+              echo "quaternius $(basename "$archive") sha256 matches the pin"
+            else
+              echo "quaternius $(basename "$archive") sha256=${archive_sha} does NOT match the pin ${QUATERNIUS_ZIP_SHA256}" | tee -a "$LOG"
+            fi
+          done
+          if [ "$total" -eq 0 ]; then
+            echo "RESULT quaternius_checksum ok=False reason=no_archives_downloaded" | tee -a "$LOG"
+          elif [ "$verified" -eq "$total" ]; then
+            echo "RESULT quaternius_checksum ok=True archives=${total}" | tee -a "$LOG"
+          else
+            # Not fatal: the inventory below still measures what arrived, which is more useful
+            # than stopping. But it is a reported failure, so the report shows it.
+            echo "RESULT quaternius_checksum ok=False reason=checksum_mismatch verified=${verified} of=${total}" | tee -a "$LOG"
+          fi
+
           unzip -l artifacts/phase0/quaternius/*.zip >>"$LOG" 2>&1 || true
           # Extract OUTSIDE the artifact directory. The extracted animation libraries are tens
           # of MB and nothing downstream needs them; leaving them in artifacts/phase0 pushed the
@@ -584,6 +687,9 @@ jobs:
     needs: [static, blender, godot, tools]
     if: always()
     timeout-minutes: 10
+    # Write only for the optional commit step below. Everything else in this job reads.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -625,3 +731,30 @@ jobs:
           path: reports/tool_evaluation.md
           retention-days: 14
           if-no-files-found: warn
+
+      # The report was generated and uploaded but never committed, so reports/tool_evaluation.md
+      # in the repository only changed when someone remembered to paste it back — which is how it
+      # drifts from what CI actually measured.
+      #
+      # Off by default, and only when the gate passed. Two things make this safe:
+      #   * a push made with GITHUB_TOKEN does not trigger a new workflow run (GitHub suppresses
+      #     recursive triggers for it), so this cannot start the loop that the one-run-at-a-time
+      #     rule forbids;
+      #   * it touches no workflow file, which is the other thing GITHUB_TOKEN may not push.
+      - name: Commit the report to main
+        if: ${{ inputs.commit_report && job.status == 'success' && github.ref_name == 'main' }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- reports/tool_evaluation.md; then
+            echo "report is unchanged; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/tool_evaluation.md
+          git commit -m "Update the Phase 0 tool evaluation from CI
+
+Generated by tools/phase0/make_report.py from run ${GITHUB_RUN_ID}."
+          # The checkout is a detached HEAD on a push run, so push the commit to main by ref
+          # rather than relying on the current branch.
+          git push origin HEAD:refs/heads/main

@@ -55,6 +55,32 @@ An apply run makes its **own** fresh backup and pushes from its own mirror. It d
 dry run's artifact, so approving a dry run is a judgement that the path list is correct, not a
 guarantee that apply operates on identical bytes.
 
+## Two things an apply run needs before it can work
+
+Neither is configured, and the workflow refuses rather than failing halfway.
+
+**1. A token that may push workflow files.** `GITHUB_TOKEN` is not permitted to push commits
+touching `.github/workflows/`. Rewriting history rewrites *every* commit, and this repository's
+history contains workflow commits from its first commit — so an apply run with `GITHUB_TOKEN`
+will always stop at the guard before the push step. Nothing is changed on the remote when it does.
+
+To proceed: create a fine-grained PAT with **Contents: write** and **Workflows: write** on this
+repository, store it as the `HISTORY_PURGE_TOKEN` secret, and change the push step to use it in
+place of `secrets.GITHUB_TOKEN`. That is a deliberate change requiring an explicit decision, not
+something the pipeline should do quietly.
+
+**2. A protected environment with a required reviewer.** The job declares
+`environment: history-purge`. The name alone gates nothing: it must be configured in
+**Settings → Environments → history-purge** with a required reviewer. Until it is, an apply run
+starts immediately once dispatched with the right confirmation string.
+
+## Rehearse it on a throwaway fork first
+
+This workflow has never run end to end. Before using it on this repository, fork it, add a
+deliberately committed junk blob, and run `dry-run` then `apply` there — with a PAT, since the
+workflow-file guard applies to the fork too. That exercise is what turns "the steps look right"
+into "the steps ran".
+
 ## Manual steps (what the workflow does, so it can be done by hand)
 
 ```bash

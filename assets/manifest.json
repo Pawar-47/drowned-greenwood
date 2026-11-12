@@ -1406,14 +1406,24 @@
         "tech_cloth_bone_chain_cape||P1",
         "tech_cloth_bone_chain_banner||P1",
         "tech_cloth_bone_chain_tabard||P1",
-        "tech_wind_noise_texture||P1",
-        "tech_gust_flowmap||P1",
         "tech_wetness_include||P1",
         "tech_wind_include||P1",
         "tech_scatter_presets||P1",
         "tech_test_patch_100m||P1",
         "tech_test_world_1km||P1",
         "tech_perf_overlay_stub||P1"
+      ]
+    },
+    "4.P.tex": {
+      "label": "Wind and wetness input textures, which the shaders cannot compile without",
+      "phase": 2,
+      "note": "Split out of 4.P.tech, which is Phase 9. These two textures are inputs to the wind shader: `wind_noise` and `gust_flowmap` are samplers in shaders/tech_wind_include.gdshaderinc, and foliage materials in Phase 3 cannot be authored without them. Leaving them in a Phase 9 group meant the Phase 3 foliage work depended on assets scheduled six phases later — a schedule that reads as ordered but is not. Phase 2 is the earliest phase that produces textures, so they land before their first consumer. Budget coverage is unchanged: check_manifest.py matches on the section prefix, so 4.P.tex is covered by the 4.P budget.",
+      "tier": "C",
+      "priority": "P1",
+      "source_tool": "custom",
+      "assets": [
+        "tech_wind_noise_texture||P1",
+        "tech_gust_flowmap||P1"
       ]
     }
   }
