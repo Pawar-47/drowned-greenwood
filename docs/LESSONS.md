@@ -108,6 +108,43 @@ force-pushes and breaks every clone, but it should never be needed.
 
 **Rule:** make the bad state unreachable rather than recoverable.
 
+## 13. `read_factory_settings()` unregisters every enabled add-on
+
+The one that cost the most. Both probes enabled an add-on and then called
+`bpy.ops.wm.read_factory_settings(use_empty=True)` to get an empty scene. That resets
+Blender's *preferences*, and the enabled add-on list lives in preferences — so the add-on was
+disabled again, and the very next line reported "operator could not be found".
+
+The last run before this was fixed shows it plainly: MTree registered **9 operators**, then
+failed to find `add_tree` one step later. The tool was fine; the probe was sabotaging itself.
+
+**Rule:** use `clear_scene()` (remove objects and collections) when a probe needs a clean
+scene. Never `read_factory_settings` after enabling anything.
+
+## 14. Do not use a slow job as your test loop
+
+Phase 0 spent over two hours of runner time, much of it re-running a 10-minute Infinigen
+install that had already passed four times, while the actual changes were a few lines in a
+probe.
+
+**Rules:**
+- Run the cheapest check that can catch the mistake first. `check_scripts.py` parses every
+  Python, shell, JSON and workflow file in seconds; a syntax error should never reach Blender.
+- Make an expensive probe conditional when it has already passed and the change cannot affect
+  it. Infinigen now runs only when `run_infinigen` is set.
+- Cache large downloads (`actions/cache` on the Blender directory) instead of re-downloading
+  ~350 MB per job per run.
+- Batch changes. One push with everything audited beats six pushes with one fix each.
+
+## 15. Every probe reports or it did not run
+
+A probe that raises before its first `RESULT` line leaves the harness with nothing, which is
+indistinguishable from a probe that was never invoked.
+
+**Rule:** wrap the probe body so an escaped exception becomes a named result
+(`mpfb_crash`, `mtree_crash`) carrying its traceback. Then "no result" always means a harness
+bug, never a silent crash.
+
 ## Applying these
 
 The asset validators in Phase 2 onward are probes with the same failure modes. In particular:

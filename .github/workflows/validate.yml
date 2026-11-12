@@ -29,10 +29,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Seconds. Catches syntax errors in every script before any expensive workflow runs.
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML for workflow validation
+        run: python -m pip install --quiet pyyaml
+
+      - name: Every script parses
+        run: python tools/validate/check_scripts.py
+
   manifest:
     name: Manifest integrity
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: static
     steps:
       - uses: actions/checkout@v4
 

@@ -2,11 +2,24 @@ name: phase0-tool-evaluation
 
 # Phase 0 gate: prove, on a real GitHub-hosted runner, that each third-party tool in the
 # brief's section 3A actually runs headless and produces something the pipeline can consume.
-# Every probe is isolated so one failure never hides the rest; the run's outcome is collected
-# into reports/tool_evaluation.md and the job summary.
+#
+# COST DESIGN. Phase 0 consumed over two hours of runner time because every push re-ran the
+# Infinigen install (~10 min) even though it had already passed four times, and because a
+# 12-minute run was being used as the test loop for probe changes.
+#
+# Three things now prevent that:
+#   1. `tools/validate/check_scripts.py` parses every Python, shell, JSON and workflow file in
+#      seconds. Syntax errors are caught there, not by Blender.
+#   2. Infinigen only runs when asked (`run_infinigen`), because it has passed and costs most.
+#   3. The probe jobs are independent of each other, so one failure never hides another.
 
 on:
   workflow_dispatch:
+    inputs:
+      run_infinigen:
+        description: "Re-run the Infinigen install probe (about 10 minutes; it has already passed)"
+        type: boolean
+        default: false
   push:
     paths:
       - "tools/phase0/**"
@@ -36,19 +49,41 @@ env:
   GLTFPACK_URL: "https://github.com/zeux/meshoptimizer/releases/download/v1.3/gltfpack-ubuntu.zip"
 
 jobs:
+  # Seconds, not minutes. Catches what would otherwise cost a full run.
+  static:
+    name: Static checks (syntax, JSON, workflow YAML)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PyYAML for workflow validation
+        run: python -m pip install --quiet pyyaml
+      - name: Check every script parses
+        run: python tools/validate/check_scripts.py
+
   blender:
     name: Blender, glTF export, previews, gltfpack
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: static
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with:
+          path: tools/vendor/${{ env.BLENDER_DIR }}
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
 
       - name: Fetch Blender ${{ env.BLENDER_VERSION }}
         run: |
           set -euo pipefail
           source tools/phase0/lib.sh
           mkdir -p tools/vendor artifacts/phase0
-          if [ ! -d "tools/vendor/${BLENDER_DIR}" ]; then
+          if [ ! -x "tools/vendor/${BLENDER_DIR}/blender" ]; then
             curl -fsSL -o tools/vendor/blender.tar.xz "$BLENDER_URL"
             curl -fsSL -o tools/vendor/blender.tar.xz.sha256 \
               "https://download.blender.org/release/Blender4.2/blender-${BLENDER_VERSION}.sha256"
@@ -59,7 +94,6 @@ jobs:
             tar -xJf tools/vendor/blender.tar.xz -C tools/vendor
           fi
           echo "RESULT blender_checksum exit=0" | tee -a "$LOG"
-          echo "RESULT blender_version version=${BLENDER_VERSION}" | tee -a "$LOG"
           echo "tools/vendor/${BLENDER_DIR}" > tools/vendor/.blender_path
 
       - name: Blender environment and glTF export probe
@@ -106,7 +140,7 @@ jobs:
             xvfb-run -a --server-args="-screen 0 1280x720x24" \
             "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_render.py
 
-      - name: gltfpack simplification and cleanup
+      - name: gltfpack simplification, with and without quantization
         continue-on-error: true
         run: |
           source tools/phase0/lib.sh
@@ -117,7 +151,7 @@ jobs:
             chmod +x tools/vendor/gltfpack/gltfpack || true
           fi
           # gltfpack -h exits non-zero, and GitHub's default shell is `bash -e`, so the call
-          # has to be guarded or it aborts the step before the simplification probe runs.
+          # has to be guarded or it aborts the step before the simplification probes run.
           probe="$(mktemp)"
           set +e
           ./tools/vendor/gltfpack/gltfpack -h >"$probe" 2>&1
@@ -126,9 +160,9 @@ jobs:
           cat "$probe" >>"$LOG"
           if grep -qi "usage" "$probe"; then code=0; fi
           echo "RESULT gltfpack_help exit=${code}" | tee -a "$LOG"
-          # Plain simplification only: no -cc (meshopt) and no -tc (KTX2) until Godot accepts them.
-          # Output is captured: gltfpack prints its statistics to stdout, and those numbers are
-          # the only way to tell whether the file it wrote actually contains geometry.
+          # Plain simplification only: no -cc (meshopt) and no -tc (KTX2) until Godot accepts
+          # them. Output is captured because gltfpack's statistics are the only way to tell
+          # whether the file it wrote actually contains geometry.
           set +e
           ./tools/vendor/gltfpack/gltfpack \
             -i artifacts/phase0/probe_sphere.glb \
@@ -147,16 +181,12 @@ jobs:
           cat artifacts/phase0/gltfpack_noq.txt >>"$LOG"
           echo "RESULT gltfpack_simplify exit=${simplify_code}" | tee -a "$LOG"
           echo "RESULT gltfpack_noq exit=${noq_code}" | tee -a "$LOG"
-          ls -l artifacts/phase0/probe_sphere*.glb >>"$LOG" 2>&1 || true
-
-      - name: Report sizes
-        run: |
-          source tools/phase0/lib.sh
-          du -ab artifacts/phase0 | sort -k1 -n | tail -20 >>"$LOG" 2>&1
 
       - name: Collect the log alongside the probe outputs
         if: always()
-        run: cp -f phase0_log.txt artifacts/phase0/phase0_log.txt
+        run: |
+          mkdir -p artifacts/phase0
+          cp -f phase0_log.txt artifacts/phase0/phase0_log.txt || true
 
       - name: Upload Phase 0 probe outputs
         if: always()
@@ -173,7 +203,7 @@ jobs:
     name: Godot headless import gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: blender
+    needs: [static, blender]
     # A late probe failing in the Blender job must not hide the import gate: the GLB it needs
     # is produced by an earlier step.
     if: ${{ !cancelled() }}
@@ -205,7 +235,7 @@ jobs:
           source tools/phase0/lib.sh
           GODOT="$PWD/tools/vendor/godot/godot"
           if [ ! -f artifacts/phase0/probe_sphere.glb ]; then
-            echo "RESULT godot_import exit=1 reason=blender_glb_missing" | tee -a "$LOG"
+            echo "RESULT godot_scene_plain ok=False reason=blender_glb_missing" | tee -a "$LOG"
             echo "The Blender job produced no probe_sphere.glb; its log says why."
             exit 1
           fi
@@ -243,7 +273,9 @@ jobs:
 
       - name: Collect the log
         if: always()
-        run: cp -f phase0_log.txt artifacts/phase0/phase0_log.txt
+        run: |
+          mkdir -p artifacts/phase0
+          cp -f phase0_log.txt artifacts/phase0/phase0_log.txt || true
 
       - name: Upload Phase 0 Godot log
         if: always()
@@ -257,9 +289,10 @@ jobs:
           if-no-files-found: warn
 
   tools:
-    name: MPFB2, MTree, Infinigen, glTF-Transform, Poly Haven
+    name: MPFB2, MTree, glTF-Transform, Poly Haven, Quaternius
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
+    needs: static
     steps:
       - uses: actions/checkout@v4
 
@@ -271,43 +304,29 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Fetch Blender ${{ env.BLENDER_VERSION }}
+      - name: Cache Blender 4.2
+        uses: actions/cache@v4
+        with:
+          path: tools/vendor/${{ env.BLENDER_DIR }}
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+
+      - name: Cache Blender 4.5
+        uses: actions/cache@v4
+        with:
+          path: tools/vendor/${{ env.BLENDER45_DIR }}
+          key: blender-${{ env.BLENDER45_VERSION }}-linux-x64
+
+      - name: Fetch Blender 4.2 and 4.5
         run: |
           set -euo pipefail
           source tools/phase0/lib.sh
           mkdir -p tools/vendor artifacts/phase0
-          if [ ! -d "tools/vendor/${BLENDER_DIR}" ]; then
+          if [ ! -x "tools/vendor/${BLENDER_DIR}/blender" ]; then
             curl -fsSL -o tools/vendor/blender.tar.xz "$BLENDER_URL"
             tar -xJf tools/vendor/blender.tar.xz -C tools/vendor
           fi
           echo "tools/vendor/${BLENDER_DIR}" > tools/vendor/.blender_path
-
-      - name: MPFB2 clone, install, build and export a human
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          source tools/phase0/lib.sh
-          BLENDER_ROOT="$(cat tools/vendor/.blender_path)"
-          BLENDER="${BLENDER_ROOT}/blender"
-          if [ ! -d tools/vendor/mpfb2 ]; then
-            git clone --depth 1 https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
-          fi
-          echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
-          # Install under the add-on's own package name: mpfb2's package is src/mpfb, and
-          # Blender imports an add-on by that name, not by the repository's name.
-          bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
-          run_capture mpfb2 "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
-          ls -la artifacts/phase0 >>"$LOG" 2>&1
-
-      - name: MTree clone, install as extension, and generate a tree
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          source tools/phase0/lib.sh
-          # Modular Tree declares blender_version_min = 4.5.0, so it cannot register in 4.2.
-          # Fetch the Blender 4.5 LTS the brief permits for this job.
-          mkdir -p tools/vendor
-          if [ ! -d "tools/vendor/${BLENDER45_DIR}" ]; then
+          if [ ! -x "tools/vendor/${BLENDER45_DIR}/blender" ]; then
             curl -fsSL -o tools/vendor/blender45.tar.xz "$BLENDER45_URL"
             curl -fsSL -o tools/vendor/blender45.tar.xz.sha256 \
               "https://download.blender.org/release/Blender4.5/blender-${BLENDER45_VERSION}.sha256"
@@ -318,12 +337,33 @@ jobs:
             tar -xJf tools/vendor/blender45.tar.xz -C tools/vendor
           fi
           echo "RESULT blender45_checksum exit=0 version=${BLENDER45_VERSION}" | tee -a "$LOG"
+
+      - name: MPFB2 clone, register, build and export a human
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          BLENDER_ROOT="$(cat tools/vendor/.blender_path)"
+          BLENDER="${BLENDER_ROOT}/blender"
+          if [ ! -d tools/vendor/mpfb2 ]; then
+            git clone --depth 1 https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
+          fi
+          echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
+          # Install under the add-on's own package name: MPFB2's package is src/mpfb, and
+          # Blender imports an add-on by that name, not by the repository's name.
+          bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
+          run_capture mpfb2 "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
+
+      - name: MTree clone, install as extension, and generate a tree
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
           BLENDER45="$(pwd)/tools/vendor/${BLENDER45_DIR}/blender"
           if [ ! -d tools/vendor/modular_tree ]; then
             git clone --depth 1 https://github.com/GoodPie/modular_tree tools/vendor/modular_tree
           fi
           echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
-          # Install it as an extension, which is what a blender_manifest.toml repository is.
           # install-file takes a zip whose single top-level folder holds the manifest. python3
           # builds it because that is guaranteed present, unlike the zip utility.
           rm -f tools/vendor/modular_tree.zip
@@ -350,8 +390,6 @@ jobs:
           rm -f "$LOG.tmp"
           echo "RESULT mtree_extension_install exit=${ext_code}" | tee -a "$LOG"
           set -e
-          # Judge on the operator namespace having entries, never on hasattr(): bpy.ops
-          # resolves names lazily, so hasattr(bpy.ops, "anything") is always True.
           run_capture mtree "$BLENDER45" -b --factory-startup -P tools/phase0/blender_probe_mtree.py
 
       - name: glTF-Transform CLI
@@ -377,9 +415,9 @@ jobs:
         run: |
           set -uo pipefail
           source tools/phase0/lib.sh
-          # The free Standard ZIPs are downloaded manually by the owner and uploaded to the
-          # Release "third-party-quaternius", outside git. CI fetches them from there and
-          # reports what is really inside: a measured clip count, never a promised one.
+          # The free Standard ZIPs are uploaded by the owner to the Release
+          # "third-party-quaternius", outside git. CI fetches them and reports what is really
+          # inside: a measured clip count, never a promised one.
           if ! gh release view third-party-quaternius >/dev/null 2>&1; then
             echo "RESULT quaternius_packs exit=1 reason=release third-party-quaternius not found" | tee -a "$LOG"
             exit 0
@@ -387,8 +425,6 @@ jobs:
           mkdir -p artifacts/phase0/quaternius
           gh release download third-party-quaternius --dir artifacts/phase0/quaternius --clobber >>"$LOG" 2>&1
           echo "RESULT quaternius_download exit=$?" | tee -a "$LOG"
-          # Report the archive itself, and what is inside it. An earlier run saw 10 files and
-          # only 4 "clips" because it walked the archive beside its own extracted copy.
           find artifacts/phase0/quaternius -maxdepth 1 -type f -printf '%f %s\n' | sort >>"$LOG" 2>&1
           unzip -l artifacts/phase0/quaternius/*.zip >>"$LOG" 2>&1 || true
           python3 tools/phase0/quaternius_inventory.py \
@@ -396,8 +432,11 @@ jobs:
             --out artifacts/phase0/quaternius_coverage.json | tee -a "$LOG"
 
       - name: Infinigen clone and install
+        # Only when asked. This probe has passed four times and costs about ten minutes, which
+        # was the single largest consumer of Phase 0 runner time.
+        if: ${{ inputs.run_infinigen }}
         continue-on-error: true
-        timeout-minutes: 60
+        timeout-minutes: 45
         env:
           INFINIGEN_MINIMAL_INSTALL: "False"
           INFINIGEN_INSTALL_TERRAIN: "True"
@@ -434,7 +473,7 @@ jobs:
   report:
     name: Collect tool evaluation report
     runs-on: ubuntu-latest
-    needs: [blender, godot, tools]
+    needs: [static, blender, godot, tools]
     if: always()
     steps:
       - uses: actions/checkout@v4
