@@ -65,6 +65,12 @@ happens when it is broken, because a rule with no consequence is a comment.
 17. **A mapping written from a convention is a guess until it is diffed against the data.** The
     retarget map was written from Mixamo-style names and is now diffed against the pack's real
     skin joints on every run, as a required probe.
+18. **A third-party action is referenced by commit SHA, never by tag.** A tag is mutable, so `@v4`
+    is code nobody reviewed running with this repository's token. `check_scripts.py` fails on a
+    bare tag.
+19. **A green row must not contain an error.** A probe that falls back to a working path used to
+    report the failed first attempt's traceback in a PASS row, so `ModuleNotFoundError` appeared
+    next to PASS. Detail fields are cleared when they no longer apply.
 
 ## Not adopted, with reasons
 
@@ -75,16 +81,12 @@ contradicts the owner's one-run-at-a-time rule. **This is an owner decision**, n
 one: either the rule relaxes, or the queue can drop and we accept it. Until the owner decides,
 the rule is enforced and this consequence is documented in `README.md`.
 
-**Pinning GitHub Actions to commit SHAs.** Correct in principle. Deferred because it is 14 pins
-across three workflows with no behavioural change, and the higher-value work is the asset
-pipeline. Recorded in `tools/TOOLS.md` under outstanding pins.
-
 **Sparse checkout.** Deferred because the asset directory layout does not exist yet, so any
 `sparse-checkout` pattern today would be a guess that silently omits a directory later — and a
 checkout that omits files makes a validator pass by finding nothing, which is the failure mode
 this repository keeps having to remove. The trigger is the first committed binary: at that point
 the layout is known and the pattern can be written from it. Until then every job checks out the
-whole tree, which is currently about 260 KB.
+whole tree, which is currently about 0.4 MB.
 
 ## Deferred, and tracked
 
@@ -100,6 +102,5 @@ These are real and unfixed. They are listed so they are not rediscovered as surp
 | Mobile renderer verification | owner's decision: a real-device check, not a CI one. The CI shader gate compiles under Compatibility |
 | Blender 4.2 LTS end of life | 4.2 is pinned because MPFB2 requires ≥ 4.2. Revisit when MPFB2 supports 4.5 and drop to one Blender for every job |
 | Play Asset Delivery | only relevant if published to Google Play, which is not planned yet |
-| Actions pinned to commit SHAs | see above |
 | Sparse checkout | see above; trigger is the first committed binary |
 | 1,110 assets with `source custom` and no generator | the largest open question in the manifest: `tools/generators/` does not exist, and Phase 0 tested no tool that produces them. Phase 2 onward |

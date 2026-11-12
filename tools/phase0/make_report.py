@@ -72,6 +72,7 @@ DECISIONS = {
     "addon_install_mpfb2": ("MPFB2 install", "which package name and directory MPFB2 landed in"),
     "addon_install_modular_tree": ("MTree install", "the layout Modular Tree uses"),
     "mtree_register": ("Modular Tree", "procedural trees for the rainforest species"),
+    "mtree_download": ("MTree release download", "the prebuilt release zip, checksum-verified"),
     "mtree": ("Modular Tree", "procedural trees for the rainforest species"),
     "mtree_blender": ("MTree Blender version", "the Blender version the extension actually needs"),
     "mtree_modules": ("MTree modules", "which add-on modules Blender can see"),

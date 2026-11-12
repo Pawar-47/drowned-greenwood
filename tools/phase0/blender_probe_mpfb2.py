@@ -54,10 +54,15 @@ def body():
     module = None
     import_error = ""
     imported_as = ""
+    # The bare name `mpfb` only works for a legacy add-on. An extension is importable only under
+    # its full `bl_ext.<repo>.<id>` name, so the first attempt failing is the expected path, not
+    # an error. Reporting that failure alongside a PASS put a ModuleNotFoundError traceback in a
+    # green row, which reads as a defect that is not there.
     for name in ["mpfb"] + candidates:
         try:
             module = __import__(name, fromlist=["*"])
             imported_as = name
+            import_error = ""
             break
         except Exception:  # noqa: BLE001
             import_error = traceback.format_exc()
@@ -68,7 +73,10 @@ def body():
         imported_as=imported_as,
         module_file=getattr(module, "__file__", ""),
         version=str(getattr(module, "VERSION", "")),
-        error=short(import_error),
+        # Only meaningful when the import actually failed; on success it is empty by design.
+        error=short(import_error) if module is None else "",
+        note="" if module is None else "imported under its extension name; the bare 'mpfb' "
+        "name only exists for a legacy add-on install",
     )
     if module is None:
         return 1

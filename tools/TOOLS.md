@@ -28,24 +28,29 @@ facts is a guarantee that one of them is wrong.
 | Quaternius | release `third-party-quaternius`, sha256 `cc73fc4e…` | **SHA-256 verified in CI** on every downloaded archive | measured: 43 clips; rig is **Unreal-mannequin** named, confirmed by measurement |
 | Modular Tree | release `5.6.0`, `modular_tree-5.6.0-linux_x64.zip`, sha256 `698cf57c…` | **SHA-256 verified in CI**; the release zip carries the compiled `m_tree` module | working — generates a tree Godot loads (1,840,066 tris, needs decimation) |
 | MPFB2 | commit `d0a32e57a7f915cb2f2b95410e2117648c7bbb7e` (tag `v2.0.18`) | **commit fetched and verified in CI**; a tag is movable, so the commit is the pin | working — 36,972 tris / 137 bones, both over budget |
-| GitHub Actions | `@v4` / `@v5` | **major tags, not commit SHAs** | pin outstanding |
+| GitHub Actions | commit SHAs | **every action pinned to a 40-hex SHA**, version kept in a trailing comment; `check_scripts.py` fails on a tag | working |
 
 ## Outstanding pins
 
-An unpinned dependency can change a generated asset without the repository changing.
+**There are none.** Every tool the pipeline runs is pinned, and every pin is checked by something
+on every run:
 
-| Item | State | Why it is not done |
-|---|---|---|
-| GitHub Actions | major tags | 14 pins across three workflows; needs each action's commit SHA resolved. No behavioural change, so it is queued behind the asset pipeline. |
+| What | How it is checked |
+|---|---|
+| Blender 4.2 and 4.5 | SHA-256 of the archive, on every job, cache hit or miss |
+| Godot, gltfpack, Modular Tree, Quaternius | SHA-256 against the vendor's recorded digest |
+| MPFB2, Infinigen | exact commit fetched, and the checkout's HEAD compared to it |
+| glTF-Transform, git-filter-repo, Python | exact version in the install command |
+| GitHub Actions | 40-hex commit SHA, enforced by `check_scripts.py` |
 
-Everything else is pinned and verified. Godot and gltfpack were listed here as unpinned for a
-while; both are now checked against the digest GitHub records for the release asset, and
-gltfpack's value was independently confirmed by a CI measurement that matched the vendor digest
-exactly.
+This section used to list GitHub Actions as outstanding — "14 pins across three workflows, no
+behavioural change". That reasoning was wrong in one respect: a tag is mutable, so `@v4` is code
+nobody reviewed, running with this repository's token. The SHAs are resolved now and the static
+gate refuses a tag, so the list cannot quietly regrow.
 
-**The rule these follow:** an unverified pin must never read as a verified one. That is why an
-empty `GODOT_SHA256` or `GLTFPACK_SHA256` makes the probe report `ok=False reason=unpinned` and
-write the measured hash into the job summary, instead of silently passing as it did before.
+**The rule these follow:** an unverified pin must never read as a verified one. An empty
+`GODOT_SHA256` or `GLTFPACK_SHA256` makes the probe report `ok=False reason=unpinned` and write
+the measured hash into the job summary, instead of silently passing as it did before.
 
 ## Why Blender 4.2 LTS and not a newer major
 

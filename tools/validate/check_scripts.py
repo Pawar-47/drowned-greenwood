@@ -149,6 +149,33 @@ def check_run_block(step, path, job_name):
     return None
 
 
+# A third-party action must be referenced by a 40-character commit SHA, not by a tag.
+#
+# A tag is mutable: `@v4` is a pointer its owner can repoint at different code, and this
+# repository would then run code that nobody reviewed and nothing recorded. A commit SHA is
+# immutable, so the action that runs is the one that was checked. The version is kept in a
+# trailing comment so a human can still see what it is, and so Dependabot can bump it.
+ACTION_SHA = re.compile(r"^[^@]+@[0-9a-f]{40}$")
+ACTIONS_PINNED = []
+
+
+def check_action_pin(step, path, job_name):
+    uses = step.get("uses")
+    if not isinstance(uses, str) or not uses.strip():
+        return None
+    target = uses.strip()
+    # Local actions (`./.github/actions/x`) and Docker images are not tag-pinned actions.
+    if target.startswith("./") or target.startswith("docker://"):
+        return None
+    if ACTION_SHA.match(target.split()[0]):
+        ACTIONS_PINNED.append(target.split()[0])
+        return None
+    return (
+        "%s: job %s: %r is not pinned to a commit SHA; a tag can be repointed at different "
+        "code. Use <owner>/<repo>@<40-hex-sha> # <tag>" % (path, job_name, target)
+    )
+
+
 def no_duplicate_keys(pairs):
     """Reject a JSON object that repeats a key.
 
@@ -215,6 +242,9 @@ def check_workflow(path):
                     str(step)[:60],
                 )
             error = check_run_block(step, path, job_name)
+            if error:
+                return error
+            error = check_action_pin(step, path, job_name)
             if error:
                 return error
 
@@ -382,7 +412,8 @@ def main():
             problems.append(error)
 
     print(
-        "checked: %d python, %d shell, %d json, %d shader, %d workflow yaml, %d run block"
+        "checked: %d python, %d shell, %d json, %d shader, %d workflow yaml, %d run block, "
+        "%d pinned action"
         % (
             counts["python"],
             counts["shell"],
@@ -390,6 +421,7 @@ def main():
             counts["shader"],
             counts["yaml"],
             len(RUN_BLOCKS_CHECKED),
+            len(ACTIONS_PINNED),
         )
     )
 
@@ -414,6 +446,11 @@ def main():
             "%d of %d workflows do not declare the %r concurrency group with "
             "cancel-in-progress: false"
             % (counts["yaml"] - len(SERIAL_GROUPS_SEEN), counts["yaml"], SERIAL_GROUP)
+        )
+
+    if counts["yaml"] and not ACTIONS_PINNED:
+        problems.append(
+            "no workflow action was SHA-pinned; the action-pin check is not running"
         )
 
     problems.extend(check_repo_hygiene())
