@@ -58,11 +58,25 @@ def main():
             break
 
     names = sorted(name for name in dir(bpy.ops.m_tree))
+    # The extension registers (Blender reports it enabled) yet `m_tree` has no operators, so
+    # the namespace it actually uses must be something else. Scan every operator namespace for
+    # anything tree-shaped rather than assuming the name.
+    tree_namespaces = {}
+    for namespace in dir(bpy.ops):
+        if "tree" in namespace.lower() or "mtree" in namespace.lower():
+            try:
+                tree_namespaces[namespace] = sorted(n for n in dir(getattr(bpy.ops, namespace)))[:20]
+            except Exception:  # noqa: BLE001
+                tree_namespaces[namespace] = ["<unreadable>"]
+    if not names and tree_namespaces:
+        first = next(iter(tree_namespaces.values()))
+        names = first
     result(
         step="mtree_operators",
         ok=len(names) > 0,
         count=len(names),
         names=names[:40],
+        namespaces=tree_namespaces,
         attempts=errors[:6],
     )
 

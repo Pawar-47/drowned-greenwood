@@ -24,6 +24,21 @@ def main():
     outdir = os.environ.get("PROBE_OUT", "/tmp/phase0")
     os.makedirs(outdir, exist_ok=True)
 
+    # Blender's own diagnostics put the user config addons directory on sys.path but not the
+    # Blender installation's addons directory, which is where an earlier install went. Add
+    # every plausible addons directory before asking Blender to enable anything, so a
+    # correctly installed add-on cannot fail merely because Blender did not look there.
+    candidates = [
+        os.path.join(os.path.expanduser("~"), ".config", "blender", "4.2", "scripts", "addons")
+    ]
+    for script_path in bpy.utils.script_paths():
+        candidates.append(os.path.join(script_path, "addons"))
+    added = []
+    for path in candidates:
+        if os.path.isdir(path) and path not in sys.path:
+            sys.path.insert(0, path)
+            added.append(path)
+
     try:
         addon_utils.enable("mpfb", default_set=True, persistent=False)
         enabled = True
@@ -31,7 +46,7 @@ def main():
     except Exception as exc:  # noqa: BLE001 - the failure itself is the finding
         enabled = False
         error = str(exc)[:300]
-    result(step="mpfb_enable", ok=enabled, error=error)
+    result(step="mpfb_enable", ok=enabled, error=error, sys_path_added=added)
 
     if not enabled:
         return 1
@@ -53,6 +68,7 @@ def main():
         step="mpfb_import",
         ok=not import_error,
         module_file=module_file,
+        sys_path_added=added,
         error=import_error.replace("\n", " | ")[:500],
     )
 

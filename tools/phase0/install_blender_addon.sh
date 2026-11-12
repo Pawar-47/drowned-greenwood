@@ -29,13 +29,18 @@ emit() {
 }
 
 if [ -n "$blender_root" ] && [ -d "$blender_root" ]; then
-  addons_dir="$blender_root/4.2/scripts/addons"
-  where="blender_install"
+  install_dir="$blender_root/4.2/scripts/addons"
 else
-  addons_dir="$HOME/.config/blender/4.2/scripts/addons"
-  where="user_config"
+  install_dir=""
 fi
-mkdir -p "$addons_dir"
+# The user config addons directory is the one Blender actually scans for a non-bundled
+# add-on: its diagnostics reported `.../addons/modules` on sys.path while the Blender
+# installation's own addons directory was absent. Installing only into the installation is
+# why MPFB2 kept reporting ModuleNotFoundError with all 551 files sitting on disk.
+user_dir="$HOME/.config/blender/4.2/scripts/addons"
+mkdir -p "$user_dir"
+where="user_config"
+[ -n "$install_dir" ] && mkdir -p "$install_dir"
 
 if [ ! -d "$repo" ]; then
   emit "\"ok\": false, \"reason\": \"repo_missing\", \"path\": \"$repo\""
@@ -55,12 +60,18 @@ done < <(find "$repo" -maxdepth 5 -name "__init__.py" -not -path "*/.git/*" | aw
 
 if [ -n "$found" ]; then
   addon_id="$(basename "$found")"
-  echo "addon_install ${label}: legacy add-on at ${found} -> ${addons_dir}/${addon_id} (${where})"
-  rm -rf "${addons_dir:?}/${addon_id}"
-  cp -r "$found" "${addons_dir}/${addon_id}"
-  count=$(find "${addons_dir}/${addon_id}" -name "*.py" | wc -l)
-  ls "${addons_dir}/${addon_id}" | head -10
-  emit "\"ok\": true, \"kind\": \"legacy_addon\", \"addon_id\": \"${addon_id}\", \"location\": \"${where}\", \"py_files\": ${count}, \"addons_dir\": \"${addons_dir}\""
+  echo "addon_install ${label}: legacy add-on at ${found} -> ${user_dir}/${addon_id} (${where})"
+  rm -rf "${user_dir:?}/${addon_id}"
+  cp -r "$found" "${user_dir}/${addon_id}"
+  # A second copy in the Blender installation covers the other layout, so whichever path this
+  # Blender version scans, the package is there.
+  if [ -n "$install_dir" ]; then
+    rm -rf "${install_dir:?}/${addon_id}"
+    cp -r "$found" "${install_dir}/${addon_id}"
+  fi
+  count=$(find "${user_dir}/${addon_id}" -name "*.py" | wc -l)
+  ls "${user_dir}/${addon_id}" | head -10
+  emit "\"ok\": true, \"kind\": \"legacy_addon\", \"addon_id\": \"${addon_id}\", \"location\": \"${where}\", \"py_files\": ${count}, \"addons_dir\": \"${user_dir}\""
   exit 0
 fi
 
