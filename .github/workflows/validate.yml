@@ -135,13 +135,17 @@ jobs:
           # simply wrong. These bounds are the ones that would have caught it.
           #
           # Surface ids: 4 = wet_stone (bare rock), 3 = moss, 12 = grass, 8/9 = water.
+          #
+          # These floors are deliberately NOT set at the values the generator happens to produce.
+          # Round 2 of the terrain produced 40 % rock and the floor was 40 %, so the check passed
+          # while doing no work at all — a threshold set at the observed value is decoration.
           rock = percent.get("4", 0.0)
           green = percent.get("3", 0.0) + percent.get("12", 0.0)
-          if rock > 40.0:
+          if rock > 30.0:
               raise SystemExit(
                   "%.1f%% of the world is bare rock: this is a forest valley, not a mountain" % rock
               )
-          if green < 15.0:
+          if green < 30.0:
               raise SystemExit(
                   "only %.1f%% moss and grass: the forest floor did not form" % green
               )

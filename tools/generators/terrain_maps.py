@@ -94,17 +94,26 @@ DEEP_WATER_M = 22.0
 
 # How the height field is composed, in normalised units. The floor sits at 0.22 (44 m) and the
 # noise moves it by 0.14 (28 m), so the valley is 44..72 m — comfortably above the waterline, and
-# the bog and river are carved below it deliberately. The rim contributes the remaining 0.62
-# (124 m), concentrated at the edge by RIM_POWER.
+# the bog and river are carved below it deliberately. The rim contributes the remaining 0.50
+# (100 m), concentrated at the edge by RIM_POWER.
 #
-# These are tuned against measured output, not guessed. The rim gradient is
-# RIM_AMPLITUDE · RIM_POWER · r^(RIM_POWER-1) · MAX_HEIGHT_M / 500, so at r=0.86 it reaches the
-# rock threshold and rock starts there — about a quarter of the map, at the boundary, which is
-# where a ridge belongs.
+# These are tuned against measured output, in two rounds, and both numbers are recorded because
+# the first two attempts were wrong in an instructive way:
+#
+#   round 1: 600 m relief, noise blended 40/60 with the rim  -> 82 % bare rock
+#   round 2: 200 m relief, additive, RIM 0.62 / POWER 3.0     -> 40 % bare rock
+#
+# Round 2 was still a mountain, and 40 % was exactly the quality floor, which means the floor was
+# doing no work. The cause is geometric: the four corners of a square map all clamp to radius 1,
+# so any rim steep enough to be a cliff at r=0.9 is a sheer wall across 21 % of the map.
+#
+# The rim gradient is RIM_AMPLITUDE · RIM_POWER · r^(RIM_POWER-1) · MAX_HEIGHT_M / 500. At
+# 0.50 / 2.6 that is 0.52 · r^1.6, which peaks just BELOW the 0.55 rock threshold, so rock appears
+# only where the noise adds to it. A ridge you can walk up, rather than a wall you cannot.
 FLOOR = 0.22
 NOISE_AMPLITUDE = 0.14
-RIM_AMPLITUDE = 0.62
-RIM_POWER = 3.0
+RIM_AMPLITUDE = 0.50
+RIM_POWER = 2.6
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
