@@ -20,6 +20,13 @@ repo="${1:?repo dir required}"
 label="${2:?label required}"
 blender_root="${3:-}"
 
+# RESULT lines are JSON so tools/phase0/make_report.py can read them. A key=value line is
+# silently dropped by the report parser, which is why an earlier failure of this script was
+# invisible.
+emit() {
+  printf 'RESULT {"step": "addon_install", "label": "%s", %s}\n' "$label" "$1"
+}
+
 if [ -n "$blender_root" ] && [ -d "$blender_root" ]; then
   addons_dir="$blender_root/4.2/scripts/addons"
   where="blender_install"
@@ -30,12 +37,13 @@ fi
 mkdir -p "$addons_dir"
 
 if [ ! -d "$repo" ]; then
-  echo "RESULT addon_install label=${label} ok=False reason=repo_missing path=${repo}"
+  emit "\"ok\": false, \"reason\": \"repo_missing\", \"path\": \"$repo\""
   exit 0
 fi
 
-# A legacy add-on is a directory whose __init__.py has a bl_info block. Prefer the shallowest
-# match so a repository's own package wins over anything vendored deeper.
+# A legacy add-on is a directory whose __init__.py carries a bl_info block (MPFB2 names its
+# own copy `fake_bl_info`, which this still matches). Prefer the shallowest match so a
+# repository's package wins over anything vendored deeper.
 found=""
 while IFS= read -r candidate; do
   if grep -q "bl_info" "$candidate" 2>/dev/null; then
@@ -49,24 +57,25 @@ if [ -n "$found" ]; then
   echo "addon_install ${label}: legacy add-on at ${found} -> ${addons_dir}/${addon_id} (${where})"
   rm -rf "${addons_dir:?}/${addon_id}"
   cp -r "$found" "${addons_dir}/${addon_id}"
+  count=$(find "${addons_dir}/${addon_id}" -name "*.py" | wc -l)
   ls "${addons_dir}/${addon_id}" | head -10
-  echo "RESULT addon_install label=${label} ok=True kind=legacy_addon addon_id=${addon_id} location=${where}"
+  emit "\"ok\": true, \"kind\": \"legacy_addon\", \"addon_id\": \"${addon_id}\", \"location\": \"${where}\", \"py_files\": ${count}, \"addons_dir\": \"${addons_dir}\""
   exit 0
 fi
 
 # A Blender 4.2+ extension cannot be registered by copying files into scripts/addons. It has
 # to be installed as an extension, or run under a Blender version its manifest allows. Report
-# the declared minimum so the report can say which, instead of guessing.
+# the declared minimum so the report says which, instead of guessing.
 manifest="$(find "$repo" -maxdepth 3 -name "blender_manifest.toml" -not -path "*/.git/*" | head -1)"
 if [ -n "$manifest" ]; then
   echo "addon_install ${label}: extension manifest at ${manifest}"
   grep -E '^(id|name|version|blender_version_min)' "$manifest" || true
   min_version="$(grep -E '^blender_version_min' "$manifest" | sed -E 's/.*"(.*)".*/\1/')"
-  echo "RESULT addon_install label=${label} ok=False kind=extension source=${manifest} blender_version_min=${min_version:-unknown}"
+  emit "\"ok\": false, \"kind\": \"extension\", \"source\": \"${manifest}\", \"blender_version_min\": \"${min_version:-unknown}\""
   exit 0
 fi
 
 echo "addon_install ${label}: no bl_info and no blender_manifest.toml under ${repo}"
 find "$repo" -maxdepth 2 -name "*.py" -not -path "*/.git/*" | head -20
-echo "RESULT addon_install label=${label} ok=False kind=unknown reason=no_manifest_and_no_bl_info"
+emit "\"ok\": false, \"kind\": \"unknown\", \"reason\": \"no_manifest_and_no_bl_info\""
 exit 0

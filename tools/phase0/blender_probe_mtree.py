@@ -1,13 +1,13 @@
-"""Phase 0 probe: does Modular Tree register in this Blender?
+"""Phase 0 probe: does Modular Tree register in this Blender, and can it make and export a tree?
 
-Modular Tree is a Blender 4.2+ **extension** whose manifest declares
-`blender_version_min = "4.5.0"`, so it cannot register in Blender 4.2 at all. The workflow
-therefore runs this probe under a Blender 4.5 LTS install, which the brief allows
+Modular Tree is a Blender 4.2+ **extension** (`type = "add-on"`, id `modular_tree`) whose
+manifest declares `blender_version_min = "4.5.0"`, so it cannot register in Blender 4.2. The
+workflow installs it as an extension under a Blender 4.5 LTS install, which the brief allows
 ("a separate Blender version per job").
 
-`hasattr(bpy.ops, "anything")` is always True because `bpy.ops` resolves names lazily, so the
-earlier probe reported a pass for an add-on that was not loaded. The real test is whether the
-namespace contains any operator, which is what `dir()` reports.
+`hasattr(bpy.ops, "anything")` is always True because `bpy.ops` resolves names lazily, so an
+earlier probe reported a pass for an add-on that was never loaded. This one judges on
+`dir(bpy.ops.m_tree)` having entries, and discovers the module name rather than assuming it.
 
 Run:
     blender -b --factory-startup -P tools/phase0/blender_probe_mtree.py
@@ -26,40 +26,76 @@ def result(**fields):
     print("RESULT " + json.dumps(fields, sort_keys=True))
 
 
+def module_candidates():
+    """Every add-on or extension module whose name mentions a tree."""
+    names = []
+    for module in addon_utils.modules():
+        name = module.__name__
+        if "tree" in name.lower():
+            names.append(name)
+    return names
+
+
+def try_enable(name):
+    try:
+        addon_utils.enable(name, default_set=True, persistent=False)
+        return ""
+    except Exception:  # noqa: BLE001 - the failure itself is the finding
+        return traceback.format_exc()[-600:].replace("\n", " | ")
+
+
 def main():
     result(step="mtree_blender", ok=True, blender=bpy.app.version_string)
 
-    enabled = False
-    error = ""
-    try:
-        addon_utils.enable("modular_tree", default_set=True, persistent=False)
-        enabled = True
-    except Exception:  # noqa: BLE001 - the failure itself is the finding
-        error = traceback.format_exc()[-600:].replace("\n", " | ")
-    result(step="mtree_enable", ok=enabled, error=error[:500])
+    candidates = module_candidates()
+    result(step="mtree_modules", ok=True, candidates=candidates[:10])
+
+    errors = []
+    for name in ["modular_tree"] + [c for c in candidates if c != "modular_tree"]:
+        error = try_enable(name)
+        errors.append("%s: %s" % (name, error[:200] if error else "enabled"))
+        if not error and len(dir(bpy.ops.m_tree)) > 0:
+            break
 
     names = sorted(name for name in dir(bpy.ops.m_tree))
-    result(step="mtree_operators", ok=len(names) > 0, count=len(names), names=names[:40])
+    result(
+        step="mtree_operators",
+        ok=len(names) > 0,
+        count=len(names),
+        names=names[:40],
+        attempts=errors[:6],
+    )
 
     if not names:
-        # Report what Blender could see, so a failure names its own cause next time.
         result(
             step="mtree_diagnostics",
             ok=False,
-            addon_modules=[m.__name__ for m in addon_utils.modules() if "tree" in m.__name__],
             script_paths=list(bpy.utils.script_paths()),
+            extensions_repo=sorted(os.listdir(bpy.utils.user_resource("EXTENSIONS", create=True)))
+            if os.path.isdir(bpy.utils.user_resource("EXTENSIONS", create=True))
+            else [],
         )
         return 1
 
+    # Generate a tree with the operator the namespace actually exposes.
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    generator = None
+    for candidate in ("add_tree", "add_tree_operator", "generate_tree"):
+        if hasattr(bpy.ops.m_tree, candidate):
+            generator = candidate
+            break
+    if generator is None:
+        result(step="mtree_add_tree", ok=False, reason="no_generator_operator", names=names[:40])
+        return 1
+
     created = False
     create_error = ""
     try:
-        bpy.ops.m_tree.add_tree()
+        getattr(bpy.ops.m_tree, generator)()
         created = True
     except Exception:  # noqa: BLE001
         create_error = traceback.format_exc()[-400:].replace("\n", " | ")
-    result(step="mtree_add_tree", ok=created, error=create_error[:400])
+    result(step="mtree_add_tree", ok=created, operator=generator, error=create_error[:400])
 
     if not created:
         return 1
@@ -69,6 +105,7 @@ def main():
     for mesh in meshes:
         mesh.data.calc_loop_triangles()
         tris += len(mesh.data.loop_triangles)
+
     outdir = os.environ.get("PROBE_OUT", "/tmp/phase0")
     os.makedirs(outdir, exist_ok=True)
     glb = os.path.join(outdir, "probe_tree.glb")
@@ -78,6 +115,7 @@ def main():
         exported = os.path.exists(glb)
     except Exception:  # noqa: BLE001
         pass
+
     result(
         step="mtree_export",
         ok=exported and tris > 0,

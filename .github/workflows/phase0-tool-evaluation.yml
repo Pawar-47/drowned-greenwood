@@ -324,10 +324,27 @@ jobs:
           fi
           echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
           # Install it as an extension, which is what a blender_manifest.toml repository is.
+          # install-file takes a zip whose single top-level folder holds the manifest. python3
+          # builds it because that is guaranteed present, unlike the zip utility.
+          rm -f tools/vendor/modular_tree.zip
+          python3 - <<'PY'
+          import os
+          import zipfile
+
+          source = "tools/vendor/modular_tree"
+          target = "tools/vendor/modular_tree.zip"
+          with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+              for root, dirs, files in os.walk(source):
+                  dirs[:] = [d for d in dirs if d != ".git"]
+                  for name in files:
+                      path = os.path.join(root, name)
+                      archive.write(path, os.path.relpath(path, "tools/vendor"))
+          print("zipped %s -> %s (%d bytes)" % (source, target, os.path.getsize(target)))
+          PY
           set +e
           "$BLENDER45" -b --factory-startup \
             --command extension install-file -r user_default --enable \
-            "tools/vendor/modular_tree" >"$LOG.tmp" 2>&1
+            "tools/vendor/modular_tree.zip" >"$LOG.tmp" 2>&1
           ext_code=$?
           cat "$LOG.tmp" >>"$LOG"
           rm -f "$LOG.tmp"

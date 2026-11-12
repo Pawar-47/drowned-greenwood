@@ -65,6 +65,26 @@ def main():
         names=names[:60],
     )
 
+    # When the module cannot be imported, report where Blender was actually looking. A bare
+    # ModuleNotFoundError says the path is wrong but not which path, and guessing at that has
+    # already cost two runs.
+    if import_error:
+        discovered = [m.__name__ for m in addon_utils.modules() if "mpfb" in m.__name__.lower()]
+        script_paths = [p for p in bpy.utils.script_paths() if "addons" in p or "scripts" in p]
+        addon_dirs = []
+        for path in script_paths:
+            if os.path.isdir(path):
+                addon_dirs.extend(sorted(os.listdir(path))[:20])
+        result(
+            step="mpfb_diagnostics",
+            ok=False,
+            discovered_modules=discovered,
+            script_paths=script_paths,
+            installed_addons=addon_dirs[:40],
+            sys_path_addons=[p for p in sys.path if "addons" in p],
+        )
+        return 1
+
     bpy.ops.wm.read_factory_settings(use_empty=True)
     created = False
     create_error = ""
