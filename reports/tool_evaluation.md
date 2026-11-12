@@ -24,8 +24,8 @@ and both defects have since been addressed:
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list, file list, 1k download |
 | **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 1 |
-| **MPFB2** | **USE for meshes** | builds and exports a human that Godot loads (`tris=36972`); **no armature**, and over the triangle budget |
-| **Modular Tree** | **USE — prebuilt release** | registers 9 operators; installed from the release zip because the source ships only C++ |
+| **MPFB2** | **USE for meshes** | builds and exports a human that Godot loads (`meshes=1, tris=36972`); **no armature** yet, and over the 12k–18k budget |
+| **Modular Tree** | **USE — verified end to end** | generates a tree and Godot loads it: `meshes=2, surfaces=2, materials=2, tris=35504`. Installed from the prebuilt release because the source ships only C++ |
 | Quaternius packs | **MEASURED** | **43 clips, 16 of 41 families covered.** 25 families missing, including every melee weapon, skinning, butchering and the bow |
 
 ## Withdrawn claims
@@ -75,6 +75,16 @@ now gets installed.
 **What is still unproven:** that `quick_generate` produces a mesh. Registration is measured;
 generation is gated (`mtree_generate`, `mtree_export`, `godot_scene_tree`) and will be reported
 from the next run.
+
+**Update — generation works.** Installing from the prebuilt release fixed it in one run:
+
+```
+Godot import of the MTree tree  PASS  exit=0
+Godot load of the MTree tree    PASS  meshes=2, surfaces=2, materials=2, tris=35504
+```
+
+A tree is generated, exported as a GLB, uploaded, downloaded by the Godot job and loaded there.
+That is the end-to-end proof the earlier "9 operators registered" never was.
 
 ## Quaternius: measured, at last
 

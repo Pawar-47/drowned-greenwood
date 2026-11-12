@@ -381,6 +381,43 @@ def main():
             file=sys.stderr,
         )
         exit_code = 1
+
+    # The gate outcome belongs in the report, not only on stderr.
+    #
+    # stderr is unbuffered and stdout is block-buffered, so on a piped CI log the "FAILED:"
+    # line appears hundreds of lines above the markdown that explains it — and was truncated
+    # out of the run view entirely. A report that fails the build must say why, in the body.
+    lines.append("## Gate")
+    lines.append("")
+    if exit_code == 0:
+        lines.append("Every required probe ran and passed. The build is green.")
+    else:
+        lines.append("**This report failed the build.**")
+        lines.append("")
+        if missing_required:
+            lines.append(
+                "Required probes that produced **no result at all** (%d):"
+                % len(missing_required)
+            )
+            lines.append("")
+            for name in missing_required:
+                label, purpose = DECISIONS.get(name, (name, ""))
+                lines.append("- `%s` — %s" % (name, purpose))
+            lines.append("")
+        if required_failures:
+            lines.append("Required probes that **failed** (%d):" % len(required_failures))
+            lines.append("")
+            for row in required_failures:
+                label, _ = DECISIONS.get(row["name"], (row["name"], ""))
+                lines.append("- **%s** — %s" % (label, row["detail"]))
+            lines.append("")
+    lines.append("")
+
+    text = "\n".join(lines)
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    print(text)
     return exit_code
 
 

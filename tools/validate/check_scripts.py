@@ -36,7 +36,6 @@ SKIP_DIRS = {
     "downloaded",
 }
 WORKFLOW_DIR = os.path.join(".github", "workflows")
-SHADER_DIR = "shaders"
 
 # Sampler hints Godot 4 actually accepts, from its shading-language reference. `hint_black`
 # looks plausible and is not a hint at all; it fails to compile. A static check catches that in

@@ -141,14 +141,21 @@ def body():
         return 1
 
     # A mesh is not a character. The brief needs a rigged one, so try the add-on's own rigging
-    # operators and report what the result actually contains. This is informational, not a gate:
-    # rigging is Phase 5 work, but knowing whether MPFB can rig at all changes the plan.
+    # operators and report what the result actually contains. Informational, not a gate: rigging
+    # is Phase 5 work, but knowing whether MPFB can rig at all changes the plan.
+    #
+    # Preference order matters. `add_custom_rig` needs a custom rig already selected and fails
+    # with "No custom rig selected"; `add_standard_rig` builds one from the add-on's own rig
+    # definitions, which is what a generated human needs.
     rig_candidates = [name for name in operators if "rig" in name.lower()]
+    rig_priority = ("add_standard_rig", "add_rigify_rig", "generate_rigify_rig")
+    rig_operator = next((n for n in rig_priority if n in rig_candidates), None)
+    if rig_operator is None and rig_candidates:
+        rig_operator = rig_candidates[0]
+
     rigged = False
     rig_error = ""
-    rig_operator = ""
-    if rig_candidates:
-        rig_operator = rig_candidates[0]
+    if rig_operator:
         try:
             getattr(bpy.ops.mpfb, rig_operator)()
             rigged = any(o.type == "ARMATURE" for o in bpy.data.objects)
@@ -158,7 +165,7 @@ def body():
         step="mpfb_rig",
         ok=rigged,
         candidates=rig_candidates[:10],
-        operator=rig_operator,
+        operator=rig_operator or "",
         error=rig_error,
     )
 
