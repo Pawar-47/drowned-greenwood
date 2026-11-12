@@ -19,18 +19,22 @@ listed so the intended shape is visible without being mistaken for present.
 ```
 assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skeleton definitions,
                  surface_ids.json, surface_fx_table.json
-tools/           build_manifest.py, TOOLS.md, config/materials.json, phase0/ (probes),
-                 validate/ (checks)
+tools/           build_manifest.py, TOOLS.md, config/materials.json, generators/, phase0/
+                 (probes), validate/ (checks)
 shaders/         surface_base.gdshader, foliage_base.gdshader, shared includes, SHADER_GLOBALS.md
 docs/            HISTORY_PURGE.md, LESSONS.md, POLICY.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
 
-Planned, not present: `tools/generators/` (Phase 2 onward), an APK build workflow (Phase 9), and a
-`staging` branch. The staging branch is the intended path for binaries to reach `main`; until it
-exists, nothing binary is committed at all, which is why the repository is currently about 0.5 MB
-of tooling and definitions.
+Planned, not present: an APK build workflow (Phase 9) and a `staging` branch. The staging branch
+is the intended path for binaries to reach `main`; until it exists, nothing binary is committed at
+all, which is why the repository is currently about 0.6 MB of tooling, configs and definitions.
+
+`tools/generators/` holds the asset generators. They are pure standard-library Python — no numpy,
+no Pillow — so there is no third-party dependency to pin, and a heightmap is written by a PNG
+writer in `common.py` rather than by a library. The first one, `terrain_maps.py`, produces the
+1 km heightmap, biome mask and surface-ID map from one height field so the three cannot disagree.
 
 ## The asset list
 

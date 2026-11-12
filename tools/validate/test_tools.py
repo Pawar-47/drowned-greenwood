@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Unit tests for the two scripts whose bugs have cost real CI time.
+"""Unit tests for the scripts whose bugs have cost real CI time.
 
 Run:
     python tools/validate/test_tools.py
 
-Why this file exists: `tools/build_manifest.py` and `tools/phase0/make_report.py` decide what
-the pipeline believes — which assets exist, and whether a probe passed. Both have silently lied
-before. The manifest builder once wrote a duplicate name over another record and reported
-nothing; the report parser once dropped a whole result line and reported a passing probe as
-"produced no result". Neither could be caught by the syntax checks, because both were valid
-Python that did the wrong thing.
+Why this file exists: `tools/build_manifest.py`, `tools/phase0/make_report.py` and the generators
+decide what the pipeline believes — which assets exist, whether a probe passed, and what the world
+looks like. All three have silently lied before. The manifest builder once wrote a duplicate name
+over another record and reported nothing; the report parser once dropped a whole result line and
+reported a passing probe as "produced no result"; and the terrain generator computed a slope in
+metres-per-two-samples while its thresholds were written as if it were metres-per-metre.
 
-These are plain asserts with no test framework: the repository has no dependencies, and adding
-one to run five checks would be a worse trade than writing them out.
+None of those could be caught by the syntax checks, because all were valid Python that did the
+wrong thing.
 
-Each test names the bug it would have caught, so a future reader can tell whether it still
-matters before deleting it.
+These are plain asserts with no test framework: the repository has no dependencies, and adding one
+to run a dozen checks would be a worse trade than writing them out.
+
+Each test names the bug it would have caught, so a future reader can tell whether it still matters
+before deleting it.
 """
 
 import importlib.util
@@ -31,12 +34,18 @@ def load_module(name, relative_path):
     path = os.path.join(ROOT, relative_path)
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
+    # The generators import `common` by bare name, which needs their own directory on the path.
+    directory = os.path.dirname(path)
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
     spec.loader.exec_module(module)
     return module
 
 
 build_manifest = load_module("build_manifest", os.path.join("tools", "build_manifest.py"))
 make_report = load_module("make_report", os.path.join("tools", "phase0", "make_report.py"))
+generator_common = load_module("generator_common", os.path.join("tools", "generators", "common.py"))
+terrain = load_module("terrain_maps", os.path.join("tools", "generators", "terrain_maps.py"))
 
 
 def manifest_with(**categories):
@@ -243,6 +252,98 @@ def test_crash_rows_are_listed_among_defects():
 
 
 # --------------------------------------------------------------------------------------------
+# tools/generators
+# --------------------------------------------------------------------------------------------
+
+
+def test_png_writer_emits_a_readable_png():
+    """The heightmap is written by hand, so the writer itself has to be right.
+
+    A PNG with a wrong CRC or a missing IEND is not a PNG; Godot would fail to import it and the
+    terrain would be missing rather than wrong, which is a confusing way to find out.
+    """
+    import struct
+
+    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    handle.close()
+    try:
+        size = generator_common.write_gray_png(handle.name, [[0, 128], [255, 7]], bit_depth=8)
+        with open(handle.name, "rb") as reader:
+            data = reader.read()
+        assert data.startswith(b"\x89PNG\r\n\x1a\n"), "no PNG signature"
+        assert len(data) == size, "reported size %d but wrote %d" % (size, len(data))
+        assert b"IHDR" in data and b"IDAT" in data and b"IEND" in data, "missing a required chunk"
+        # The IHDR payload starts 8 (signature) + 4 (length) + 4 (tag) bytes in.
+        width, height, depth, colour = struct.unpack(">IIBB", data[16:26])
+        assert (width, height, depth, colour) == (2, 2, 8, 0), (
+            "IHDR says %dx%d depth %d colour %d" % (width, height, depth, colour)
+        )
+    finally:
+        os.unlink(handle.name)
+
+
+def test_png_writer_rejects_a_ragged_image():
+    """A short row would silently shift every following row; refuse instead."""
+    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    handle.close()
+    try:
+        try:
+            generator_common.write_gray_png(handle.name, [[0, 1, 2], [3, 4]])
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("a ragged image was accepted")
+    finally:
+        os.unlink(handle.name)
+
+
+def test_noise_is_deterministic_from_the_seed():
+    """The whole reproducibility story rests on this: same seed, same bytes."""
+    a = generator_common.fbm_field(16, "seed-a", octaves=3)
+    b = generator_common.fbm_field(16, "seed-a", octaves=3)
+    c = generator_common.fbm_field(16, "seed-b", octaves=3)
+    assert a == b, "the same seed produced different noise"
+    assert a != c, "two different seeds produced identical noise"
+
+
+def test_input_hash_ignores_key_order():
+    """A config reordered by an editor is the same asset, not a different one."""
+    first = generator_common.input_hash({"a": 1, "b": 2})
+    second = generator_common.input_hash({"b": 2, "a": 1})
+    assert first == second, "the input hash depends on key order"
+    assert first != generator_common.input_hash({"a": 1, "b": 3}), "the hash ignores a value change"
+
+
+def test_slope_is_metres_per_metre():
+    """The first version returned metres per two samples, so its thresholds were meaningless.
+
+    A ramp that rises 10 m over one cell must report a gradient of about 10/CELL_SPACING_M, not
+    10. This test is what would have caught the unit error.
+    """
+    rows = 3
+    rise = 10.0
+    field = [
+        [0.0, rise / terrain.MAX_HEIGHT_M, 2 * rise / terrain.MAX_HEIGHT_M] for _ in range(rows)
+    ]
+    gradient = terrain.slope(field, 1, 1)
+    expected = rise / terrain.CELL_SPACING_M
+    assert abs(gradient - expected) < 1e-6, (
+        "slope at the middle of a %g m/cell ramp is %g, expected %g (metres per metre)"
+        % (rise, gradient, expected)
+    )
+
+
+def test_slope_is_zero_on_flat_ground():
+    flat = [[0.5] * 5 for _ in range(5)]
+    assert terrain.slope(flat, 2, 2) == 0.0, "flat ground reported a gradient"
+
+
+def test_surface_ids_are_still_the_numbers_the_generator_writes():
+    """The generator hardcodes ids; surface_ids.json is the contract. A renumbering must fail."""
+    terrain.check_surface_ids()
+
+
+# --------------------------------------------------------------------------------------------
 
 
 TESTS = [
@@ -261,6 +362,13 @@ TESTS = [
     ("make_report: exit=0 row dropped", test_exit_zero_row_is_still_dropped),
     ("make_report: retarget probe required", test_retarget_probe_is_required),
     ("make_report: crash rows survive as defects", test_crash_rows_are_listed_among_defects),
+    ("generators: PNG writer", test_png_writer_emits_a_readable_png),
+    ("generators: PNG rejects ragged rows", test_png_writer_rejects_a_ragged_image),
+    ("generators: noise is deterministic", test_noise_is_deterministic_from_the_seed),
+    ("generators: input hash ignores key order", test_input_hash_ignores_key_order),
+    ("generators: slope is metres per metre", test_slope_is_metres_per_metre),
+    ("generators: slope is zero on flat ground", test_slope_is_zero_on_flat_ground),
+    ("generators: surface ids match the contract", test_surface_ids_are_still_the_numbers_the_generator_writes),
 ]
 
 

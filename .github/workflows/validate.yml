@@ -55,9 +55,10 @@ jobs:
       - name: Every script parses
         run: python tools/validate/check_scripts.py
 
-      # The two scripts that decide what the pipeline believes. check_scripts.py proves they
-      # parse; it cannot prove they behave. Both have silently lied before — a duplicate asset
-      # name overwritten without a word, and a passing probe reported as "produced no result".
+      # The scripts that decide what the pipeline believes, and the generators that decide what
+      # the world looks like. check_scripts.py proves they parse; it cannot prove they behave.
+      # Each of these has silently lied before — a duplicate asset name overwritten without a
+      # word, a passing probe reported as "produced no result", and a slope in the wrong units.
       - name: Tool unit tests
         run: python tools/validate/test_tools.py
 
@@ -88,6 +89,57 @@ jobs:
         # foliage material with no wind amplitude, a shader redeclaring a uniform its include
         # already declares (which is a compile error nothing else catches before Godot does).
         run: python tools/validate/check_materials.py
+
+      # Generators are only worth what they produce, so this runs one and checks the output rather
+      # than trusting that it imports. It writes into the runner's temp directory: nothing binary
+      # is committed, and the check is that the bytes exist and are the right shape.
+      - name: Terrain generator produces the maps it claims
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:-/tmp}/terrain"
+          python tools/generators/terrain_maps.py --out "$out" --report "$out/report.json"
+          python - "$out" <<'PY'
+          import json, struct, sys, os
+
+          out = sys.argv[1]
+          expected = {
+              "terrain_heightmap_master_1km.png": 16,
+              "terrain_biome_mask.png": 8,
+              "terrain_surface_id_map.png": 8,
+          }
+          for name, depth in expected.items():
+              path = os.path.join(out, name)
+              if not os.path.exists(path):
+                  raise SystemExit("%s was not produced" % name)
+              with open(path, "rb") as handle:
+                  head = handle.read(33)
+              if not head.startswith(b"\x89PNG\r\n\x1a\n"):
+                  raise SystemExit("%s is not a PNG" % name)
+              width, height, bit_depth = struct.unpack(">IIB", head[16:25])
+              if (width, height) != (1025, 1025):
+                  raise SystemExit("%s is %dx%d, expected 1025x1025" % (name, width, height))
+              if bit_depth != depth:
+                  raise SystemExit("%s is %d-bit, expected %d-bit" % (name, bit_depth, depth))
+
+          with open(os.path.join(out, "report.json"), encoding="utf-8") as handle:
+              report = json.load(handle)
+          coverage = report["coverage"]
+          print("terrain: height %.1f..%.1f m, water %.2f%%"
+                % (coverage["height_min_m"], coverage["height_max_m"], coverage["water_percent"]))
+          print("surface coverage: %s" % coverage["surface_percent"])
+
+          # A world with no water, or no land, is a generator bug rather than a design choice.
+          if coverage["water_percent"] < 1.0:
+              raise SystemExit("only %.2f%% water: the river and bog did not form"
+                               % coverage["water_percent"])
+          if coverage["water_percent"] > 60.0:
+              raise SystemExit("%.2f%% water: most of the world is under the waterline"
+                               % coverage["water_percent"])
+          for asset in report["assets"]:
+              if not asset.get("sha256") or not asset.get("input_hash"):
+                  raise SystemExit("%s has no sha256 or input_hash" % asset["name"])
+          print("OK: %d assets" % len(report["assets"]))
+          PY
 
       - name: P1 set per phase
         run: |
