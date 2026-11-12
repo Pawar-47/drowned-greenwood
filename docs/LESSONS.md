@@ -206,6 +206,28 @@ truncated out of the run view entirely. The build failed and the reason was invi
 **Rule:** anything that fails a build is written into the artefact the build produces, not only
 to stderr. The report now ends with a Gate section naming every missing or failed required probe.
 
+## 20. A concurrency group is a mechanism for dropping runs
+
+The rule for a long time was "one CI run at a time, repository-wide", enforced by every workflow
+sharing one concurrency group. It read as a safeguard. It was the opposite.
+
+GitHub keeps one **running** and one **pending** run per group, and a third arrival **replaces the
+pending one**. So the shared group meant a push-triggered `validate` could replace a queued manual
+Phase 0 or history-purge dispatch — and that run was never created. Not cancelled, not failed,
+just absent, with an empty queue afterwards and no trace that anything had been requested. Sharing
+one group across three unrelated workflows made it much more likely, because they all competed for
+a single pending slot.
+
+**Rule:** ask what a mechanism does when it is under load, not what it is called. A group is a
+*replacement* mechanism. If every run must happen, declare no group and solve the collision some
+other way — for `history-purge` that is an explicit in-flight check before the force-push, which
+narrows the window and is documented as narrowing rather than closing it.
+
+**And never claim a guarantee the platform does not give.** The honest statement is: a push can no
+longer replace a queued manual dispatch, but two runs of the same workflow from the same event on
+the same ref can still collide. Saying that out loud is worth more than a rule that sounds
+stronger and silently loses work.
+
 ## Applying these
 
 The asset validators in Phase 2 onward are probes with the same failure modes. In particular:
