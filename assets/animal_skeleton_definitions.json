@@ -137,7 +137,7 @@
         "amph_common_frog", "amph_toad", "amph_fire_salamander", "amph_newt",
         "amph_giant_salamander"
       ],
-      "bone_count": 22,
+      "bone_count": 23,
       "bones": [
         "Root", "Hips", "Spine", "Chest", "Neck", "Head", "Jaw",
         "Tail1", "Tail2",
@@ -151,27 +151,26 @@
         "why_a_separate_family": "Frogs and salamanders cannot use the small-mammal skeleton: a frog's hind limbs fold in two planes for the crouch and the jump, and a salamander's body is a long lateral chain. Sharing would need corrective shapes worth more than the clips it saved.",
         "tail": "Salamanders keep Tail1/Tail2; frogs and toads drop them. Dropping a bone never renames the others.",
         "hop_clip": "The jump is the defining animation for this family and is the one clip that must not be approximated."
+      },
+      "optional_bones": {
+        "Tail1": "salamanders only; frogs and toads drop the tail chain",
+        "Tail2": "salamanders only"
       }
     },
     {
-      "name": "animal_skeleton_amphibian",
-      "used_by": [
-        "amph_common_frog", "amph_toad", "amph_fire_salamander", "amph_newt",
-        "amph_giant_salamander"
-      ],
-      "bone_count": 20,
+      "name": "animal_skeleton_bat",
+      "used_by": ["animal_bat_pipistrelle"],
+      "bone_count": 14,
       "bones": [
-        "Root", "Hips", "Spine", "Chest", "Neck", "Head", "Jaw",
-        "Tail1", "Tail2",
-        "LeftUpperLeg_F", "LeftLowerLeg_F", "LeftFoot_F",
-        "RightUpperLeg_F", "RightLowerLeg_F", "RightFoot_F",
-        "LeftUpperLeg_B", "LeftLowerLeg_B", "LeftFoot_B",
-        "RightUpperLeg_B", "RightLowerLeg_B", "RightFoot_B"
+        "Root", "Hips", "Spine", "Chest", "Neck", "Head",
+        "LeftWing1", "LeftWing2", "LeftWing3",
+        "RightWing1", "RightWing2", "RightWing3",
+        "LeftLeg", "RightLeg"
       ],
       "notes": {
-        "why_not_shared_with_small_mammals": "A frog's hind limbs fold in two planes for the crouch and the jump, which a small-mammal leg chain cannot express; a salamander needs a lateral spine. Sharing would cost more in corrective shapes than it saves.",
-        "tail": "Salamanders use Tail1/Tail2; frogs and toads drop them. A dropped bone is never renamed.",
-        "hop_clip": "The jump is the defining animation for this family."
+        "why_not_the_bird_skeleton": "A bat's wing is a membrane stretched across four elongated fingers, not a feathered arm. The bird family's Beak, Crest and tail-feather bones would all be dead weight, and its three-segment wing cannot express the finger-fan that makes a bat silhouette read at night.",
+        "size": "14 bones: this is night ambience seen as a fluttering silhouette, not a creature the player studies.",
+        "clip": "One looping flap plus a glide pose is the whole animation budget for this species."
       }
     },
     {

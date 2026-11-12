@@ -160,6 +160,27 @@ def check_animals(problems):
     data = load(ANIMALS)
     families = data["families"]
     covered = set()
+
+    # Duplicate family names would silently shadow each other: the second one would look
+    # covered while the first was ignored. This check exists because exactly that happened
+    # while these files were being written, and nothing here noticed.
+    names = [family["name"] for family in families]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        problems.append("animal_skeleton_definitions: duplicate families %s" % duplicates)
+
+    # A species must belong to exactly one family; two families claiming it is as wrong as none.
+    claimed = {}
+    for family in families:
+        for species in family["used_by"]:
+            claimed.setdefault(species, []).append(family["name"])
+    double_claimed = {s: f for s, f in claimed.items() if len(f) > 1}
+    if double_claimed:
+        problems.append(
+            "animal_skeleton_definitions: %d species claimed by more than one family: %s"
+            % (len(double_claimed), sorted(double_claimed)[:5])
+        )
+
     for family in families:
         label = family["name"]
         bones = family["bones"]
@@ -182,20 +203,36 @@ def check_animals(problems):
         print("%s: %d bones, %d species" % (label, len(bones), len(family["used_by"])))
 
     # Every animal-family asset in the manifest must belong to a family.
+    #
+    # Not everything with an animal-ish prefix is a creature that needs a skeleton. Decals,
+    # card LODs, nests, egg and feather sets and shadow sprites are 4.F assets with no body,
+    # and the animal_skeleton_* definitions live in 4.G.rig and are the families themselves.
+    # Counting those as uncovered species made this check fail on its own first run.
+    NOT_A_CREATURE = ("_decal", "_set", "_card_lod", "_nest", "_shadow")
+
     manifest = load(MANIFEST)
     declared = []
     for group in manifest["categories"].values():
         for raw in group.get("assets", []):
             name = raw.split("|")[0]
-            if name.startswith(("animal_", "bird_", "fish_", "amph_", "rept_")):
-                declared.append(name)
+            if not name.startswith(("animal_", "bird_", "fish_", "amph_", "rept_")):
+                continue
+            if name.startswith("animal_skeleton_"):
+                continue
+            if any(name.endswith(suffix) for suffix in NOT_A_CREATURE):
+                continue
+            declared.append(name)
+
     undeclared = sorted(set(declared) - covered)
     if undeclared:
         problems.append(
             "animal_skeleton_definitions: no family covers %d manifest species: %s"
             % (len(undeclared), undeclared[:10])
         )
-    print("animals: %d species declared in the manifest, %d covered" % (len(declared), len(covered)))
+    print(
+        "animals: %d species declared in the manifest, %d covered by a family"
+        % (len(declared), len(covered))
+    )
 
 
 def main():
