@@ -148,11 +148,14 @@ def build(manifest):
         if not prefix or not filters:
             fail("%s: derive_from needs derive_prefix and derive_filter" % group_key, problems)
             continue
+        # Snapshot: emit() adds to base_names as it goes, and a derived group must only ever
+        # be built from authored entries, never from another derived group.
+        authored = list(base_names.items())
         for source_key in sources:
             if source_key not in categories:
                 fail("%s: derive_from names unknown category %r" % (group_key, source_key), problems)
                 continue
-            for base, owner in base_names.items():
+            for base, owner in authored:
                 if owner != source_key:
                     continue
                 if not any(base.startswith(f) for f in filters):
