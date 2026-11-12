@@ -314,38 +314,55 @@ def main():
     products.append(("terrain_shore_mask", shore_path,
                      {"texture_sizes": {"r8": [SAMPLES, SAMPLES]}}))
 
-    # The river centreline: the highest-flow cell in each row that is above the threshold. One
-    # point per row gives a monotone polyline down the channel, which is what a spline needs and
-    # what a hand-drawn river would have looked like anyway.
+    # The river centreline: trace the channel from its highest headwater down to the outlet.
+    #
+    # The first version took the highest-flow cell in each row. That is not a centreline: where
+    # the channel runs across a row, several cells have similar flow and the winner jumps between
+    # them, so consecutive points do not descend — the measured result was "477 of 941 segments go
+    # downhill", which is a polyline zig-zagging up and down the same reach. Following `downhill`
+    # instead gives a path that is monotonic and spatially connected by construction.
+    headwater = -1
+    best_height = -1
+    for cell, flow_cells in enumerate(flow):
+        if flow_cells >= RIVER_FLOW_CELLS and metres[cell] >= water_level_m:
+            if metres[cell] > best_height:
+                best_height = metres[cell]
+                headwater = cell
+
     spline = []
-    for y in range(SAMPLES):
-        best_cell = -1
-        best_flow = RIVER_FLOW_CELLS
-        for x in range(SAMPLES):
-            cell = index(x, y)
-            if flow[cell] > best_flow and metres[cell] >= water_level_m:
-                best_flow = flow[cell]
-                best_cell = cell
-        if best_cell >= 0:
+    if headwater >= 0:
+        cell = headwater
+        # Bounded: a channel cannot be longer than the diagonal of the map.
+        for _step in range(SAMPLES * 2):
+            x = cell % SAMPLES
+            y = cell // SAMPLES
             spline.append(
                 {
-                    "row": y,
-                    "x": best_cell % SAMPLES,
-                    "u": round((best_cell % SAMPLES) / (CELLS), 5),
+                    "x": x,
+                    "y": y,
+                    "u": round(x / CELLS, 5),
                     "v": round(y / CELLS, 5),
-                    "height_m": round(metres[best_cell], 2),
-                    "flow_cells": int(best_flow),
+                    "height_m": round(metres[cell], 2),
+                    "flow_cells": int(flow[cell]),
                 }
             )
+            target = downhill[cell]
+            # Stop at a pit, or when the channel reaches standing water — below that the water
+            # body takes over and the centreline has served its purpose.
+            if target < 0 or metres[target] < water_level_m:
+                break
+            cell = target
 
     spline_path = os.path.join(args.out, "terrain_river_splines.json")
     with open(spline_path, "w", encoding="utf-8") as handle:
         json.dump(
             {
                 "name": "terrain_river_splines",
-                "note": "One centreline point per row, at the highest-flow cell. Flow accumulation "
-                "is in cells, so a point is where at least %d cells drain through." % int(RIVER_FLOW_CELLS),
+                "note": "The main channel, traced from its highest headwater down the steepest "
+                "descent until it reaches standing water or a pit. Consecutive points descend by "
+                "construction; flow is in upstream cells.",
                 "samples": SAMPLES,
+                "flow_threshold_cells": int(RIVER_FLOW_CELLS),
                 "points": spline,
             },
             handle,
@@ -360,7 +377,8 @@ def main():
     level_path = os.path.join(args.out, "terrain_water_level_table.json")
     levels = [
         {
-            "row": point["row"],
+            "x": point["x"],
+            "y": point["y"],
             "v": point["v"],
             "bed_height_m": point["height_m"],
             "water_surface_m": round(max(water_level_m, point["height_m"] - RIVER_DEPTH_M), 2),
