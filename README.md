@@ -76,6 +76,21 @@ racing to write the same report.
 The rule covers workflow **runs**. Jobs *inside* one run still execute in parallel (the Phase 0
 workflow's four jobs, for example), because they are one run, not two.
 
+### The rule is not retroactive
+
+A run's concurrency group is read from the workflow file **at the commit that run executes**.
+So the rule only governs runs created from a commit that already contains it. Runs created
+from earlier commits keep running side by side and cannot be recalled.
+
+That is exactly what happened on this repository: commits `173958e` and `fe39869` both
+predate the rule, so both Phase 0 runs executed at once and each ran its own 120-minute
+Infinigen job — duplicated work on the free runner pool. Nothing can cancel them from here;
+the fix is to let them finish and never push again mid-run.
+
+The practical rule that follows: **before pushing, check that no run is in progress.** The
+concurrency group protects later runs from each other, not from a push made while an
+unsynchronised run is still going.
+
 Consequence worth knowing: because the group is repository-wide, a short run such as the
 manifest check will queue behind a long one such as Phase 0. That is the intended cost of the
 rule.
