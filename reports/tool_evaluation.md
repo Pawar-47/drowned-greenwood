@@ -26,7 +26,7 @@ defects**, and the gate passes.
 | **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 1 |
 | **MPFB2** | **USE — builds and rigs** | human exports and loads: `meshes=1, tris=36972, armatures=1, bones=137`. Both counts over budget |
 | **Modular Tree** | **USE — verified end to end** | generates a tree Godot loads: `meshes=2, tris=1840066`. Installed from the prebuilt release, which carries the compiled `m_tree` module |
-| Quaternius packs | **MEASURED** | **43 clips.** The family-coverage figure recorded here (16 of 41) came from substring matching, which was optimistic: `bow` matched `Elbow`. Matching is now by clip-name token, so the next run's number will be lower and is the one to trust. The report artifact from that run is the current figure, not this line |
+| Quaternius packs | **MEASURED — naming corrected** | **43 clips.** The rig uses **Unreal-mannequin** bone names, not Mixamo: `thigh_l`, `spine_01`, `upperarm_l`, `calf_l`. Measured `joints_in_glb=65` against `mapped_names=23`, **matched=1** (`Head`, the only shared name). The retarget map has been rewritten from the measured joints. Family coverage is matched on clip-name tokens, so the figure moves between runs; the artifact is the current one |
 
 ## Withdrawn claims
 
@@ -40,6 +40,10 @@ quietly edited out, because a report that hides its own corrections cannot be tr
 3. **"MTree registers but cannot generate because its package directory is not on sys.path."**
    Half wrong. Adding it to `sys.path` exposed the real cause: `m_tree` is a compiled C++
    extension, so no `sys.path` change could ever work. The prebuilt release does.
+4. **"The Quaternius retarget map is written from the Mixamo convention."** Wrong, and it was
+   never checked. The pack uses Unreal-mannequin names, and the `retarget_bones` probe found
+   **1 of 23** map entries existed as real joints. The map is now written from the measured
+   joint list. Recorded here because a report that hides its own corrections cannot be trusted.
 
 ## MPFB2: from "inert" to a human in Godot
 

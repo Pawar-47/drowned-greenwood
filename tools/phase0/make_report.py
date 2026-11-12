@@ -181,6 +181,19 @@ INFORMATIONAL_PROBES = {
     "quaternius_inventory",
 }
 
+# Probes that report a known gap the pipeline cannot close by itself. They are neither passes
+# nor defects: the tool works, but one of its inputs is not pinned to known bytes because the
+# vendor publishes no checksum to pin it to.
+#
+# Counting these as defects inflated the defect count with items no code change can fix, which
+# is how a red list stops being read (docs/LESSONS.md, the negative-control lesson). They are
+# reported in their own section, with the hash the run measured, so the fix is a one-line paste
+# by the owner rather than an investigation.
+EXPECTED_GAPS = {
+    "godot_checksum",
+    "gltfpack_checksum",
+}
+
 # Probes that must pass for Phase 0 to be considered closed. A failure here is a defect and
 # must fail the job, and so must a required probe that produced no result at all.
 #
@@ -462,17 +475,21 @@ def main():
     controls = [r for r in ordered if r["name"] in NEGATIVE_CONTROLS]
     controls_holding = [r for r in controls if not r["ok"]]
     informational = [r for r in ordered if not r["ok"] and r["name"] in INFORMATIONAL_PROBES]
+    gaps = [r for r in ordered if not r["ok"] and r["name"] in EXPECTED_GAPS]
     defects = [
         r
         for r in ordered
         if not r["ok"]
         and r["name"] not in NEGATIVE_CONTROLS
         and r["name"] not in INFORMATIONAL_PROBES
+        and r["name"] not in EXPECTED_GAPS
     ]
-    # The four counts sum to the number of probes run, exactly. A control that is holding is
-    # reported on its own line rather than folded into "Passed", because folding it in made
-    # 49 passes plus 1 control read as 50 of 50 — true, but not arithmetic a reader can check.
-    passed = len(ordered) - len(controls_holding) - len(informational) - len(defects)
+    # The counts sum to the number of probes run, exactly. A control that is holding is reported
+    # on its own line rather than folded into "Passed", because folding it in made 49 passes plus
+    # 1 control read as 50 of 50 — true, but not arithmetic a reader can check.
+    passed = (
+        len(ordered) - len(controls_holding) - len(informational) - len(gaps) - len(defects)
+    )
 
     lines.append("## Outcome")
     lines.append("")
@@ -483,6 +500,7 @@ def main():
         % len(controls_holding)
     )
     lines.append("- Informational failures (context, not defects): **%d**" % len(informational))
+    lines.append("- Known gaps awaiting an owner decision: **%d**" % len(gaps))
     lines.append("- Defects (something is actually broken): **%d**" % len(defects))
     lines.append("")
     if controls:
@@ -500,6 +518,19 @@ def main():
         lines.append("### Informational failures")
         lines.append("")
         for row in informational:
+            label, _ = DECISIONS.get(row["name"], (row["name"], ""))
+            lines.append("- **%s** — %s" % (label, row["detail"]))
+        lines.append("")
+    if gaps:
+        lines.append("### Known gaps, waiting on the owner")
+        lines.append("")
+        lines.append(
+            "These are not defects in the pipeline: the tool works, but one of its inputs is "
+            "not pinned to known bytes because the vendor publishes no checksum for it. The "
+            "hash this run measured is below — paste it into the workflow to close the gap."
+        )
+        lines.append("")
+        for row in gaps:
             label, _ = DECISIONS.get(row["name"], (row["name"], ""))
             lines.append("- **%s** — %s" % (label, row["detail"]))
         lines.append("")

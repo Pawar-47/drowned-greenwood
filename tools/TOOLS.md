@@ -25,7 +25,7 @@ facts is a guarantee that one of them is wrong.
 | Python | `3.11` | `actions/setup-python` | working |
 | Infinigen | commit `53033dd55c7191cbc436be6ffbb63c026935a509` | exact commit fetched in CI | working |
 | Poly Haven API | live, asset IDs recorded per download | `api.polyhaven.com` | working |
-| Quaternius | release `third-party-quaternius`, sha256 `cc73fc4e…` | **SHA-256 verified in CI** on every downloaded archive | measured: 43 clips |
+| Quaternius | release `third-party-quaternius`, sha256 `cc73fc4e…` | **SHA-256 verified in CI** on every downloaded archive | measured: 43 clips; rig is **Unreal-mannequin** named, confirmed by measurement |
 | Modular Tree | release `5.6.0`, `modular_tree-5.6.0-linux_x64.zip`, sha256 `698cf57c…` | **SHA-256 verified in CI**; the release zip carries the compiled `m_tree` module | working — generates a tree Godot loads (1,840,066 tris, needs decimation) |
 | MPFB2 | commit `d0a32e57a7f915cb2f2b95410e2117648c7bbb7e` (tag `v2.0.18`) | **commit fetched and verified in CI**; a tag is movable, so the commit is the pin | working — 36,972 tris / 137 bones, both over budget |
 | GitHub Actions | `@v4` / `@v5` | **major tags, not commit SHAs** | pin outstanding |

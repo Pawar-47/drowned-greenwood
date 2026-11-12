@@ -353,11 +353,13 @@ def main():
             "joints_in_glb": len(joint_list),
             "mapped_names": len(expected),
             "matched": len(matched),
-            "unmatched_map_entries": unmatched[:25],
-            "sample_joints": joint_list[:25],
+            # Full lists, not a 25-name sample. The first run truncated `sample_joints` to 25,
+            # which was exactly the information needed to rewrite the map and half of it was
+            # cut off — so the map had to be written partly from the Unreal convention anyway.
+            "unmatched_map_entries": unmatched,
+            "joint_names": joint_list,
             "note": "matched = map entries that exist as real joints in the GLB. On failure, "
-            "rewrite assets/char_retarget_map.json from joint_names in this run's JSON output "
-            "rather than from a naming convention.",
+            "rewrite assets/char_retarget_map.json from joint_names in this line.",
         }))
         if unmatched:
             print(
@@ -365,7 +367,7 @@ def main():
                 "the map was written from a naming convention, not from this file. "
                 "First few: %s" % (len(unmatched), unmatched[:10])
             )
-            print("The pack's real joint names: " + ", ".join(joint_list[:40]))
+            print("The pack's real joint names (%d): %s" % (len(joint_list), ", ".join(joint_list)))
     else:
         print("RESULT " + json.dumps({
             "step": "retarget_bones",

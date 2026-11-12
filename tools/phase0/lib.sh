@@ -48,7 +48,13 @@ run_capture() {
     echo "RESULT ${name}_timeout exit=137 timeout=${PROBE_TIMEOUT}s" | tee -a "$LOG"
   elif grep -q '^RESULT ' "$output"; then
     # The probe reported for itself. Only add a row if it failed without saying so.
-    if [ "$code" -ne 0 ] && ! grep -q '"ok": false' "$output"; then
+    #
+    # The pattern must tolerate ANY spacing around the colon. It used to be the literal
+    # '"ok": false', which is how Python's json.dumps writes it — but the GDScript probes emit
+    # JSON.stringify output, which has no space: {"step":"x","ok":false}. So the grep never
+    # matched a Godot failure, a redundant `<name>_exit` row was appended to every failing
+    # GDScript probe, and once those rows stopped being discarded that row read as a crash.
+    if [ "$code" -ne 0 ] && ! grep -qE '"ok"[[:space:]]*:[[:space:]]*false' "$output"; then
       echo "RESULT ${name}_exit exit=${code}" | tee -a "$LOG"
     fi
   else

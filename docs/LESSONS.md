@@ -157,8 +157,45 @@ This is the third instance of one class: **a probe whose output never reaches th
 `run_capture` overwriting a probe's row and the installer printing a shape the parser dropped.
 
 **Rule:** a reader tolerates more than the writer is documented to send. Accept JSON, exit codes
-and key=value; default to success unless the line says otherwise. Then a probe cannot vanish
-because of its punctuation.
+and key=value. Then a probe cannot vanish because of its punctuation.
+
+**But a missing verdict is not a pass.** The first fix for this went too far the other way: an
+unrecognised key=value line was treated as success unless it contained `ok=False`, so a probe
+emitting `RESULT something reason=...` — no verdict at all — counted as green. Silence is not
+agreement. Every shape must now carry its own `ok`; a line without one is a failure that says so.
+The same applies to JSON: a payload with no `ok` field, a truncated object, or a JSON array is a
+failure, not a line to skip.
+
+## 18. A convention is not a measurement
+
+The retarget map was written from the Mixamo naming convention — `LeftUpLeg`, `Spine1`,
+`LeftArm` — because that is the convention most CC0 animation libraries use. Quaternius's
+Universal Animation Library does not. It uses Unreal-mannequin names: `thigh_l`, `spine_01`,
+`upperarm_l`, `calf_l`, `clavicle_l`.
+
+The probe measured 65 joints in the pack against 23 mapped names and matched exactly **one** of
+them — `Head`, the only name both conventions happen to share. Every other entry pointed at a bone
+that does not exist. Nothing failed, because nothing was comparing the map to the data: the map
+was a document, and documents do not run.
+
+This is the same shape as #1 and #11. A plausible-looking artefact that no check opens is not
+evidence of anything.
+
+**Rule:** when a file claims a mapping, a convention or a name scheme, something must diff it
+against the real data on every run, and the diff must be able to fail the build. Write the map
+from the measured names, never from what the convention "should" be — and keep the full measured
+list in the log, not a 25-name sample, because the sample is what forced the second guess.
+
+## 19. Check the whole file, not the part you changed
+
+A one-line addition — a `git commit -m` message with a second paragraph — silently broke a
+workflow file. A YAML literal block scalar (`run: |`) ends at the first line indented less than
+the block, so a continuation line at column 0 terminated the `run:` block, and everything after
+it became invalid YAML. The static gate caught it on the next run, which is the system working:
+the failure was found in seconds by a check, not in minutes by a runner.
+
+**Rule:** after editing a structured file, re-read the region around the edit *and* let the
+cheapest check parse the whole file. Prose inside code is code.
 
 ## 17. A gate that fails must say why, in the body
 

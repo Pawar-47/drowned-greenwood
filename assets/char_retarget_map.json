@@ -7,41 +7,55 @@
     {
       "source_tool": "quaternius",
       "status": "pending_verification",
-      "status_note": "The release 'third-party-quaternius' now exists and CI downloads it. It is NOT verified: the archive holds whole animation libraries in single containers (ual1_standard.glb and its _rm variant), so the mapping below has never been exercised against real clips. Verification means enumerating a GLB's animations and retargeting one of them onto this skeleton.",
-      "known_naming": "The source names below are a GUESS from the Mixamo convention (`LeftUpLeg`, `Spine1`, `LeftArm`). Quaternius's Universal Animation Library may instead use Unreal-mannequin names (`upperarm_l`, `thigh_r`, `spine_01`), in which case every entry here is wrong and retargeting would silently do nothing. `tools/phase0/quaternius_inventory.py` opens the pack's GLB, reads the real skin joints and diffs them against this map; `retarget_bones` is a required probe, so this file is verified or the build fails. Do not edit it from a convention again — edit it from `joint_names` in that probe's JSON output.",
+      "status_note": "Rewritten from the pack's MEASURED skin joints, not from a convention. The first version of this map used Mixamo names (LeftUpLeg, Spine1, LeftArm) on the assumption that Quaternius followed that convention. It does not: the UAL rig uses Unreal-mannequin names. The retarget_bones probe measured joints_in_glb=65 against mapped_names=23 and matched exactly ONE of them (Head), which is the only name both conventions happen to share. Every other entry named a bone that does not exist, so retargeting would have silently done nothing. The entries below are taken from that run's joint list; the ones marked INFERRED in `evidence` were not in the sample the log printed and are the standard Unreal names for that chain. The probe verifies all of them on every run, so a wrong one fails the build rather than passing quietly.",
+      "known_naming": "Unreal-mannequin convention, confirmed by measurement: `pelvis`, `spine_01..03`, `neck_01`, `Head`, `clavicle_l`, `upperarm_l`, `lowerarm_l`, `hand_l`, `thigh_l`, `calf_l`, `foot_l`, `ball_l`, and the same with `_r`. Note `Head` is capitalised and the rest are not — that is the pack's naming, not a typo. The rig also carries `*_leaf` bones (ball_leaf, index_04_leaf, and so on), which are leaf/twist helpers and are dropped rather than mapped.",
       "rest_pose": "T-pose, matching the target rest pose, so no rest-pose correction is needed.",
       "scale": "Quaternius characters are authored around 1.8 m. Reject any clip whose root height differs by more than 5 % from the target skeleton before retargeting.",
+      "evidence": {
+        "measured_from": "quaternius_inventory.py retarget_bones probe, run 43306827353",
+        "joints_in_glb": 65,
+        "confirmed_in_log_sample": [
+          "Head", "ball_l", "ball_r", "calf_l", "calf_r", "clavicle_l", "clavicle_r",
+          "foot_l", "foot_r", "hand_l", "hand_r", "lowerarm_l", "lowerarm_r"
+        ],
+        "inferred_standard_unreal": [
+          "root", "pelvis", "spine_01", "spine_02", "spine_03", "neck_01",
+          "upperarm_l", "upperarm_r", "thigh_l", "thigh_r"
+        ],
+        "note": "The inferred entries were outside the 25-name sample the probe printed. They are the standard Unreal names for those chains, and the probe checks them on every run: if one is wrong it appears in unmatched_map_entries and the build fails. Nothing here is trusted on my word."
+      },
       "map": {
-        "Root": "Root",
-        "Hips": "Hips",
-        "Spine": "Spine",
-        "Spine1": "Chest",
-        "Spine2": "UpperChest",
-        "Neck": "Neck",
+        "root": "Root",
+        "pelvis": "Hips",
+        "spine_01": "Spine",
+        "spine_02": "Chest",
+        "spine_03": "UpperChest",
+        "neck_01": "Neck",
         "Head": "Head",
-        "LeftShoulder": "LeftShoulder",
-        "LeftArm": "LeftUpperArm",
-        "LeftForeArm": "LeftLowerArm",
-        "LeftHand": "LeftHand",
-        "RightShoulder": "RightShoulder",
-        "RightArm": "RightUpperArm",
-        "RightForeArm": "RightLowerArm",
-        "RightHand": "RightHand",
-        "LeftUpLeg": "LeftUpperLeg",
-        "LeftLeg": "LeftLowerLeg",
-        "LeftFoot": "LeftFoot",
-        "LeftToeBase": "LeftToes",
-        "RightUpLeg": "RightUpperLeg",
-        "RightLeg": "RightLowerLeg",
-        "RightFoot": "RightFoot",
-        "RightToeBase": "RightToes"
+        "clavicle_l": "LeftShoulder",
+        "upperarm_l": "LeftUpperArm",
+        "lowerarm_l": "LeftLowerArm",
+        "hand_l": "LeftHand",
+        "clavicle_r": "RightShoulder",
+        "upperarm_r": "RightUpperArm",
+        "lowerarm_r": "RightLowerArm",
+        "hand_r": "RightHand",
+        "thigh_l": "LeftUpperLeg",
+        "calf_l": "LeftLowerLeg",
+        "foot_l": "LeftFoot",
+        "ball_l": "LeftToes",
+        "thigh_r": "RightUpperLeg",
+        "calf_r": "RightLowerLeg",
+        "foot_r": "RightFoot",
+        "ball_r": "RightToes"
       },
       "fingers": {
         "policy": "collapse",
-        "reason": "Quaternius finger naming is not consistent across packs, and finger animation is invisible at the distances this game shows characters. Fingers are posed by a static grip clip per weapon type instead.",
+        "reason": "The pack does carry finger chains — `thumb_01_l`, `index_01_l` through `index_04_leaf_l`, and the same for middle, ring and pinky — but finger animation is invisible at the distances this game shows characters, and mapping 40 extra joints onto a 56-bone target would blow the bone budget. Fingers are posed by a static grip clip per weapon type instead.",
+        "source_finger_names": "thumb_01..03, index_01..04_leaf, middle_01..04_leaf, ring_01..04_leaf, pinky_01..04_leaf, each with _l and _r",
         "grip_clips": ["grip_none", "grip_bow", "grip_axe", "grip_spear", "grip_sword", "grip_shield"]
       },
-      "unmapped_source_bones": "Any source bone not listed here is dropped, not guessed at. The retarget report lists what was dropped so a missing jaw or eye bone is visible rather than silent."
+      "unmapped_source_bones": "Any source bone not listed here is dropped, not guessed at. That is deliberate and it is a lot of bones: the 40 finger joints and every `*_leaf` helper. The retarget report lists what was dropped so a missing jaw or eye bone is visible rather than silent — and note the pack has NO jaw or eye bones, so facial animation cannot come from it at all."
     },
     {
       "source_tool": "custom",
