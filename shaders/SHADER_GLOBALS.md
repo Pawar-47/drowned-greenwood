@@ -36,6 +36,21 @@ per-material uniform now.
 A global that exists in a shader but not in Project Settings is a compile failure, and CI
 should catch it rather than the device.
 
+## Who consumes these
+
+| Shader | Globals it reads |
+|---|---|
+| `surface_base.gdshader` (ground, rock, wood, buildings) | `global_wetness`, `puddle_amount` — via the wetness include |
+| `foliage_base.gdshader` (leaves, ferns, grass, ivy) | `wind_time`, `wind_strength`, `wind_gust` via the wind include; `global_wetness` via the wetness include |
+| `tech_wind_include.gdshaderinc` | `wind_time`, `wind_strength`, `wind_gust` |
+| `tech_wetness_include.gdshaderinc` | `global_wetness`, `puddle_amount` |
+
+`puddle_amount` is read by `surface_base` only: a leaf does not hold a puddle, and applying the
+puddle pass to foliage would flatten a crown's roughness for no visible gain.
+
+Both material shaders are compiled by the Phase 0 gate, so a global that is declared but not
+registered fails CI rather than a device.
+
 ## Types that are deliberately not globals
 
 `wind_noise` and `gust_flowmap` are per-material samplers, not globals: different foliage classes

@@ -304,7 +304,15 @@ jobs:
           name: phase0-blender
           path: artifacts/phase0
 
+      # Both downloads tolerate a missing artifact, because neither GLB is needed for the shader
+      # compile below — and a tools job killed by a runner shutdown must not stop the shader gate
+      # from reporting. Without this, the job died here with "Artifact not found" and every
+      # remaining probe was skipped, including the one that compiles the shaders.
+      #
+      # The tree and human probes already handle a missing GLB by reporting `glb_missing`, so the
+      # report still says what did not run, which is better than the job vanishing.
       - name: Download tool probe outputs (MPFB2 and MTree GLBs)
+        continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: phase0-tools
