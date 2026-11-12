@@ -5,28 +5,58 @@
 > truth. This file carries the reasoning the generated tables cannot, and is updated by hand
 > when the reasoning changes. If the two disagree, the artifact wins.
 
-**Runs recorded:** `fe39869` through `2cdf17c`. Every entry comes from those runs' logs.
+**Runs recorded:** `fe39869` through `b312c37`. Every entry comes from those runs' logs.
 Anything not measured says so.
 
 ## Verdict
 
-Phase 0 is **closed**. The last run reports **50 probes: 49 passed, 1 expected failure, 0
-defects**, and the gate passes.
+Phase 0 is **closed and verified**. The run on `b312c37` reports **56 probes: 55 passed, 1
+negative control holding, 0 informational failures, 0 known gaps, 0 defects**, and the gate
+passes.
+
+Every pin is now enforced rather than documented. That was the weakest part of the pipeline for
+most of Phase 0: three "verified" claims were not, and the tools job reported a Blender checksum
+it never computed because a cache hit skipped the download. See "Pins that were not pins" below.
 
 | Tool | State | Evidence |
 |---|---|---|
-| Blender 4.2.23 and 4.5.16 | **USE** | checksums verified, headless startup, glTF export with material intact (2208 tris) |
+| Blender 4.2.23 and 4.5.16 | **USE — pinned** | SHA-256 checked on every job, cache hit or miss; headless startup; glTF export with material intact (2208 tris) |
 | Cycles CPU | **USE — official preview renderer** | 640x360, 32 samples, denoise, clipping 0.0 |
 | Workbench / EEVEE via Xvfb | available, not depended on | both render under llvmpipe |
-| Godot 4.7.2 | **USE — import gate and shader compile gate** | imports and loads Blender's GLB: `tris=2208`; compiles both shader includes |
-| gltfpack v1.3 | **USE with `-noq`** | quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50 %). A negative control, below |
+| Godot 4.7.2 | **USE — import gate and shader compile gate** | archive SHA-256 verified; imports and loads Blender's GLB: `tris=2208`; compiles both shader includes |
+| gltfpack v1.3 | **USE with `-noq`** | archive SHA-256 verified; quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50 %). Costs 44.8 % more vertex bytes (20,972 vs 14,488) |
 | Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd` |
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list (869 assets), file list, 1k download |
-| **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 1 |
-| **MPFB2** | **USE — builds and rigs** | human exports and loads: `meshes=1, tris=36972, armatures=1, bones=137`. Both counts over budget |
-| **Modular Tree** | **USE — verified end to end** | generates a tree Godot loads: `meshes=2, tris=1840066`. Installed from the prebuilt release, which carries the compiled `m_tree` module |
-| Quaternius packs | **MEASURED — naming corrected** | **43 clips across 2 containers.** The rig uses **Unreal-mannequin** bone names, not Mixamo: `thigh_l`, `spine_01`, `upperarm_l`, `calf_l`. Measured `joints_in_glb=65` against `mapped_names=23`, **matched=1** (`Head`, the only shared name). The map has been rewritten from the measured joints. Family coverage is **14 of 41** by token matching — and that figure has errors in both directions, listed below |
+| **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 2 |
+| **MPFB2** | **USE — builds and rigs** | commit `d0a32e5` fetched and verified; human exports and loads: `meshes=1, tris=36972, armatures=1, bones=137`. Both counts over budget |
+| **Modular Tree** | **USE — verified end to end** | generates a tree Godot loads: `meshes=2, tris=1,091,354` this run. Installed from the prebuilt release, which carries the compiled `m_tree` module |
+| Quaternius packs | **MEASURED — naming corrected, map verified** | **43 clips across 2 containers.** The rig uses **Unreal-mannequin** bone names, not Mixamo. `joints_in_glb=65`, `mapped_names=23`, **matched=23, unmatched=[]** after the rewrite. Family coverage is **14 of 41** by token matching, wrong in both directions — listed below |
+
+MTree's triangle count varies per generated seed: 1,091,354, 1,228,966 and 1,840,066 have all
+been measured. That is the tool's behaviour, not a regression, and it is why no single figure is
+quoted as *the* count.
+
+## Pins that were not pins
+
+Four things claimed verification they did not have. All are fixed, and the mechanism that hid
+each one is described so it cannot come back:
+
+1. **The tools job had no Blender 4.2 checksum at all**, while the main job verified it — the
+   same binary was trusted in one job and checked in the other.
+2. **Blender 4.5's mismatch did `exit 0`**, so a wrong checksum passed the step and the job
+   continued with a binary that was not the pinned one.
+3. **A cache hit skipped the checksum.** The cache held the extracted tree, so a hit meant no
+   download, no comparison — and the step still printed `RESULT blender_checksum exit=0`. The
+   caches now hold the *archives*, keyed by the expected hash, so the check runs every time.
+4. **`0666d9dc…` and `cadd3204…`** — the gltfpack and Godot archives — were unpinned for most of
+   Phase 0. Both are now verified against the digest GitHub records for the release asset.
+   gltfpack's was confirmed twice: CI measured it before the pin existed and the vendor digest
+   matched character for character. Godot does publish `SHA512-SUMS.txt` with its release; an
+   earlier note in this repository claimed it published no checksum at all, which was wrong.
+
+MPFB2 was pinned by a movable tag until it was pinned to the commit `refs/tags/v2.0.18` actually
+resolved to, and the checkout is compared against that commit on every run.
 
 ## Withdrawn claims
 
