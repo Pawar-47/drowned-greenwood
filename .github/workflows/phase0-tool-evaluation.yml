@@ -26,6 +26,11 @@ env:
   BLENDER_VERSION: "4.2.23"
   BLENDER_DIR: "blender-4.2.23-linux-x64"
   BLENDER_URL: "https://download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz"
+  # Modular Tree is a Blender 4.2+ extension declaring blender_version_min = 4.5.0, so it gets
+  # its own Blender version. The brief allows one pinned Blender per job.
+  BLENDER45_VERSION: "4.5.16"
+  BLENDER45_DIR: "blender-4.5.16-linux-x64"
+  BLENDER45_URL: "https://download.blender.org/release/Blender4.5/blender-4.5.16-linux-x64.tar.xz"
   GODOT_VERSION: "4.7.2-stable"
   GODOT_URL: "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
   GLTFPACK_URL: "https://github.com/zeux/meshoptimizer/releases/download/v1.3/gltfpack-ubuntu.zip"
@@ -288,39 +293,49 @@ jobs:
             git clone --depth 1 https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
           fi
           echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
-          # Install into the Blender installation itself, under the add-on's own package name.
+          # Install under the add-on's own package name: mpfb2's package is src/mpfb, and
+          # Blender imports an add-on by that name, not by the repository's name.
           bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
           run_capture mpfb2 "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
           ls -la artifacts/phase0 >>"$LOG" 2>&1
 
-      - name: MTree clone and add-on registration
+      - name: MTree clone, install as extension, and generate a tree
         continue-on-error: true
         run: |
           set -uo pipefail
           source tools/phase0/lib.sh
-          BLENDER_ROOT="$(cat tools/vendor/.blender_path)"
-          BLENDER="${BLENDER_ROOT}/blender"
+          # Modular Tree declares blender_version_min = 4.5.0, so it cannot register in 4.2.
+          # Fetch the Blender 4.5 LTS the brief permits for this job.
+          mkdir -p tools/vendor
+          if [ ! -d "tools/vendor/${BLENDER45_DIR}" ]; then
+            curl -fsSL -o tools/vendor/blender45.tar.xz "$BLENDER45_URL"
+            curl -fsSL -o tools/vendor/blender45.tar.xz.sha256 \
+              "https://download.blender.org/release/Blender4.5/blender-${BLENDER45_VERSION}.sha256"
+            expected=$(grep -F "blender-${BLENDER45_VERSION}-linux-x64.tar.xz" tools/vendor/blender45.tar.xz.sha256 | awk '{print $1}')
+            actual=$(sha256sum tools/vendor/blender45.tar.xz | awk '{print $1}')
+            echo "blender45 expected=${expected} actual=${actual}" | tee -a "$LOG"
+            [ "$expected" = "$actual" ] || { echo "RESULT blender45_checksum exit=1" | tee -a "$LOG"; exit 0; }
+            tar -xJf tools/vendor/blender45.tar.xz -C tools/vendor
+          fi
+          echo "RESULT blender45_checksum exit=0 version=${BLENDER45_VERSION}" | tee -a "$LOG"
+          BLENDER45="$(pwd)/tools/vendor/${BLENDER45_DIR}/blender"
           if [ ! -d tools/vendor/modular_tree ]; then
             git clone --depth 1 https://github.com/GoodPie/modular_tree tools/vendor/modular_tree
           fi
           echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
-          # The installer always exits 0 and reports the layout it found, so a failure here
-          # cannot abort the step before the probe runs.
-          bash tools/phase0/install_blender_addon.sh tools/vendor/modular_tree modular_tree "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
-          # Judged on whether the operator namespace exists, not on Blender's exit code:
-          # Blender exits 0 even when the add-on it was asked to enable registered nothing.
+          # Install it as an extension, which is what a blender_manifest.toml repository is.
           set +e
-          out="$(mktemp)"
-          "$BLENDER" -b --factory-startup --python-expr "
-          import addon_utils, bpy
-          addon_utils.enable('modular_tree', default_set=True)
-          has = hasattr(bpy.ops, 'm_tree')
-          print('RESULT ' + __import__('json').dumps({'step': 'mtree_register', 'ok': has, 'has_m_tree_ops': has}))
-          " >"$out" 2>&1
-          cat "$out" >>"$LOG"
-          grep -q '^RESULT ' "$out" || echo "RESULT mtree_register ok=False reason=blender_produced_no_result" | tee -a "$LOG"
-          rm -f "$out"
+          "$BLENDER45" -b --factory-startup \
+            --command extension install-file -r user_default --enable \
+            "tools/vendor/modular_tree" >"$LOG.tmp" 2>&1
+          ext_code=$?
+          cat "$LOG.tmp" >>"$LOG"
+          rm -f "$LOG.tmp"
+          echo "RESULT mtree_extension_install exit=${ext_code}" | tee -a "$LOG"
           set -e
+          # Judge on the operator namespace having entries, never on hasattr(): bpy.ops
+          # resolves names lazily, so hasattr(bpy.ops, "anything") is always True.
+          run_capture mtree "$BLENDER45" -b --factory-startup -P tools/phase0/blender_probe_mtree.py
 
       - name: glTF-Transform CLI
         continue-on-error: true
