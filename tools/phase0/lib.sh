@@ -8,9 +8,14 @@ LOG="${LOG:-${GITHUB_WORKSPACE:-$PWD}/phase0_log.txt}"
 mkdir -p "$(dirname "$LOG")"
 : >> "$LOG"
 
+# Every probe is bounded. Godot sat waiting for an import that never came and the job burned
+# its full 45-minute ceiling before being cancelled; a probe that hangs must cost seconds, not
+# a job. Override with PROBE_TIMEOUT when a probe legitimately needs longer.
+PROBE_TIMEOUT="${PROBE_TIMEOUT:-300}"
+
 # run_capture <name> <command> [args...]
 #
-# Runs the command, copies its output into the log, and records a result line.
+# Runs the command under `timeout`, copies its output into the log, and records a result line.
 #
 # If the command already printed its own RESULT line — the Python and GDScript probes do, with
 # far more detail than an exit code — that line stands on its own and no second row is added.
@@ -32,13 +37,16 @@ run_capture() {
     *e*) had_errexit=1 ;;
   esac
   set +e
-  "$@" >"$output" 2>&1
+  timeout --signal=KILL "${PROBE_TIMEOUT}" "$@" >"$output" 2>&1
   code=$?
   [ "$had_errexit" -eq 1 ] && set -e
 
   cat "$output" >>"$LOG"
 
-  if grep -q '^RESULT ' "$output"; then
+  if [ "$code" -eq 137 ]; then
+    # Killed by timeout: say so, because a silent hang reads like a crash.
+    echo "RESULT ${name}_timeout exit=137 timeout=${PROBE_TIMEOUT}s" | tee -a "$LOG"
+  elif grep -q '^RESULT ' "$output"; then
     # The probe reported for itself. Only add a row if it failed without saying so.
     if [ "$code" -ne 0 ] && ! grep -q '"ok": false' "$output"; then
       echo "RESULT ${name}_exit exit=${code}" | tee -a "$LOG"

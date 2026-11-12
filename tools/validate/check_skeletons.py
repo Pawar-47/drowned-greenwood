@@ -219,11 +219,11 @@ def check_retarget(problems, skeleton):
                     % (source["source_tool"], target)
                 )
         status = source.get("status", "")
-        # A mapping that has not been exercised must say why. "blocked" and
-        # "pending_verification" are both honest states; a bare "verified" with no evidence is
+        # A mapping that has not been exercised must say why. "blocked", "planned" and
+        # "pending_verification" are all honest states; a bare "verified" with no evidence is
         # what this catches.
-        if status in {"blocked", "pending_verification"}:
-            reason = source.get("blocked_on") or source.get("status_note")
+        if status in {"blocked", "planned", "pending_verification"}:
+            reason = source.get("blocked_on") or source.get("status_note") or source.get("reason")
             if not reason:
                 problems.append(
                     "char_retarget_map: %s is %s but does not say why"

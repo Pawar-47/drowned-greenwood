@@ -61,7 +61,7 @@ pushed.
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests | **Setup complete; verification incomplete.** Verified in CI: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import and load of a real GLB (2208 tris), gltfpack `-noq` (1104 tris), Infinigen, glTF-Transform, Poly Haven, Modular Tree's 9 operators. **Unresolved:** MPFB2 registers no operators; MTree's tree has not been imported into Godot; the shader includes had never been compiled until now; Quaternius clip count needs GLB enumeration. See `reports/tool_evaluation.md` |
+| 0 | Tool smoke tests | **Setup complete; verification nearly complete.** Verified in CI: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import and load of a real GLB (2208 tris), gltfpack `-noq` (1104 tris), Infinigen, glTF-Transform, Poly Haven, Modular Tree's 9 operators. **Quaternius measured: 43 clips, 16 of 41 families covered** — 25 missing, so most of Phase 5's animation list is authored with `bpy`. **MPFB2** fails with a real traceback now: it is an extension being installed as a legacy add-on; install path corrected. See `reports/tool_evaluation.md` |
 | 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | in progress |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |

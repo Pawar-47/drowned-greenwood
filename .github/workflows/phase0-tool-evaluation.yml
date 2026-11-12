@@ -251,10 +251,19 @@ jobs:
           tools/vendor/godot/godot --version >>"$LOG" 2>&1 || true
 
       - name: Compile the project's shader includes
+        timeout-minutes: 5
         run: |
+          set -uo pipefail
           source tools/phase0/lib.sh
           GODOT="$PWD/tools/vendor/godot/godot"
-          run_capture shader_compile "$GODOT" --headless \
+          # The project must be IMPORTED before any scene runs. Running a scene first made
+          # Godot sit waiting for an import that never came: the job hit its 45-minute ceiling
+          # and was cancelled. Import is a separate, bounded step.
+          run_capture shader_import "$GODOT" --headless \
+            --path tools/phase0/godot_probe --import
+          # --quit-after bounds the scene run. Without it a scene that fails to reach its
+          # quit() call hangs until the job is killed, which is exactly what happened.
+          run_capture shader_compile "$GODOT" --headless --quit-after 600 \
             --path tools/phase0/godot_probe shader_probe.tscn
 
       - name: Import and load the generated GLBs
@@ -387,7 +396,7 @@ jobs:
           fi
           echo "RESULT blender45_checksum exit=0 version=${BLENDER45_VERSION}" | tee -a "$LOG"
 
-      - name: MPFB2 clone, register, build and export a human
+      - name: MPFB2 install as extension, register, build and export a human
         continue-on-error: true
         run: |
           set -uo pipefail
@@ -400,11 +409,24 @@ jobs:
             git clone --depth 1 --branch "${MPFB2_TAG}" https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
           fi
           echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
-          # Install under the add-on's own package name: MPFB2's package is src/mpfb, and
-          # Blender imports an add-on by that name, not by the repository's name.
-          bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
-          # PROBE_OUT must point into the directory the workflow uploads, or the generated GLB
-          # is written to /tmp and silently lost. The earlier version defaulted to /tmp/phase0.
+          # MPFB2 is an EXTENSION: src/mpfb/blender_manifest.toml exists, and its register()
+          # calls bpy.utils.extension_path_user(__package__), which raises
+          #   ValueError: The "package" does not name an extension
+          # unless the package is installed in an extensions repo. Installing it into
+          # scripts/addons as a legacy add-on could never work, however many files arrived.
+          python3 tools/phase0/zip_extension.py tools/vendor/mpfb2/src/mpfb tools/vendor/mpfb2.zip | tee -a "$LOG"
+          set +e
+          out="$(mktemp)"
+          "$BLENDER" -b --factory-startup \
+            --command extension install-file -r user_default --enable \
+            tools/vendor/mpfb2.zip >"$out" 2>&1
+          code=$?
+          cat "$out" >>"$LOG"
+          rm -f "$out"
+          echo "RESULT mpfb2_extension_install exit=${code}" | tee -a "$LOG"
+          set -e
+          # PROBE_OUT into the uploaded directory, or the generated GLB is written to /tmp and
+          # silently lost.
           run_capture mpfb2 env PROBE_OUT=artifacts/phase0 \
             "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
           ls -l artifacts/phase0/probe_human.glb >>"$LOG" 2>&1 || true
@@ -425,23 +447,10 @@ jobs:
             git -C tools/vendor/modular_tree checkout --quiet FETCH_HEAD
           fi
           echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
-          # install-file takes a zip whose single top-level folder holds the manifest. python3
-          # builds it because that is guaranteed present, unlike the zip utility.
-          rm -f tools/vendor/modular_tree.zip
-          python3 - <<'PY'
-          import os
-          import zipfile
-
-          source = "tools/vendor/modular_tree"
-          target = "tools/vendor/modular_tree.zip"
-          with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-              for root, dirs, files in os.walk(source):
-                  dirs[:] = [d for d in dirs if d != ".git"]
-                  for name in files:
-                      path = os.path.join(root, name)
-                      archive.write(path, os.path.relpath(path, "tools/vendor"))
-          print("zipped %s -> %s (%d bytes)" % (source, target, os.path.getsize(target)))
-          PY
+          # install-file takes a zip whose single top-level folder holds the manifest. The
+          # helper finds the manifest rather than assuming it sits at the repository root, and
+          # names the folder after the manifest's id, which is how Blender installs it.
+          python3 tools/phase0/zip_extension.py tools/vendor/modular_tree tools/vendor/modular_tree.zip | tee -a "$LOG"
           set +e
           "$BLENDER45" -b --factory-startup \
             --command extension install-file -r user_default --enable \
@@ -492,8 +501,12 @@ jobs:
           echo "RESULT quaternius_download exit=$?" | tee -a "$LOG"
           find artifacts/phase0/quaternius -maxdepth 1 -type f -printf '%f %s\n' | sort >>"$LOG" 2>&1
           unzip -l artifacts/phase0/quaternius/*.zip >>"$LOG" 2>&1 || true
+          # Extract OUTSIDE the artifact directory. The extracted animation libraries are tens
+          # of MB and nothing downstream needs them; leaving them in artifacts/phase0 pushed the
+          # upload to 32 MB against a shared 500 MB pool.
           python3 tools/phase0/quaternius_inventory.py \
             --dir artifacts/phase0/quaternius \
+            --extract-dir "${RUNNER_TEMP:-/tmp}/quaternius" \
             --out artifacts/phase0/quaternius_coverage.json | tee -a "$LOG"
 
       - name: Infinigen clone and install

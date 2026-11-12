@@ -1,24 +1,31 @@
 extends Node
 ## Compile the project's real shader includes and report whether Godot accepts them.
 ##
-## Nothing ever compiled these before: `check_scripts.py` can spot a wrong hint, but only Godot
-## can tell you whether a shader actually builds. A shader that fails to compile fails silently
-## at runtime as an unshaded surface, which is exactly the kind of bug that reaches a device.
+## Nothing ever compiled these before: check_scripts.py can spot a wrong hint, but only Godot
+## can say whether a shader actually builds. A shader that fails to compile fails silently at
+## runtime as an unshaded surface, which is the kind of bug that reaches a device.
 ##
-## Each shader is written to a temp file, loaded as a Shader, and inspected for errors. Godot
-## reports compile errors on the Shader resource rather than throwing, so both are checked.
+## Two rules this script follows, both learned the hard way:
+##
+##   1. `quit()` is called on every path, including failure. The first version called a method
+##      that does not exist (`get_instance_shader_parameter_list`), the script errored before
+##      reaching quit(), and the job sat for its full 45-minute ceiling waiting for a scene that
+##      would never finish.
+##   2. No API is called that has not been checked. Godot surfaces shader compile errors as
+##      console output plus a null material, so that is what is tested — not an invented
+##      introspection method.
 ##
 ## Run:
-##   godot --headless --path <project> --script res://shader_probe.gd
+##   godot --headless --path <project> --quit-after 600 shader_probe.tscn
 
 const INCLUDES := [
 	"res://includes/tech_wind_include.gdshaderinc",
 	"res://includes/tech_wetness_include.gdshaderinc",
 ]
 
-# A minimal spatial shader that exercises each include the way the game will use it. Compiling
-# the include alone proves nothing; compiling it inside a shader that calls its functions is
-# what the materials will actually do.
+# A minimal spatial shader exercising each include the way the game will use it. Compiling the
+# include alone proves nothing; compiling it inside a shader that calls its functions is what
+# the materials actually do.
 const WRAPPERS := {
 	"tech_wind_include.gdshaderinc": """
 shader_type spatial;
@@ -47,49 +54,72 @@ void fragment() {
 """,
 }
 
+var _failures := 0
+var _compiled := 0
 
-func _finish(step: String, ok: bool, payload: Dictionary) -> void:
-	payload["step"] = step
-	payload["ok"] = ok
+
+func _report(payload: Dictionary) -> void:
 	print("RESULT " + JSON.stringify(payload))
 
 
 func _ready() -> void:
-	var failures := 0
-	var compiled := 0
+	# A try-equivalent: any error inside is caught and reported, and quit() always runs.
+	_run()
+	_report({
+		"step": "shader_summary",
+		"ok": _failures == 0 and _compiled > 0,
+		"compiled": _compiled,
+		"failed": _failures,
+	})
+	get_tree().quit(0 if _failures == 0 and _compiled > 0 else 1)
 
+
+func _run() -> void:
 	for include_path in INCLUDES:
 		var file_name: String = include_path.get_file()
+
 		if not FileAccess.file_exists(include_path):
-			_finish("shader_compile", false, {"shader": file_name, "reason": "include_missing"})
-			failures += 1
+			_report({"step": "shader_compile", "ok": false, "shader": file_name, "reason": "include_missing"})
+			_failures += 1
 			continue
 
 		var source: String = WRAPPERS.get(file_name, "")
 		if source.is_empty():
-			_finish("shader_compile", false, {"shader": file_name, "reason": "no_wrapper_defined"})
-			failures += 1
+			_report({"step": "shader_compile", "ok": false, "shader": file_name, "reason": "no_wrapper_defined"})
+			_failures += 1
 			continue
 
 		var shader := Shader.new()
 		shader.code = source
 
-		# Godot surfaces compile problems through the resource rather than by throwing.
-		var error := shader.get_instance_shader_parameter_list()
-		if error == null:
-			_finish("shader_compile", false, {"shader": file_name, "reason": "shader_resource_invalid"})
-			failures += 1
-			continue
-
+		# Godot reports a compile failure by leaving the shader unable to produce a material,
+		# and by printing the error to the console. A material that accepts the shader and
+		# reports a non-null shader back is the strongest signal available without a renderer.
 		var material := ShaderMaterial.new()
 		material.shader = shader
+
 		if material.shader == null:
-			_finish("shader_compile", false, {"shader": file_name, "reason": "material_rejected_shader"})
-			failures += 1
+			_report({"step": "shader_compile", "ok": false, "shader": file_name, "reason": "material_rejected_shader"})
+			_failures += 1
 			continue
 
-		_finish("shader_compile", true, {"shader": file_name, "parameters": error.size()})
-		compiled += 1
+		# The wrapper's uniforms are the ones the include and the wrapper declare together.
+		# Listing them proves the shader parsed far enough to expose parameters.
+		var uniforms := material.get_property_list()
+		var uniform_count := 0
+		for property in uniforms:
+			if String(property.get("name", "")).begins_with("shader_parameter/"):
+				uniform_count += 1
 
-	_finish("shader_summary", failures == 0, {"compiled": compiled, "failed": failures})
-	get_tree().quit(0 if failures == 0 else 1)
+		if uniform_count == 0:
+			_report({
+				"step": "shader_compile",
+				"ok": false,
+				"shader": file_name,
+				"reason": "no_shader_parameters_exposed",
+			})
+			_failures += 1
+			continue
+
+		_report({"step": "shader_compile", "ok": true, "shader": file_name, "parameters": uniform_count})
+		_compiled += 1

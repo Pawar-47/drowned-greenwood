@@ -137,6 +137,12 @@ def extract_archives(root_dir, extract_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", required=True)
+    parser.add_argument(
+        "--extract-dir",
+        default="",
+        help="where to unzip; keep this OUTSIDE the artifact directory so the libraries "
+        "are not uploaded (default: <dir>/extracted)",
+    )
     parser.add_argument("--out", default="")
     args = parser.parse_args()
 
@@ -146,7 +152,7 @@ def main():
         return 1
 
     root_dir = os.path.abspath(args.dir)
-    extract_dir = os.path.join(root_dir, "extracted")
+    extract_dir = os.path.abspath(args.extract_dir) if args.extract_dir else os.path.join(root_dir, "extracted")
     archives = extract_archives(root_dir, extract_dir)
 
     # Read the animations out of every GLB. GLB only: FBX is not parsed, and reporting an FBX

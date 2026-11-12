@@ -80,6 +80,18 @@ def body():
     # clear_scene(), not read_factory_settings(): the latter would unregister the extension
     # that was just enabled, which is exactly what the previous run tripped over.
     clear_scene()
+
+    # `quick_generate` failed with "No module named 'm_tree'": the extension's operator imports
+    # its inner package by a bare name, which only resolves if the extension's own directory is
+    # on sys.path. Blender puts the extensions repo root there, not the package root, so add it.
+    for module in addon_utils.modules():
+        if "modular_tree" not in module.__name__:
+            continue
+        package_dir = os.path.dirname(getattr(module, "__file__", "") or "")
+        if package_dir and package_dir not in sys.path:
+            sys.path.insert(0, package_dir)
+            report(step="mtree_syspath", ok=True, added=package_dir)
+
     ops = getattr(bpy.ops, namespace)
     generator = next(
         (n for n in ("quick_generate", "add_tree", "generate_tree") if n in operators), None

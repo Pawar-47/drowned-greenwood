@@ -1,20 +1,25 @@
-"""Probe: can MPFB2 register and build a human?
+"""Probe: can MPFB2 register and build a human, installed as an extension?
 
-The history of this probe is worth keeping, because every step was a different way of being
-wrong:
+The history of this probe is worth keeping, because each step was a different way of being
+wrong, and only the last one found the actual cause:
 
   1. `addon_utils.enable("mpfb")` inside a `try/except` — which can never fire, because
-     `enable()` returns None on failure and prints the traceback to stderr. Three runs
-     reported PASS while nothing registered.
+     `enable()` returns None on failure and prints to stderr. Three runs reported PASS.
   2. "It needs asset packs" — wrong. `src/mpfb/data/3dobjs/base.obj` is 1.7 MB and ships in
      the repository.
-  3. The real blocker for the add-on loader: MPFB2 defines `fake_bl_info`, not `bl_info`, and
-     Blender needs `bl_info` to recognise a legacy add-on. The official package has it
-     injected by a build outside the repo.
+  3. "It defines fake_bl_info, so Blender will not recognise it" — half right, and it led to
+     installing it as a *legacy add-on*, which is what broke it.
+  4. The real cause, from register()'s own traceback:
 
-So this probe does not use `addon_utils` at all. It imports the package and calls
-`register()` directly — which is what an add-on loader does internally, needs no `bl_info`,
-and surfaces the exception instead of swallowing it.
+         ValueError: The "package" does not name an extension
+
+     MPFB2 ships `src/mpfb/blender_manifest.toml`. It is a Blender 4.2 **extension**, and its
+     register() calls `bpy.utils.extension_path_user(__package__)`, which raises unless the
+     package is installed in an extensions repository. Installing it into `scripts/addons` as
+     a legacy add-on can therefore never work, however many files are present.
+
+So this probe expects MPFB2 to have been installed with
+`blender --command extension install-file`, and reports what register() says if it was not.
 
 Run:
     blender -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
@@ -24,6 +29,7 @@ import os
 import sys
 import traceback
 
+import addon_utils
 import bpy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -37,60 +43,58 @@ from blender_probe_common import (  # noqa: E402
 )
 
 
-def add_addons_to_path():
-    """Put every plausible addons directory on sys.path, and say which ones were added."""
-    candidates = [
-        os.path.join(os.path.expanduser("~"), ".config", "blender", "4.2", "scripts", "addons")
-    ]
-    for script_path in bpy.utils.script_paths():
-        candidates.append(os.path.join(script_path, "addons"))
-    added = []
-    for path in candidates:
-        if os.path.isdir(path) and path not in sys.path:
-            sys.path.insert(0, path)
-            added.append(path)
-    return added
-
-
 def body():
     outdir = os.environ.get("PROBE_OUT", "/tmp/phase0")
     os.makedirs(outdir, exist_ok=True)
 
-    added = add_addons_to_path()
+    # An installed extension appears as bl_ext.<repo>.<id>. Find whatever MPFB calls itself.
+    candidates = [m.__name__ for m in addon_utils.modules() if "mpfb" in m.__name__.lower()]
+    report(step="mpfb_modules", ok=True, candidates=candidates[:10])
 
-    # 1. Import the package.
     module = None
     import_error = ""
-    try:
-        import mpfb
+    imported_as = ""
+    for name in ["mpfb"] + candidates:
+        try:
+            module = __import__(name, fromlist=["*"])
+            imported_as = name
+            break
+        except Exception:  # noqa: BLE001
+            import_error = traceback.format_exc()
 
-        module = mpfb
-    except Exception:  # noqa: BLE001
-        import_error = traceback.format_exc()
     report(
         step="mpfb_import",
         ok=module is not None,
+        imported_as=imported_as,
         module_file=getattr(module, "__file__", ""),
         version=str(getattr(module, "VERSION", "")),
-        sys_path_added=added,
         error=short(import_error),
     )
     if module is None:
         return 1
 
-    # 2. Register it. This is the call addon_utils.enable() makes and hides.
+    # Register through Blender's own loader, which is what sets up the extension context that
+    # extension_path_user() needs. Calling register() by hand bypasses that and raises.
     register_error = ""
+    enabled = False
     try:
-        module.register()
+        addon_utils.enable(imported_as, default_set=True, persistent=False)
+        enabled = imported_as in bpy.context.preferences.addons
     except Exception:  # noqa: BLE001
         register_error = traceback.format_exc()
-    report(step="mpfb_register", ok=not register_error, error=short(register_error))
 
-    # 3. What appeared? A non-empty operator list is the only proof of registration.
+    # addon_utils.enable does not raise; check whether it actually took.
+    if not enabled:
+        try:
+            module.register()
+            enabled = True
+        except Exception:  # noqa: BLE001
+            register_error = traceback.format_exc()
+    report(step="mpfb_register", ok=enabled, via_addon_utils=imported_as in bpy.context.preferences.addons, error=short(register_error))
+
     operators = sorted(name for name in dir(bpy.ops.mpfb)) if hasattr(bpy.ops, "mpfb") else []
     report(step="mpfb_operators", ok=len(operators) > 0, count=len(operators), names=operators[:40])
 
-    # 4. Can MPFB find its own data? Ask its service rather than guessing at a path.
     data_ok = False
     data_dir = ""
     try:
@@ -106,8 +110,6 @@ def body():
     if not operators:
         return 1
 
-    # 5. Build a human. clear_scene() replaces read_factory_settings(), which would
-    #    unregister the add-on that was just registered.
     clear_scene()
     creator = next((name for name in ("create_human", "human_create") if name in operators), None)
     if creator is None:
@@ -125,7 +127,6 @@ def body():
     if not created:
         return 1
 
-    # 6. Export it.
     geometry = count_mesh_geometry()
     glb = os.path.join(outdir, "probe_human.glb")
     exported, size, export_error = export_glb(glb)

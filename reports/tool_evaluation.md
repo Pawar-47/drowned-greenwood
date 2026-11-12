@@ -24,9 +24,9 @@ had never been run at all until an audit pointed at them.
 | Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd` |
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list, file list, 1k download |
-| **MPFB2** | **UNDER REPAIR** | imports and registers, but exposes 0 operators. See below |
-| **Modular Tree** | **USE — correction** | 9 operators register in `bpy.ops.mtree`; an earlier rejection was my probe looking in `bpy.ops.m_tree`. Tree generation not yet proven |
-| Quaternius packs | **UNVERIFIED** | 4 files that are whole animation libraries; clip count needs GLB enumeration |
+| **MPFB2** | **UNDER REPAIR** | `register()` raises `ValueError: The "package" does not name an extension`. It is an extension (`src/mpfb/blender_manifest.toml`) that was being installed as a legacy add-on. Now installed via `extension install-file` |
+| **Modular Tree** | **USE — correction** | 9 operators register in `bpy.ops.mtree`. `quick_generate` failed with `No module named 'm_tree'` — the extension's package directory is not on `sys.path`; the probe now adds it |
+| Quaternius packs | **MEASURED** | **43 clips, 16 of 41 families covered.** 25 families missing, including every melee weapon, skinning, butchering and the bow |
 
 ## Withdrawn claims
 
@@ -68,33 +68,75 @@ for 4.E trees, which restores the node-based branch control the brief wanted.
 **What is still unproven:** that `quick_generate` actually produces a mesh and exports. The
 namespace discovery is measured; tree generation is the next run's job.
 
-## Quaternius: four files, and they are libraries
+## Quaternius: measured, at last
 
-The archive `Universal.Animation.Library.Standard.zip` contains `ual1_standard.fbx`,
-`ual1_standard.glb`, `ual1_standard_rm.fbx`, `ual1_standard_rm.glb`, plus a texture set and
-readme. These are **single containers holding a whole animation library**, which is how the
-Quaternius Universal Animation Library is distributed — not one file per clip.
+The GLB enumeration ran and produced real numbers instead of a file count:
 
-So `families_covered=0` was a limitation of the inventory, not a fact about the pack: counting
-clips by file name cannot work when one file holds a hundred of them. The inventory now reads
-the GLB container directly — a GLB is a header plus length-prefixed chunks whose first chunk is
-JSON, so the animation names are readable with the standard library alone, no Blender needed. It
-reports the real clip count, deduplicated across the FBX and GLB copies of the same library, and
-which of the brief's animation families those names cover.
+```
+clips: 43        containers: 2 (UAL1_Standard.glb, UAL1_Standard_RM.glb — 43 each)
+families covered: 16 of 41
+```
 
-## MPFB2: what is established and what is not
+Sample names: `A_TPose`, `Idle_Loop`, `Idle_Torch_Loop`, `Crouch_Idle_Loop`, `Crouch_Fwd_Loop`,
+`Jog_Fwd_Loop`, `Jump_Start`, `Jump_Loop`, `Jump_Land`, `Death01`, `Hit_Chest`, `Hit_Head`,
+`Interact`, `PickUp_Table`, `Dance_Loop`.
 
-What is established: the module imports from the installed path
-(`…/addons/mpfb/__init__.py`), `register()` is called, and **zero operators appear**.
+**Covered (16):** idle, walk, crouch, jump/fall/land, hit react, death, interact, eat/drink/heal,
+light fire, emotes, and a few more.
 
-What is not established: why. Three candidate causes were chased and two were wrong — a missing
-`bl_info` and a `try/except` that could never fire. The probe now bypasses the add-on loader and
-calls `register()` directly, so any exception surfaces with a real traceback, and it reports the
-data directory, the operators that appeared, and whether a human builds and exports.
+**Missing (25), and this is the number that matters for Phase 5:** run, prone, climb ladder, climb
+rope, vault, swim, wade, roll/dodge, crossbow, throw, melee axe/club/knife/spear, shield/block/
+parry, stagger, ragdoll pose, skin animal, butcher, craft/forge, set trap, build/repair, fish,
+chop tree, mine, mount/ride, shiver/shake-off.
 
-**This is a repair of the measurement, not a fourth attempt.** The brief's three attempts were
-spent on three wrong diagnoses. If `register()` succeeds, MPFB2 was never broken. If it raises,
-the traceback finally says what is wrong.
+Two consequences, stated plainly:
+
+1. **The pack is a general-purpose animation library, not a hunting-game one.** It has no
+   skinning, butchering, bow-draw, or melee clips in the Free Standard set, which is exactly what
+   the brief warned about. Most of Phase 5's animation list must be authored with `bpy`.
+2. **`anim_bow` is reported as covered but should not be trusted.** The keyword matcher counts
+   `Pistol_Aim_Down` and `Pistol_Aim_Neutral` under "aim". A pistol aim is not a bow draw. The
+   coverage figure is a keyword heuristic and is optimistic; the clip list in
+   `quaternius_coverage.json` is the thing to check against.
+
+## MPFB2: the cause, finally
+
+The probe now reports `register()`'s actual traceback:
+
+```
+File ".../bpy/utils/__init__.py", line 902, in extension_path_user
+    repo_module, pkg_idname = _extension_module_name_decompose(package)
+ValueError: The "package" does not name an extension
+```
+
+MPFB2 ships **`src/mpfb/blender_manifest.toml`**. It is a Blender 4.2 **extension**, and its
+`register()` calls `bpy.utils.extension_path_user(__package__)`, which raises unless the package
+is installed in an extensions repository. Every previous run installed it into `scripts/addons`
+as a legacy add-on, which can never satisfy that call — which is why it imported cleanly, listed
+540 files, and registered nothing.
+
+It is now installed with `blender --command extension install-file`, and the probe enables it
+through `addon_utils` so Blender sets up the extension context rather than calling `register()`
+by hand and bypassing it.
+
+**Three earlier diagnoses were wrong**: a silent `try/except` around `addon_utils.enable`, a
+missing asset pack, and `fake_bl_info`. The traceback took one run to settle what four
+speculative fixes could not.
+
+## Modular Tree: registers, but does not generate
+
+`quick_generate` now reaches the operator and fails inside it:
+
+```
+RuntimeError: Error: Failed to generate tree: No module named 'm_tree'
+```
+
+The extension registers its operators under `bpy.ops.mtree`, but its generator imports its own
+inner package as `m_tree`, which only resolves if the extension's package directory is on
+`sys.path`. Blender adds the extensions repo root, not the package root. The probe now adds that
+directory before generating.
+
+**This is a real, specific, one-line cause** — not "the tool is rejected".
 
 ## What each state means for the asset list
 
