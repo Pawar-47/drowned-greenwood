@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "name": "char_retarget_map",
+  "description": "How animation sources become clips on the shared skeleton. Every mapping here is between a source's bone naming and the names in char_skeleton_definition.json; nothing retargets bone-to-bone by position, because positional retargeting silently mangles proportions.",
+  "target_skeleton": "char_skeleton_definition.json",
+  "sources": [
+    {
+      "source_tool": "quaternius",
+      "status": "blocked",
+      "blocked_on": "The free Standard ZIPs are downloaded manually by the owner and uploaded to the release 'third-party-quaternius'. Until that release exists, no clip count can be stated and no mapping can be verified against real files.",
+      "known_naming": "Quaternius packs use a Mixamo-style naming scheme. The mapping below is written from that convention and MUST be verified against the actual files once the release exists; it is a plan, not a measurement.",
+      "rest_pose": "T-pose, matching the target rest pose, so no rest-pose correction is needed.",
+      "scale": "Quaternius characters are authored around 1.8 m. Reject any clip whose root height differs by more than 5 % from the target skeleton before retargeting.",
+      "map": {
+        "Root": "Root",
+        "Hips": "Hips",
+        "Spine": "Spine",
+        "Spine1": "Chest",
+        "Spine2": "UpperChest",
+        "Neck": "Neck",
+        "Head": "Head",
+        "LeftShoulder": "LeftShoulder",
+        "LeftArm": "LeftUpperArm",
+        "LeftForeArm": "LeftLowerArm",
+        "LeftHand": "LeftHand",
+        "RightShoulder": "RightShoulder",
+        "RightArm": "RightUpperArm",
+        "RightForeArm": "RightLowerArm",
+        "RightHand": "RightHand",
+        "LeftUpLeg": "LeftUpperLeg",
+        "LeftLeg": "LeftLowerLeg",
+        "LeftFoot": "LeftFoot",
+        "LeftToeBase": "LeftToes",
+        "RightUpLeg": "RightUpperLeg",
+        "RightLeg": "RightLowerLeg",
+        "RightFoot": "RightFoot",
+        "RightToeBase": "RightToes"
+      },
+      "fingers": {
+        "policy": "collapse",
+        "reason": "Quaternius finger naming is not consistent across packs, and finger animation is invisible at the distances this game shows characters. Fingers are posed by a static grip clip per weapon type instead.",
+        "grip_clips": ["grip_none", "grip_bow", "grip_axe", "grip_spear", "grip_sword", "grip_shield"]
+      },
+      "unmapped_source_bones": "Any source bone not listed here is dropped, not guessed at. The retarget report lists what was dropped so a missing jaw or eye bone is visible rather than silent."
+    },
+    {
+      "source_tool": "custom",
+      "status": "planned",
+      "reason": "Every clip the packs cannot supply is authored with bpy against the target skeleton directly, so it needs no retarget map at all. This is the fallback for the whole animation list if the release never appears.",
+      "authored_directly": true
+    }
+  ],
+  "rules": [
+    "Retarget by bone name, never by position or hierarchy inference.",
+    "No scale keys survive retargeting: a clip with scale channels is rejected, per the brief.",
+    "Every clip is resampled to 30 fps on the way in, using glTF-Transform's resample, so a 60 fps source does not double the file size.",
+    "Locomotion clips record their root speed in metres per second in the clip's metadata, so gameplay can match animation speed to movement speed and foot-sliding is measurable rather than a matter of opinion.",
+    "A loop clip's first and last frame must agree within 1 degree of rotation and 1 cm of position. The validator measures this on the exported GLB, not on the source file.",
+    "Clips are stored one per GLB animation, named exactly as in the manifest's anims[] list, so a missing or renamed clip fails the validator instead of silently doing nothing at runtime."
+  ],
+  "root_speed_metadata": {
+    "key": "root_speed_mps",
+    "clips_requiring_it": [
+      "anim_walk", "anim_run", "anim_sprint", "anim_crouch_walk",
+      "anim_prone_crawl", "anim_swim", "anim_wade", "anim_mount_ride"
+    ],
+    "note": "Measured from the root bone's horizontal displacement over the clip, divided by its duration. Written into the GLB's extras for the clip."
+  }
+}

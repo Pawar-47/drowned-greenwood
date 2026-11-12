@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "name": "char_skeleton_definition",
+  "description": "The one humanoid skeleton every character, clothing piece, armor piece and animation in The Drowned Greenwood binds to. Written in Phase 1, before any human or animation work, so nothing can invent a second skeleton later.",
+  "constraints": {
+    "max_bones": 65,
+    "max_weights_per_vertex": 4,
+    "weights_normalized": true,
+    "animation_fps": 30,
+    "no_scale_keys": true,
+    "loop_seam_tolerance": {
+      "rotation_degrees": 1.0,
+      "position_cm": 1.0
+    }
+  },
+  "bone_count": 56,
+  "bone_budget_note": "56 of the 65 allowed bones. The 9 spare are deliberately unallocated: cloth chains (cape, banner, tabard) are separate tech_cloth_bone_chain_* assets with their own <= 6-bone chains, so they must not eat this budget.",
+  "units": "metres, Y-up, character faces -Z in rest pose",
+  "rest_pose": {
+    "type": "T-pose",
+    "arms": "straight out along X, palms down",
+    "legs": "straight down, feet flat, toes forward",
+    "reason": "T-pose rather than A-pose because the CC0 animation libraries we retarget from are authored in T-pose; matching their rest pose removes a whole class of retarget error."
+  },
+  "godot_profile": {
+    "profile": "SkeletonProfileHumanoid",
+    "note": "Bone names below ARE the Godot SkeletonProfileHumanoid bone names, deliberately. Godot's retargeting matches by name against the profile, so inventing our own names would mean maintaining a translation layer for no benefit. This also means Godot's own retarget tools work on our clips without configuration."
+  },
+  "bones": [
+    {"name": "Root", "parent": null, "head": [0.0, 0.0, 0.0], "tail": [0.0, 0.1, 0.0], "godot": "Root", "deform": false},
+    {"name": "Hips", "parent": "Root", "head": [0.0, 0.98, 0.0], "tail": [0.0, 1.10, 0.0], "godot": "Hips", "deform": true},
+    {"name": "Spine", "parent": "Hips", "head": [0.0, 1.10, 0.0], "tail": [0.0, 1.24, 0.0], "godot": "Spine", "deform": true},
+    {"name": "Chest", "parent": "Spine", "head": [0.0, 1.24, 0.0], "tail": [0.0, 1.40, 0.0], "godot": "Chest", "deform": true},
+    {"name": "UpperChest", "parent": "Chest", "head": [0.0, 1.40, 0.0], "tail": [0.0, 1.52, 0.0], "godot": "UpperChest", "deform": true},
+    {"name": "Neck", "parent": "UpperChest", "head": [0.0, 1.52, 0.0], "tail": [0.0, 1.62, 0.0], "godot": "Neck", "deform": true},
+    {"name": "Head", "parent": "Neck", "head": [0.0, 1.62, 0.0], "tail": [0.0, 1.80, 0.0], "godot": "Head", "deform": true},
+    {"name": "LeftEye", "parent": "Head", "head": [0.032, 1.70, -0.07], "tail": [0.032, 1.70, -0.09], "godot": "LeftEye", "deform": false},
+    {"name": "RightEye", "parent": "Head", "head": [-0.032, 1.70, -0.07], "tail": [-0.032, 1.70, -0.09], "godot": "RightEye", "deform": false},
+    {"name": "Jaw", "parent": "Head", "head": [0.0, 1.66, -0.03], "tail": [0.0, 1.60, -0.08], "godot": "Jaw", "deform": true},
+
+    {"name": "LeftShoulder", "parent": "UpperChest", "head": [0.03, 1.50, 0.0], "tail": [0.16, 1.50, 0.0], "godot": "LeftShoulder", "deform": true},
+    {"name": "LeftUpperArm", "parent": "LeftShoulder", "head": [0.16, 1.50, 0.0], "tail": [0.44, 1.50, 0.0], "godot": "LeftUpperArm", "deform": true},
+    {"name": "LeftLowerArm", "parent": "LeftUpperArm", "head": [0.44, 1.50, 0.0], "tail": [0.70, 1.50, 0.0], "godot": "LeftLowerArm", "deform": true},
+    {"name": "LeftHand", "parent": "LeftLowerArm", "head": [0.70, 1.50, 0.0], "tail": [0.79, 1.50, 0.0], "godot": "LeftHand", "deform": true},
+    {"name": "RightShoulder", "parent": "UpperChest", "head": [-0.03, 1.50, 0.0], "tail": [-0.16, 1.50, 0.0], "godot": "RightShoulder", "deform": true},
+    {"name": "RightUpperArm", "parent": "RightShoulder", "head": [-0.16, 1.50, 0.0], "tail": [-0.44, 1.50, 0.0], "godot": "RightUpperArm", "deform": true},
+    {"name": "RightLowerArm", "parent": "RightUpperArm", "head": [-0.44, 1.50, 0.0], "tail": [-0.70, 1.50, 0.0], "godot": "RightLowerArm", "deform": true},
+    {"name": "RightHand", "parent": "RightLowerArm", "head": [-0.70, 1.50, 0.0], "tail": [-0.79, 1.50, 0.0], "godot": "RightHand", "deform": true},
+
+    {"name": "LeftUpperLeg", "parent": "Hips", "head": [0.09, 0.98, 0.0], "tail": [0.09, 0.54, 0.0], "godot": "LeftUpperLeg", "deform": true},
+    {"name": "LeftLowerLeg", "parent": "LeftUpperLeg", "head": [0.09, 0.54, 0.0], "tail": [0.09, 0.09, 0.0], "godot": "LeftLowerLeg", "deform": true},
+    {"name": "LeftFoot", "parent": "LeftLowerLeg", "head": [0.09, 0.09, 0.0], "tail": [0.09, 0.03, -0.12], "godot": "LeftFoot", "deform": true},
+    {"name": "LeftToes", "parent": "LeftFoot", "head": [0.09, 0.03, -0.12], "tail": [0.09, 0.02, -0.20], "godot": "LeftToes", "deform": true},
+    {"name": "RightUpperLeg", "parent": "Hips", "head": [-0.09, 0.98, 0.0], "tail": [-0.09, 0.54, 0.0], "godot": "RightUpperLeg", "deform": true},
+    {"name": "RightLowerLeg", "parent": "RightUpperLeg", "head": [-0.09, 0.54, 0.0], "tail": [-0.09, 0.09, 0.0], "godot": "RightLowerLeg", "deform": true},
+    {"name": "RightFoot", "parent": "RightLowerLeg", "head": [-0.09, 0.09, 0.0], "tail": [-0.09, 0.03, -0.12], "godot": "RightFoot", "deform": true},
+    {"name": "RightToes", "parent": "RightFoot", "head": [-0.09, 0.03, -0.12], "tail": [-0.09, 0.02, -0.20], "godot": "RightToes", "deform": true},
+
+    {"name": "LeftThumbMetacarpal", "parent": "LeftHand", "head": [0.74, 1.49, 0.01], "tail": [0.77, 1.49, 0.03], "godot": "LeftThumbMetacarpal", "deform": true},
+    {"name": "LeftThumbProximal", "parent": "LeftThumbMetacarpal", "head": [0.77, 1.49, 0.03], "tail": [0.79, 1.49, 0.05], "godot": "LeftThumbProximal", "deform": true},
+    {"name": "LeftThumbDistal", "parent": "LeftThumbProximal", "head": [0.79, 1.49, 0.05], "tail": [0.81, 1.49, 0.07], "godot": "LeftThumbDistal", "deform": true},
+    {"name": "LeftIndexProximal", "parent": "LeftHand", "head": [0.79, 1.51, -0.02], "tail": [0.83, 1.51, -0.02], "godot": "LeftIndexProximal", "deform": true},
+    {"name": "LeftIndexIntermediate", "parent": "LeftIndexProximal", "head": [0.83, 1.51, -0.02], "tail": [0.86, 1.51, -0.02], "godot": "LeftIndexIntermediate", "deform": true},
+    {"name": "LeftIndexDistal", "parent": "LeftIndexIntermediate", "head": [0.86, 1.51, -0.02], "tail": [0.88, 1.51, -0.02], "godot": "LeftIndexDistal", "deform": true},
+    {"name": "LeftMiddleProximal", "parent": "LeftHand", "head": [0.79, 1.50, 0.0], "tail": [0.83, 1.50, 0.0], "godot": "LeftMiddleProximal", "deform": true},
+    {"name": "LeftMiddleIntermediate", "parent": "LeftMiddleProximal", "head": [0.83, 1.50, 0.0], "tail": [0.87, 1.50, 0.0], "godot": "LeftMiddleIntermediate", "deform": true},
+    {"name": "LeftMiddleDistal", "parent": "LeftMiddleIntermediate", "head": [0.87, 1.50, 0.0], "tail": [0.89, 1.50, 0.0], "godot": "LeftMiddleDistal", "deform": true},
+    {"name": "LeftRingProximal", "parent": "LeftHand", "head": [0.79, 1.49, 0.02], "tail": [0.83, 1.49, 0.02], "godot": "LeftRingProximal", "deform": true},
+    {"name": "LeftRingIntermediate", "parent": "LeftRingProximal", "head": [0.83, 1.49, 0.02], "tail": [0.86, 1.49, 0.02], "godot": "LeftRingIntermediate", "deform": true},
+    {"name": "LeftRingDistal", "parent": "LeftRingIntermediate", "head": [0.86, 1.49, 0.02], "tail": [0.88, 1.49, 0.02], "godot": "LeftRingDistal", "deform": true},
+    {"name": "LeftLittleProximal", "parent": "LeftHand", "head": [0.79, 1.48, 0.03], "tail": [0.82, 1.48, 0.04], "godot": "LeftLittleProximal", "deform": true},
+    {"name": "LeftLittleIntermediate", "parent": "LeftLittleProximal", "head": [0.82, 1.48, 0.04], "tail": [0.85, 1.48, 0.05], "godot": "LeftLittleIntermediate", "deform": true},
+    {"name": "LeftLittleDistal", "parent": "LeftLittleIntermediate", "head": [0.85, 1.48, 0.05], "tail": [0.87, 1.48, 0.06], "godot": "LeftLittleDistal", "deform": true},
+
+    {"name": "RightThumbMetacarpal", "parent": "RightHand", "head": [-0.74, 1.49, 0.01], "tail": [-0.77, 1.49, 0.03], "godot": "RightThumbMetacarpal", "deform": true},
+    {"name": "RightThumbProximal", "parent": "RightThumbMetacarpal", "head": [-0.77, 1.49, 0.03], "tail": [-0.79, 1.49, 0.05], "godot": "RightThumbProximal", "deform": true},
+    {"name": "RightThumbDistal", "parent": "RightThumbProximal", "head": [-0.79, 1.49, 0.05], "tail": [-0.81, 1.49, 0.07], "godot": "RightThumbDistal", "deform": true},
+    {"name": "RightIndexProximal", "parent": "RightHand", "head": [-0.79, 1.51, -0.02], "tail": [-0.83, 1.51, -0.02], "godot": "RightIndexProximal", "deform": true},
+    {"name": "RightIndexIntermediate", "parent": "RightIndexProximal", "head": [-0.83, 1.51, -0.02], "tail": [-0.86, 1.51, -0.02], "godot": "RightIndexIntermediate", "deform": true},
+    {"name": "RightIndexDistal", "parent": "RightIndexIntermediate", "head": [-0.86, 1.51, -0.02], "tail": [-0.88, 1.51, -0.02], "godot": "RightIndexDistal", "deform": true},
+    {"name": "RightMiddleProximal", "parent": "RightHand", "head": [-0.79, 1.50, 0.0], "tail": [-0.83, 1.50, 0.0], "godot": "RightMiddleProximal", "deform": true},
+    {"name": "RightMiddleIntermediate", "parent": "RightMiddleProximal", "head": [-0.83, 1.50, 0.0], "tail": [-0.87, 1.50, 0.0], "godot": "RightMiddleIntermediate", "deform": true},
+    {"name": "RightMiddleDistal", "parent": "RightMiddleIntermediate", "head": [-0.87, 1.50, 0.0], "tail": [-0.89, 1.50, 0.0], "godot": "RightMiddleDistal", "deform": true},
+    {"name": "RightRingProximal", "parent": "RightHand", "head": [-0.79, 1.49, 0.02], "tail": [-0.83, 1.49, 0.02], "godot": "RightRingProximal", "deform": true},
+    {"name": "RightRingIntermediate", "parent": "RightRingProximal", "head": [-0.83, 1.49, 0.02], "tail": [-0.86, 1.49, 0.02], "godot": "RightRingIntermediate", "deform": true},
+    {"name": "RightRingDistal", "parent": "RightRingIntermediate", "head": [-0.86, 1.49, 0.02], "tail": [-0.88, 1.49, 0.02], "godot": "RightRingDistal", "deform": true},
+    {"name": "RightLittleProximal", "parent": "RightHand", "head": [-0.79, 1.48, 0.03], "tail": [-0.82, 1.48, 0.04], "godot": "RightLittleProximal", "deform": true},
+    {"name": "RightLittleIntermediate", "parent": "RightLittleProximal", "head": [-0.82, 1.48, 0.04], "tail": [-0.85, 1.48, 0.05], "godot": "RightLittleIntermediate", "deform": true},
+    {"name": "RightLittleDistal", "parent": "RightLittleIntermediate", "head": [-0.85, 1.48, 0.05], "tail": [-0.87, 1.48, 0.06], "godot": "RightLittleDistal", "deform": true}
+  ],
+  "attachments": {
+    "note": "Sockets are not bones: adding them as bones would break the Godot profile match and eat budget. They are empty nodes parented to a bone, exported in the GLB and found by name.",
+    "sockets": [
+      {"name": "socket_weapon_right", "parent_bone": "RightHand", "offset": [0.0, 0.0, 0.0]},
+      {"name": "socket_weapon_left", "parent_bone": "LeftHand", "offset": [0.0, 0.0, 0.0]},
+      {"name": "socket_quiver_back", "parent_bone": "UpperChest", "offset": [0.0, 0.05, 0.12]},
+      {"name": "socket_shield_left", "parent_bone": "LeftLowerArm", "offset": [0.0, 0.0, 0.06]},
+      {"name": "socket_head_gear", "parent_bone": "Head", "offset": [0.0, 0.10, 0.0]},
+      {"name": "socket_loot_hands", "parent_bone": "Hips", "offset": [0.0, 0.0, -0.10]}
+    ]
+  },
+  "lod_policy": {
+    "note": "Finger bones are the first thing to go on distant characters. The budget for skinned characters at full animation rate is 8 LOW / 16 MEDIUM / 24 HIGH, so distant NPCs use a reduced skeleton.",
+    "lod0": "all 56 bones",
+    "lod1": "fingers collapsed to one bone per finger (46 bones)",
+    "lod2": "no finger bones, toes merged (36 bones)",
+    "collapsed_bones_are_never_renamed": true
+  }
+}

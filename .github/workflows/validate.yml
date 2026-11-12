@@ -7,13 +7,15 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "assets/manifest.json"
+      - "assets/**"
+      - "shaders/**"
       - "tools/build_manifest.py"
       - "tools/validate/**"
       - ".github/workflows/validate.yml"
   pull_request:
     paths:
-      - "assets/manifest.json"
+      - "assets/**"
+      - "shaders/**"
       - "tools/build_manifest.py"
       - "tools/validate/**"
 
@@ -43,6 +45,9 @@ jobs:
 
       - name: Structural checks
         run: python tools/validate/check_manifest.py
+
+      - name: Skeleton and retarget checks
+        run: python tools/validate/check_skeletons.py
 
       - name: P1 set per phase
         run: |

@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "description": "Animal skeleton definitions, one per family. The brief allows up to 50 bones per animal skeleton; these stay well under it because the fidelity expectation for animals is medium-to-low and animation coverage matters more than bone count.",
+  "shared_rules": {
+    "max_bones": 50,
+    "max_weights_per_vertex": 4,
+    "animation_fps": 30,
+    "no_scale_keys": true,
+    "loop_seam_tolerance": {"rotation_degrees": 1.0, "position_cm": 1.0},
+    "rest_pose": "standing, legs straight, head level, tail hanging",
+    "note": "No family shares a skeleton with another. A wolf and a horse differ enough in proportions that sharing would cost more in corrective shapes than it saves in clips."
+  },
+  "families": [
+    {
+      "name": "animal_skeleton_quadruped_large",
+      "used_by": [
+        "animal_brown_bear", "animal_cave_bear", "animal_aurochs_bull", "animal_aurochs_cow",
+        "animal_wisent_bison", "animal_moose", "animal_giant_elk_megaloceros",
+        "animal_wild_horse_tarpan", "animal_horse_riding", "animal_horse_war_armored",
+        "animal_horse_draft", "animal_pony", "animal_ox_draft", "animal_cattle_small_breed"
+      ],
+      "bone_count": 38,
+      "spine_segments": 5,
+      "bones": [
+        "Root", "Hips", "Spine1", "Spine2", "Spine3", "Chest", "Neck1", "Neck2", "Head", "Jaw",
+        "Tail1", "Tail2", "Tail3",
+        "LeftShoulder", "LeftUpperLeg_F", "LeftLowerLeg_F", "LeftHoof_F",
+        "RightShoulder", "RightUpperLeg_F", "RightLowerLeg_F", "RightHoof_F",
+        "LeftHip", "LeftUpperLeg_B", "LeftLowerLeg_B", "LeftHoof_B",
+        "RightHip", "RightUpperLeg_B", "RightLowerLeg_B", "RightHoof_B",
+        "LeftEar", "RightEar",
+        "LeftEye", "RightEye",
+        "LeftHorn", "RightHorn",
+        "LeftMane", "RightMane", "Withers"
+      ],
+      "optional_bones": {
+        "LeftHorn": "antlered and horned species only; dropped for horses and cattle",
+        "LeftMane": "maned species only; dropped for bear and aurochs",
+        "Withers": "shoulder-height marker used to seat saddles and loads"
+      }
+    },
+    {
+      "name": "animal_skeleton_quadruped_medium",
+      "used_by": [
+        "animal_reddeer_stag", "animal_reddeer_doe", "animal_reddeer_fawn", "animal_roedeer",
+        "animal_fallowdeer", "animal_wild_boar_boar", "animal_wild_boar_sow",
+        "animal_wild_boar_piglet", "animal_giant_boar_ancient", "animal_wolf_gray",
+        "animal_wolf_alpha_black", "animal_wolf_pup", "animal_lynx", "animal_wildcat",
+        "animal_wolverine", "animal_fox_red", "animal_ibex", "animal_chamois",
+        "animal_sheep", "animal_goat", "animal_pig_domestic", "animal_hound_hunting",
+        "animal_dog_camp"
+      ],
+      "bone_count": 34,
+      "spine_segments": 4,
+      "bones": [
+        "Root", "Hips", "Spine1", "Spine2", "Chest", "Neck1", "Neck2", "Head", "Jaw",
+        "Tail1", "Tail2",
+        "LeftShoulder", "LeftUpperLeg_F", "LeftLowerLeg_F", "LeftPaw_F",
+        "RightShoulder", "RightUpperLeg_F", "RightLowerLeg_F", "RightPaw_F",
+        "LeftHip", "LeftUpperLeg_B", "LeftLowerLeg_B", "LeftPaw_B",
+        "RightHip", "RightUpperLeg_B", "RightLowerLeg_B", "RightPaw_B",
+        "LeftEar", "RightEar", "LeftEye", "RightEye",
+        "LeftAntler", "RightAntler", "Muzzle"
+      ],
+      "optional_bones": {
+        "LeftAntler": "deer and ibex only",
+        "Muzzle": "drives the sniff and graze clips"
+      }
+    },
+    {
+      "name": "animal_skeleton_quadruped_small",
+      "used_by": [
+        "animal_hare", "animal_rabbit", "animal_squirrel_red", "animal_hedgehog",
+        "animal_badger", "animal_otter", "animal_beaver", "animal_pine_marten",
+        "animal_stoat", "animal_dormouse", "animal_vole_mouse", "animal_mole"
+      ],
+      "bone_count": 24,
+      "bones": [
+        "Root", "Hips", "Spine", "Chest", "Neck", "Head", "Jaw",
+        "Tail1", "Tail2",
+        "LeftUpperLeg_F", "LeftLowerLeg_F", "LeftPaw_F",
+        "RightUpperLeg_F", "RightLowerLeg_F", "RightPaw_F",
+        "LeftUpperLeg_B", "LeftLowerLeg_B", "LeftPaw_B",
+        "RightUpperLeg_B", "RightLowerLeg_B", "RightPaw_B",
+        "LeftEar", "RightEar", "LeftEye"
+      ],
+      "note": "Small mammals are seen at a distance and mostly move as silhouettes; 24 bones is deliberately lean."
+    },
+    {
+      "name": "animal_skeleton_bird",
+      "used_by": [
+        "bird_pheasant", "bird_capercaillie", "bird_grouse", "bird_partridge", "bird_woodcock",
+        "bird_wild_duck_mallard", "bird_goose_greylag", "bird_wood_pigeon",
+        "bird_golden_eagle", "bird_goshawk", "bird_buzzard", "bird_peregrine_falcon",
+        "bird_tawny_owl", "bird_eagle_owl", "bird_osprey", "bird_raven", "bird_crow",
+        "bird_jay", "bird_magpie", "bird_woodpecker_black", "bird_woodpecker_green",
+        "bird_robin", "bird_wren", "bird_thrush", "bird_blackbird", "bird_finch",
+        "bird_nuthatch", "bird_cuckoo", "bird_heron_grey", "bird_kingfisher",
+        "bird_swan_mute", "bird_crane_common", "bird_dipper", "animal_chicken_hen",
+        "animal_rooster", "animal_goose_domestic", "animal_duck_domestic", "animal_falcon_tame"
+      ],
+      "bone_count": 26,
+      "bones": [
+        "Root", "Hips", "Spine", "Chest", "Neck1", "Neck2", "Head", "Beak", "Jaw",
+        "Tail1", "Tail2",
+        "LeftWing1", "LeftWing2", "LeftWing3",
+        "RightWing1", "RightWing2", "RightWing3",
+        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+        "RightUpperLeg", "RightLowerLeg", "RightFoot",
+        "LeftEye", "RightEye", "Crest"
+      ],
+      "notes": {
+        "flap_glide": "Wing1/2/3 drive both flap and glide; glide is a static pose held on Wing1, so no extra bones are needed.",
+        "crest": "Used for raven, jay, owl and pheasant silhouettes.",
+        "perched_vs_flying": "One skeleton serves both. Perched clips fold the legs; flying clips tuck them."
+      }
+    },
+    {
+      "name": "animal_skeleton_fish",
+      "used_by": [
+        "fish_trout_brown", "fish_salmon_run", "fish_pike", "fish_carp",
+        "fish_eel", "fish_minnow_school", "fish_stickleback"
+      ],
+      "bone_count": 16,
+      "bones": [
+        "Root", "Body1", "Body2", "Body3", "Body4", "Body5", "Head", "Jaw",
+        "Tail1", "Tail2",
+        "LeftPectoral", "RightPectoral",
+        "DorsalFin", "AnalFin",
+        "LeftEye", "RightEye"
+      ],
+      "note": "A single spine chain drives swim and turn. Eels use the same skeleton with a longer Body chain, which is why the count is generous for a fish."
+    },
+    {
+      "name": "animal_skeleton_serpent",
+      "used_by": [
+        "animal_adder_snake", "rept_grass_snake", "rept_slow_worm", "rept_lizard_common"
+      ],
+      "bone_count": 20,
+      "bones": [
+        "Root", "Body1", "Body2", "Body3", "Body4", "Body5", "Body6", "Body7",
+        "Body8", "Body9", "Body10", "Neck", "Head", "Jaw",
+        "Tail1", "Tail2",
+        "LeftEye", "RightEye",
+        "LeftLeg", "RightLeg"
+      ],
+      "note": "Legs are optional: present for the lizard, dropped for the snakes and the slow worm. Dropping a bone must never rename the others."
+    }
+  ]
+}

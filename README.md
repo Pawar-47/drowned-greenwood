@@ -52,8 +52,8 @@ force-pushes and must not be run without explicit approval.
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests: Blender headless render, glTF export, Godot import, gltfpack, glTF-Transform, MPFB2, MTree, Infinigen, Poly Haven API, Quaternius packs | **import gate verified with real geometry; gltfpack works with `-noq`** (1104 tris, exactly 50%). Infinigen, glTF-Transform, Poly Haven and all three renderers pass. MPFB2 and MTree on their second attempt with the cause known. See `reports/tool_evaluation.md` |
-| 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | pending |
+| 0 | Tool smoke tests | **CLOSED.** Verified: Blender 4.2.23, all three renderers, Godot import gate (real geometry), gltfpack `-noq`, Infinigen, glTF-Transform, Poly Haven. **Rejected after 3 attempts: MPFB2 and Modular Tree** — both fall back to custom generators as the brief allows. Quaternius blocked on the owner. See `reports/tool_evaluation.md` |
+| 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | in progress |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |
 | 4 | Fauna, hunting loot, animal sign | pending |
