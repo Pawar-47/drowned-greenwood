@@ -22,9 +22,10 @@ blender_root="${3:-}"
 
 # RESULT lines are JSON so tools/phase0/make_report.py can read them. A key=value line is
 # silently dropped by the report parser, which is why an earlier failure of this script was
-# invisible.
+# invisible. The step name carries the label: two installs sharing one name meant the report
+# kept only the last, so MPFB2's install output was overwritten by MTree's every run.
 emit() {
-  printf 'RESULT {"step": "addon_install", "label": "%s", %s}\n' "$label" "$1"
+  printf 'RESULT {"step": "addon_install_%s", "label": "%s", %s}\n' "$label" "$label" "$1"
 }
 
 if [ -n "$blender_root" ] && [ -d "$blender_root" ]; then
