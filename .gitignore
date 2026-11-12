@@ -20,6 +20,10 @@ phase0_log.txt
 export_presets.cfg.bak
 *.apk
 *.aab
+# The Phase 0 shader probe copies the real shaders in at run time and rewrites their include
+# paths; these are generated, never committed.
+tools/phase0/godot_probe/includes/
+tools/phase0/godot_probe_*/
 
 # Generated from assets/manifest.json by tools/build_manifest.py
 assets/manifest.expanded.json

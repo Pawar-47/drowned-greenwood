@@ -317,6 +317,11 @@ jobs:
           # the game will compile rather than a copy that has drifted.
           mkdir -p tools/phase0/godot_probe/includes
           cp shaders/*.gdshaderinc shaders/*.gdshader tools/phase0/godot_probe/includes/
+          # The real shaders include "res://shaders/...", which does not exist inside the probe
+          # project — it keeps them at res://includes/. Rewriting the path in the COPY is the
+          # alternative to duplicating the shader, and it keeps the thing being compiled byte-for-
+          # byte identical to the thing that ships apart from the one path.
+          sed -i 's|res://shaders/|res://includes/|g' tools/phase0/godot_probe/includes/*.gdshader
 
       - name: Fetch Godot ${{ env.GODOT_VERSION }}
         run: |

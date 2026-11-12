@@ -114,6 +114,19 @@ def uniforms_declared(text):
     return names
 
 
+def strip_comments(text):
+    """Shader source with `//` comments removed.
+
+    Necessary before looking for #include, because these files document their own usage:
+
+        //     #include "res://shaders/tech_wetness_include.gdshaderinc"
+
+    Matching that would make every include appear to include itself, and its uniforms appear to
+    clash with themselves. This check failed on its first run for exactly that reason.
+    """
+    return "\n".join(line.split("//", 1)[0] for line in text.splitlines())
+
+
 def check_shader_includes(problems):
     """A shader must not redeclare a uniform one of its includes already declares.
 
@@ -131,14 +144,18 @@ def check_shader_includes(problems):
             problems.append("%s: cannot read" % path)
             continue
 
-        declared = uniforms_declared(text)
-        for relative in INCLUDE_RE.findall(text):
+        code = strip_comments(text)
+        declared = uniforms_declared(code)
+        for relative in INCLUDE_RE.findall(code):
             include_path = shader_path(relative)
+            if os.path.abspath(include_path) == os.path.abspath(path):
+                problems.append("%s: includes itself" % path)
+                continue
             include_text = read_text(include_path)
             if include_text is None:
                 problems.append("%s: includes %s, which does not exist" % (path, include_path))
                 continue
-            inherited = uniforms_declared(include_text)
+            inherited = uniforms_declared(strip_comments(include_text))
             clash = sorted(declared & inherited)
             if clash:
                 problems.append(
