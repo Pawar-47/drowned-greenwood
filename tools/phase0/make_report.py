@@ -198,6 +198,15 @@ REQUIRED_PROBES = {
     "mtree_export",
     "godot_scene_tree",
     "godot_import_tree",
+    # MPFB2 now produces a human and Godot loads it, so it is a real pipeline rather than a
+    # tool under repair. Gating it means a regression surfaces as a defect instead of quietly
+    # reverting to "falls back to a custom generator".
+    "mpfb2_extension_install",
+    "mpfb_register",
+    "mpfb_create_human",
+    "mpfb_export",
+    "godot_scene_human",
+    "godot_import_human",
 }
 
 
@@ -383,12 +392,6 @@ def main():
     else:
         lines.append("No defects.")
         lines.append("")
-
-    text = "\n".join(lines)
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    with open(args.out, "w", encoding="utf-8") as handle:
-        handle.write(text)
-    print(text)
 
     # Exit non-zero when a required probe FAILED, or when one never reported at all.
     #

@@ -5,13 +5,13 @@
 > truth. This file carries the reasoning the generated tables cannot, and is updated by hand
 > when the reasoning changes. If the two disagree, the artifact wins.
 
-**Runs recorded:** `fe39869` through `1aed003`. Every entry comes from those runs' logs.
+**Runs recorded:** `fe39869` through `2cdf17c`. Every entry comes from those runs' logs.
 Anything not measured says so.
 
 ## Verdict
 
-Phase 0 is **nearly closed**. The last run reports **37 passed, 1 expected failure, 2 defects**,
-and both defects have since been addressed:
+Phase 0 is **closed**. The last run reports **50 probes: 49 passed, 1 expected failure, 0
+defects**, and the gate passes.
 
 | Tool | State | Evidence |
 |---|---|---|
@@ -22,10 +22,10 @@ and both defects have since been addressed:
 | gltfpack v1.3 | **USE with `-noq`** | quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50 %) |
 | Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd` |
 | glTF-Transform | **USE** | installs, runs |
-| Poly Haven API | **USE** | asset list, file list, 1k download |
+| Poly Haven API | **USE** | asset list (869 assets), file list, 1k download |
 | **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 1 |
-| **MPFB2** | **USE for meshes** | builds and exports a human that Godot loads (`meshes=1, tris=36972`); **no armature** yet, and over the 12k–18k budget |
-| **Modular Tree** | **USE — verified end to end** | generates a tree and Godot loads it: `meshes=2, surfaces=2, materials=2, tris=35504`. Installed from the prebuilt release because the source ships only C++ |
+| **MPFB2** | **USE — builds and rigs** | human exports and loads: `meshes=1, tris=36972, armatures=1, bones=137`. Both counts over budget |
+| **Modular Tree** | **USE — verified end to end** | generates a tree Godot loads: `meshes=2, tris=1840066`. Installed from the prebuilt release, which carries the compiled `m_tree` module |
 | Quaternius packs | **MEASURED** | **43 clips, 16 of 41 families covered.** 25 families missing, including every melee weapon, skinning, butchering and the bow |
 
 ## Withdrawn claims
@@ -147,39 +147,37 @@ exported.
 
 Two things that PASS does **not** cover, and both matter:
 
-1. **`armatures=0, bones=0`.** A mesh was built; no armature was bound. The brief needs a rigged
-   character, so MPFB2 is not yet a usable human pipeline — it is a mesh pipeline.
+1. **137 bones.** It rigs, but with MPFB's own standard rig, not the shared 65-bone skeleton the
+   brief requires. Either that rig is reduced and remapped, or it is discarded and the mesh is
+   skinned to `char_skeleton_definition.json` directly.
 2. **36,972 triangles.** The brief budgets 12k–18k for a player/NPC with gear. The base human
    alone is roughly double the top of that range before any clothing or armor is added, so
    decimation is mandatory, not optional.
-
-The `mpfb_data` probe also still fails, and its error repeats the same extension-path exception
-rather than proving the data is missing. Data presence and registration failure are now separate
-questions in the report, as they should be.
 
 **Four earlier diagnoses were wrong**: a silent `try/except` around `addon_utils.enable`, a
 missing asset pack, `fake_bl_info`, and installing it as a legacy add-on. The traceback took one
 run to settle what four speculative fixes could not.
 
-## Modular Tree: registers, but does not generate
+## Modular Tree: generates, and the output is enormous
 
-`quick_generate` now reaches the operator and fails inside it, with a *different* error than
-before — which means the `sys.path` fix worked and exposed the next layer:
+The `cannot import name 'm_tree' from 'm_tree'` failure was a packaging problem, and the fix was
+not to hand-roll an import path: MTree publishes a **release zip with a compiled pybind11 native
+module** (`modular_tree-5.6.0-linux_x64.zip`, sha256 verified in CI). Installing that, instead of
+building the extension from a source clone, puts `m_tree/__init__.py` where the operators expect
+it. The probe reports the resolved path:
 
 ```
-RuntimeError: Error: Failed to generate tree: cannot import name 'm_tree' from 'm_tree' (unknown location)
+MTree native module  PASS  detail=.../site-packages/m_tree/__init__.py
+MTree generate       PASS  operator=mtree.quick_generate
+MTree tree export    PASS  meshes=2, tris=1840066, bytes=60025292
 ```
 
-The extension's package directory is now on `sys.path` (the probe reports
-`mtree_syspath added=.../extensions/user_default/modular_tree`), and Python now *finds* something
-named `m_tree` — but it is a namespace package with no `__init__.py`, not the module the
-generator wants. The extension's own layout puts the importable module somewhere else inside its
-package.
+**The tree is real and Godot loads it** — `Godot load of the MTree tree PASS, tris=1840066`.
 
-**Operator registration is not procedural generation.** MTree is installed and its operators
-exist; it has produced no tree, so no GLB, so no Godot import. The report now gates on
-`mtree_generate`, `mtree_export` and `godot_scene_tree` precisely so "9 operators registered"
-cannot be read as "trees work".
+But 1,840,066 triangles and 60 MB is not an asset; it is a generator's raw output. The brief caps
+a whole tree species set at 1.5 MB and a hero tree at 10k–16k triangles. MTree proves the pipeline
+end to end; turning its output into a shippable tree — leaf cards instead of individual leaf
+geometry, decimation, LODs, impostors — is Phase 3 work and the largest single piece of it.
 
 ## Shaders: verified
 
@@ -312,11 +310,17 @@ required probe fails the build, and the reason is written into the report body.
   are assigned to the custom `bpy` pipeline. The matcher is a name-keyword heuristic and is
   optimistic: it counts `Pistol_Aim` as a bow aim, so the real usable coverage is lower than 16.
   Retargeting is **not** verified: no clip has been retargeted onto the target skeleton yet.
-- **MPFB2 rigging**: a mesh exports, an armature does not. The probe now prefers
-  `add_standard_rig` over `add_custom_rig` (which needs a rig already selected) and reports
-  whether an armature appears. Binding to `char_skeleton_definition.json` is still untested.
+- **MPFB2 rigging**: a mesh **and an armature** now export — `armatures=1, bones=137` — via
+  `add_standard_rig`. Two problems remain, both measured: **137 bones** against the 65-bone cap,
+  and binding to `char_skeleton_definition.json` is untested. The bone count is the harder of the
+  two: MPFB's standard rig is not our skeleton, so either it is reduced and remapped, or the rig
+  is discarded and the mesh is skinned to ours directly.
 - **MPFB2 triangle budget**: 36,972 at LOD0 against 12k–18k. Decimation is required before any
   human asset can pass the geometry gate.
+- **MTree output size**: the generated tree exports at **1,840,066 triangles and 60 MB**. The
+  brief's cap is 1.5 MB for a whole tree species set, and the hero-tree budget is 10k–16k
+  triangles. MTree proves the pipeline works, but its raw output is roughly two orders of
+  magnitude over budget: leaf-card generation, decimation and LODs are Phase 3 work, not Phase 0.
 - **Godot Mobile renderer**: the probe project uses `gl_compatibility`. Nothing here proves the
   Mobile (Vulkan) path, and per the owner's decision that is a real-device check, not a CI one.
 - **Animal skeleton hierarchies**: the eight families declare bone names, counts and species

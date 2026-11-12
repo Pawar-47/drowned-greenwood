@@ -161,8 +161,6 @@ def check_shader(path):
     Only hints are checked here. Everything else about a shader needs Godot to compile it,
     which is what the Godot shader probe is for; this is the cheap first pass.
     """
-    import re
-
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as handle:
             source = handle.read()
@@ -170,18 +168,42 @@ def check_shader(path):
         return "%s: cannot read (%s)" % (path, exc)
 
     for line_number, line in enumerate(source.splitlines(), start=1):
-        if "uniform sampler" not in line or ":" not in line:
+        # Strip comments first. A commented-out declaration is not a declaration, and a trailing
+        # `// note` after a valid hint would otherwise be read as part of the hint name:
+        #   uniform sampler2D x : hint_default_black; // albedo
+        # would have produced the "hint" "hint_default_black; // albedo" and been rejected.
+        code = line.split("//", 1)[0]
+        if "uniform sampler" not in code or ":" not in code:
             continue
-        hint = line.split(":", 1)[1].strip().split()[0].rstrip(";")
-        if hint in WRONG_SAMPLER_HINTS:
-            return "%s:%s: %r is not a Godot hint; use %r" % (
-                path,
-                line_number,
-                hint,
-                WRONG_SAMPLER_HINTS[hint],
-            )
-        if hint.startswith("hint_") and hint not in VALID_SAMPLER_HINTS:
-            return "%s:%s: unknown sampler hint %r" % (path, line_number, hint)
+
+        # A uniform can carry several hints, separated by commas:
+        #   uniform sampler2D noise : hint_default_black, filter_linear, repeat_enable;
+        # Reading only the first whitespace-delimited token leaves the comma attached, so
+        # "hint_default_black," looked like an unknown hint and a perfectly valid shader was
+        # rejected. Split on commas and check each hint on its own.
+        declaration = code.split(":", 1)[1].strip().rstrip(";")
+        for raw_hint in declaration.split(","):
+            hint = raw_hint.strip()
+            # A default value ("= ...") follows the hints; it is not one.
+            hint = hint.split("=", 1)[0].strip()
+            if not hint:
+                continue
+            if hint in WRONG_SAMPLER_HINTS:
+                return "%s:%s: %r is not a Godot hint; use %r" % (
+                    path,
+                    line_number,
+                    hint,
+                    WRONG_SAMPLER_HINTS[hint],
+                )
+            if hint in VALID_SAMPLER_HINTS:
+                continue
+            # filter_* and repeat_* are documented hint families with open-ended suffixes
+            # (filter_linear_mipmap_anisotropic, repeat_disable, ...), so a prefix check is
+            # correct for them and an allowlist would go stale.
+            if hint.startswith(("filter_", "repeat_")):
+                continue
+            if hint.startswith("hint_"):
+                return "%s:%s: unknown sampler hint %r" % (path, line_number, hint)
     return None
 
 

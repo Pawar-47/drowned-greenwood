@@ -43,8 +43,8 @@ table exists to prevent.
 | Infinigen | commit `53033dd55c7191cbc436be6ffbb63c026935a509` | exact commit fetched in CI | **working** | rocks, plants, mushrooms, clouds, materials |
 | Poly Haven API | live, asset IDs recorded per download | `api.polyhaven.com` | **working** | CC0 PBR textures, HDRIs, scanned models |
 | Quaternius | release `third-party-quaternius`, sha256 `cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724` | fetched from the release by CI | **measured: 43 clips, 16 of 41 families** | CC0 humanoid animation clips |
-| Modular Tree | release `5.6.0`, asset `modular_tree-5.6.0-linux_x64.zip`, sha256 `698cf57c2fc9e695d241aea7d232493f48027b5930538e6062a6e9e320c9044a` | SHA-256 verified in CI | **working — generates a tree Godot loads (35,504 tris)** | procedural trees |
-| MPFB2 | tag `v2.0.18` | exact tag cloned in CI, installed with `extension install-file` | **registers and exports a 36,972-tri human — over the 12k–18k budget, and with no armature** | human bodies, heads, base clothing |
+| Modular Tree | release `5.6.0`, asset `modular_tree-5.6.0-linux_x64.zip`, sha256 `698cf57c2fc9e695d241aea7d232493f48027b5930538e6062a6e9e320c9044a` | SHA-256 verified in CI; the release zip carries the compiled `m_tree` module | **working — generates a tree Godot loads (1,840,066 tris, needs decimation)** | procedural trees |
+| MPFB2 | tag `v2.0.18` | exact tag cloned in CI, installed with `extension install-file` | **working — builds and rigs a human (36,972 tris, 137 bones), both over budget** | human bodies, heads, base clothing |
 
 ## Outstanding pins
 

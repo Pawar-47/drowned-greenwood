@@ -31,10 +31,14 @@ import struct
 import sys
 import zipfile
 
-# The brief's animation families, keyed as the manifest names them. A clip covers a family when
-# its name contains one of the keywords, case-insensitively. This is a heuristic to steer
-# Phase 5, and it says which families found no match rather than pretending they are covered.
-FAMILIES = {
+# Keywords per animation family, used to decide whether a clip covers it. This is a *lookup*,
+# not the list of families: the list is read from the manifest (see load_families), because a
+# hardcoded list drifts. It already did — the inventory once carried 40 families while the
+# manifest had 41, so one family was silently never measured.
+#
+# A family with no entry here falls back to keywords derived from its own name, so adding an
+# animation to the manifest is enough for it to be measured.
+FAMILY_KEYWORDS = {
     "anim_idle": ["idle"],
     "anim_walk": ["walk"],
     "anim_run": ["run"],
@@ -77,6 +81,51 @@ FAMILIES = {
     "anim_shiver_shakeoff": ["shiver", "shake"],
     "anim_emotes": ["wave", "cheer", "taunt", "kneel", "salute", "point", "pray", "dance"],
 }
+
+MANIFEST = "assets/manifest.json"
+
+
+def load_families(manifest_path=MANIFEST):
+    """Read the animation families from the manifest and attach keywords to each.
+
+    Returns (families, notes). `families` maps family name -> keyword list. `notes` describes
+    anything that fell back or failed, so a silent gap becomes a visible one.
+    """
+    notes = []
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        notes.append("manifest unreadable (%s); using the keyword table alone" % exc)
+        return dict(FAMILY_KEYWORDS), notes
+
+    declared = []
+    for group in manifest.get("categories", {}).values():
+        for raw in group.get("assets", []):
+            name = raw.split("|")[0]
+            if name.startswith("anim_") and name not in declared:
+                declared.append(name)
+
+    if not declared:
+        notes.append("no anim_* assets in the manifest; using the keyword table alone")
+        return dict(FAMILY_KEYWORDS), notes
+
+    families = {}
+    for family in declared:
+        keywords = FAMILY_KEYWORDS.get(family)
+        if not keywords:
+            # anim_melee_sword -> ["melee", "sword"]: better than not measuring it at all.
+            keywords = [part for part in family.split("_") if part != "anim"]
+            notes.append("%s has no keywords; derived %s from its name" % (family, keywords))
+        families[family] = keywords
+
+    # A keyword entry with no matching manifest asset is stale: it measures nothing.
+    unused = sorted(set(FAMILY_KEYWORDS) - set(declared))
+    if unused:
+        notes.append("keyword entries with no manifest family: %s" % unused)
+
+    return families, notes
+
 
 GLB_MAGIC = b"glTF"
 CHUNK_JSON = 0x4E4F534A
@@ -190,8 +239,15 @@ def main():
         "sample_clips": clip_list[:20],
     }))
 
+    # Families come from the manifest, not from a hardcoded list, so adding an animation to
+    # the manifest is enough for it to be measured here. `family_notes` reports anything that
+    # fell back to derived keywords, so a gap is visible rather than silent.
+    families, family_notes = load_families()
+    for note in family_notes:
+        print("note: " + note)
+
     covered = {}
-    for family, keywords in FAMILIES.items():
+    for family, keywords in families.items():
         covered[family] = sum(1 for name in clip_list if any(k in name.lower() for k in keywords))
     present = sorted(f for f, n in covered.items() if n > 0)
     missing = sorted(f for f, n in covered.items() if n == 0)
@@ -214,7 +270,7 @@ def main():
         "ok": len(clip_list) > 0,
         "coverage": coverage_state,
         "reason": reason,
-        "families_total": len(FAMILIES),
+        "families_total": len(families),
         "families_covered": len(present),
         "families_missing": len(missing),
         "missing": missing,
@@ -243,7 +299,7 @@ def main():
         print("wrote %s" % args.out)
 
     print("clips found: %d across %d GLB containers" % (len(clip_list), len(clips_by_source)))
-    print("coverage %s: %d of %d families" % (coverage_state, len(present), len(FAMILIES)))
+    print("coverage %s: %d of %d families" % (coverage_state, len(present), len(families)))
     if missing:
         print("missing families: " + ", ".join(missing))
     return 0 if len(clip_list) > 0 else 1
