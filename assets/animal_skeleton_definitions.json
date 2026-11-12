@@ -132,6 +132,28 @@
       "note": "A single spine chain drives swim and turn. Eels use the same skeleton with a longer Body chain, which is why the count is generous for a fish."
     },
     {
+      "name": "animal_skeleton_amphibian",
+      "used_by": [
+        "amph_common_frog", "amph_toad", "amph_fire_salamander", "amph_newt",
+        "amph_giant_salamander"
+      ],
+      "bone_count": 22,
+      "bones": [
+        "Root", "Hips", "Spine", "Chest", "Neck", "Head", "Jaw",
+        "Tail1", "Tail2",
+        "LeftUpperLeg_F", "LeftLowerLeg_F", "LeftFoot_F",
+        "RightUpperLeg_F", "RightLowerLeg_F", "RightFoot_F",
+        "LeftUpperLeg_B", "LeftLowerLeg_B", "LeftFoot_B",
+        "RightUpperLeg_B", "RightLowerLeg_B", "RightFoot_B",
+        "LeftEye", "RightEye"
+      ],
+      "notes": {
+        "why_a_separate_family": "Frogs and salamanders cannot use the small-mammal skeleton: a frog's hind limbs fold in two planes for the crouch and the jump, and a salamander's body is a long lateral chain. Sharing would need corrective shapes worth more than the clips it saved.",
+        "tail": "Salamanders keep Tail1/Tail2; frogs and toads drop them. Dropping a bone never renames the others.",
+        "hop_clip": "The jump is the defining animation for this family and is the one clip that must not be approximated."
+      }
+    },
+    {
       "name": "animal_skeleton_serpent",
       "used_by": [
         "animal_adder_snake", "rept_grass_snake", "rept_slow_worm", "rept_lizard_common"
