@@ -196,15 +196,29 @@ def main():
     present = sorted(f for f, n in covered.items() if n > 0)
     missing = sorted(f for f, n in covered.items() if n == 0)
 
-    ok = len(clip_list) > 0
+    # "PASS" was too generous: it only meant at least one clip existed, so 16 of 41 families
+    # reported PASS. Coverage gets its own three-state answer, and the probe passes only when
+    # the measurement itself worked — the state says how complete the pack is.
+    if len(clip_list) == 0:
+        coverage_state = "unknown"
+        reason = "no_clips_found_in_any_glb"
+    elif len(missing) == 0:
+        coverage_state = "complete"
+        reason = ""
+    else:
+        coverage_state = "partial"
+        reason = ""
+
     print("RESULT " + json.dumps({
         "step": "quaternius_coverage",
-        "ok": ok,
-        "reason": "" if ok else "no_clips_found_in_any_glb",
+        "ok": len(clip_list) > 0,
+        "coverage": coverage_state,
+        "reason": reason,
         "families_total": len(FAMILIES),
         "families_covered": len(present),
         "families_missing": len(missing),
         "missing": missing,
+        "note": "name-keyword matching, not semantic: Pistol_Aim counts as a bow aim",
     }))
 
     if args.out:
@@ -217,6 +231,7 @@ def main():
                     "clip_names": clip_list,
                     "per_container": {k: len(v) for k, v in sorted(clips_by_source.items())},
                     "fbx_unread": fbx_files,
+                    "coverage_state": coverage_state,
                     "coverage": covered,
                     "present": present,
                     "missing": missing,
@@ -228,10 +243,10 @@ def main():
         print("wrote %s" % args.out)
 
     print("clips found: %d across %d GLB containers" % (len(clip_list), len(clips_by_source)))
-    print("families covered %d of %d" % (len(present), len(FAMILIES)))
+    print("coverage %s: %d of %d families" % (coverage_state, len(present), len(FAMILIES)))
     if missing:
         print("missing families: " + ", ".join(missing))
-    return 0 if ok else 1
+    return 0 if len(clip_list) > 0 else 1
 
 
 if __name__ == "__main__":

@@ -77,12 +77,14 @@ vec3 wind_offset(vec3 vertex, vec4 vertex_color, mat4 model) {
 	float flutter = wind_phase(world_xz + vec2(11.3, 7.1), 2.1) * flutter_amplitude;
 
 	// Gust direction comes from the shared flowmap so the whole forest leans the same way.
-	// An unassigned sampler returns opaque black, which decodes to (-1,-1): a constant lean
-	// instead of no wind. Remapping through abs() and subtracting the neutral point means an
-	// absent flowmap yields (0,0), so a material with no flowmap stands still rather than
-	// leaning permanently.
-	vec2 gust_dir = texture(gust_flowmap, world_xz * 0.001).rg;
-	gust_dir = (gust_dir - vec2(0.5)) * 2.0;
+	//
+	// An unassigned sampler returns the hint's default texture, which for hint_default_black
+	// is opaque black. Remapping black through (x - 0.5) * 2 gives (-1,-1): a permanent lean,
+	// not the neutral direction the comment used to claim. `step` zeroes the result when the
+	// sample is the default, so a material with no flowmap stands still instead of leaning.
+	vec2 raw_gust = texture(gust_flowmap, world_xz * 0.001).rg;
+	vec2 gust_dir = (raw_gust - vec2(0.5)) * 2.0;
+	gust_dir *= step(0.001, max(raw_gust.r, raw_gust.g));
 
 	vec3 offset = vec3(gust_dir.x, 0.0, gust_dir.y) * (sway * trunk + branch_move * branch);
 	// Leaf flutter is perpendicular and vertical, which is what makes leaves shimmer rather

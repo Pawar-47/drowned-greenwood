@@ -41,6 +41,7 @@ REQUIRED = {
 }
 
 HARD_CAP_MB = 800
+TARGET_MB = 700
 
 
 def main():
@@ -77,6 +78,15 @@ def main():
     if total > HARD_CAP_MB:
         problems.append(
             "category budgets total %d MB, over the %d MB hard cap" % (total, HARD_CAP_MB)
+        )
+    elif total > TARGET_MB:
+        # Not a failure: the plan may sit above target while it has room. But it is worth
+        # saying out loud, because a plan 90 MB over target has only 10 MB of headroom before
+        # the hard cap, and nobody should discover that when a category overflows.
+        print(
+            "warning: category budgets total %d MB, above the %d MB target (hard cap %d MB)"
+            % (total, TARGET_MB, HARD_CAP_MB),
+            file=sys.stderr,
         )
 
     # A category needs a budget. An earlier table omitted 4.P entirely, so its declared total

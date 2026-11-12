@@ -39,6 +39,13 @@ The checks that do run are the tool and definition gates, and their results live
 assets:
 
 - `tools/validate/check_scripts.py` — every Python, shell, JSON, shader and workflow file parses
-- `tools/validate/check_manifest.py` — 1,953 expanded assets, budget coverage, licence allowlist
+- `tools/validate/check_manifest.py` — expanded assets, budget coverage, licence allowlist
 - `tools/validate/check_skeletons.py` — bone caps, hierarchy, Godot profile names, LOD counts,
   bilateral optional bones, species coverage
+
+## Declared budgets versus the target
+
+The category budgets total **790 MB** against a **700 MB target** and an **800 MB hard cap**.
+The validator fails only above the hard cap, so the declared plan sits 90 MB over target with
+10 MB of headroom. That is deliberate slack for a plan, not a measurement — no asset exists yet,
+and actual usage is checked when files are built, not from the table.

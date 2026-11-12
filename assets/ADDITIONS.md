@@ -1,9 +1,14 @@
 # Assets added beyond the final list
 
-The brief's asset list is final and named. The four entries below are **approved additions**
+The brief's asset list is final and named. The additions below are **approved additions**
 (review section 4) and are exceptions to the rule that additions wait for P1 and P2 to be
-built: all four are **P1** and all four are scheduled into the phases shown. They are in
+built: all are **P1** and all are scheduled into the phases shown. They are in
 `assets/manifest.json` like any other asset.
+
+**Five additions, in six table rows.** The four from the review, plus two animal skeleton
+families found while writing the validator, which share one row in the original review text and
+are listed separately here because they are separate assets. This count is the one the README
+and the manifest use.
 
 | Asset | Category | Tier | Priority | Phase | Why it is needed |
 |---|---|---|---|---|---|

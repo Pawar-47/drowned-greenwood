@@ -119,32 +119,67 @@ It is now installed with `blender --command extension install-file`, and the pro
 through `addon_utils` so Blender sets up the extension context rather than calling `register()`
 by hand and bypassing it.
 
-**Three earlier diagnoses were wrong**: a silent `try/except` around `addon_utils.enable`, a
-missing asset pack, and `fake_bl_info`. The traceback took one run to settle what four
-speculative fixes could not.
+**Result: it registers and builds.** The run after the install fix reports
+`MPFB2 human export PASS — meshes=1, tris=36972, bytes=5132320`. A human mesh is produced and
+exported.
+
+Two things that PASS does **not** cover, and both matter:
+
+1. **`armatures=0, bones=0`.** A mesh was built; no armature was bound. The brief needs a rigged
+   character, so MPFB2 is not yet a usable human pipeline — it is a mesh pipeline.
+2. **36,972 triangles.** The brief budgets 12k–18k for a player/NPC with gear. The base human
+   alone is roughly double the top of that range before any clothing or armor is added, so
+   decimation is mandatory, not optional.
+
+The `mpfb_data` probe also still fails, and its error repeats the same extension-path exception
+rather than proving the data is missing. Data presence and registration failure are now separate
+questions in the report, as they should be.
+
+**Four earlier diagnoses were wrong**: a silent `try/except` around `addon_utils.enable`, a
+missing asset pack, `fake_bl_info`, and installing it as a legacy add-on. The traceback took one
+run to settle what four speculative fixes could not.
 
 ## Modular Tree: registers, but does not generate
 
-`quick_generate` now reaches the operator and fails inside it:
+`quick_generate` now reaches the operator and fails inside it, with a *different* error than
+before — which means the `sys.path` fix worked and exposed the next layer:
 
 ```
-RuntimeError: Error: Failed to generate tree: No module named 'm_tree'
+RuntimeError: Error: Failed to generate tree: cannot import name 'm_tree' from 'm_tree' (unknown location)
 ```
 
-The extension registers its operators under `bpy.ops.mtree`, but its generator imports its own
-inner package as `m_tree`, which only resolves if the extension's package directory is on
-`sys.path`. Blender adds the extensions repo root, not the package root. The probe now adds that
-directory before generating.
+The extension's package directory is now on `sys.path` (the probe reports
+`mtree_syspath added=.../extensions/user_default/modular_tree`), and Python now *finds* something
+named `m_tree` — but it is a namespace package with no `__init__.py`, not the module the
+generator wants. The extension's own layout puts the importable module somewhere else inside its
+package.
 
-**This is a real, specific, one-line cause** — not "the tool is rejected".
+**Operator registration is not procedural generation.** MTree is installed and its operators
+exist; it has produced no tree, so no GLB, so no Godot import. The report now gates on
+`mtree_generate`, `mtree_export` and `godot_scene_tree` precisely so "9 operators registered"
+cannot be read as "trees work".
+
+## Shaders: the probe ran, and found a real bug
+
+The first shader probe hung for 45 minutes because it called
+`shader.get_instance_shader_parameter_list()`, which is not a Godot method, so the script
+errored before `quit()`. It now uses the documented `get_shader_uniform_list()`, imports the
+project first, and every probe is bounded by `timeout`.
+
+On its first real run it failed — and the cause was in my own wrapper: it declared
+`wind_noise` and `gust_flowmap` a second time after including the file that already declares
+them. Duplicate uniform declarations do not compile. The wrapper now declares only a
+`probe_marker` uniform, which exists so the probe can tell "compiled" from "did not throw" even
+for the wetness include, whose own uniforms are all global and may not surface in the list.
 
 ## What each state means for the asset list
 
-**Humans (4.G).** MPFB2 is under repair, not verified. If `register()` raises, human bodies come
-from a custom `bpy` generator: a parametric base mesh bound to the shared skeleton from
-`char_skeleton_definition.json`, with no MPFB2 skin, hair or clothing library. Consequence,
-stated plainly: heads and faces will be stylised rather than realistic, and clothing variety
-depends entirely on our own generators. Recorded in `reports/below_target.md`.
+**Humans (4.G).** MPFB2 now produces a mesh, so the custom-generator fallback is no longer the
+only option — but it produces an **unrigged, over-budget** mesh. Either the pipeline decimates and
+rigs MPFB2 output to the shared skeleton, or bodies come from a custom `bpy` generator. Both are
+viable; what is not viable is treating 36,972 unrigged triangles as a finished character. Heads
+and faces will be stylised either way, and clothing variety depends on our own generators.
+Recorded in `reports/below_target.md`.
 
 **Trees (4.E).** Modular Tree is available after the correction above, so trees use it for the
 branch structure the brief wanted, with Infinigen's plant factories and custom `bpy` generators
@@ -179,10 +214,15 @@ probe name is unique.
 
 ## Open
 
-- **Quaternius clip count and coverage**: the packs are now in the release and CI inventories
-  them, reporting both the real clip count and which of the brief's 39 animation families they
-  cover. The measured numbers are in the latest run's log and
-  `artifacts/phase0/quaternius_coverage.json`; they are deliberately not copied here, because a
-  number typed from memory is exactly the kind of claim this report exists to prevent.
-- MPFB2 under Blender 4.5: not attempted, and not planned. The brief ties MPFB2 to 4.2; its
-  manifest declares `blender_version_min` 4.2.0, so a 4.5 run would not explain the failure.
+- **Quaternius coverage**: measured at **43 clips, 16 of 41 families**. The 25 unmatched families
+  — every melee weapon, skinning, butchering, the bow, prone, swim, vault, mount and the rest —
+  are assigned to the custom `bpy` pipeline. The matcher is a name-keyword heuristic and is
+  optimistic: it counts `Pistol_Aim` as a bow aim, so the real usable coverage is lower than 16.
+  Retargeting is **not** verified: no clip has been retargeted onto the target skeleton yet.
+- **MPFB2 rigging**: a mesh exports, an armature does not. Binding it to
+  `char_skeleton_definition.json` is untested.
+- **MTree generation**: `cannot import name 'm_tree' from 'm_tree'` — the module is found but is
+  an empty namespace package. The extension's real import path inside its own layout is the next
+  thing to determine.
+- **Godot Mobile renderer**: the probe project uses `gl_compatibility`. Nothing here proves the
+  Mobile (Vulkan) path, and per the owner's decision that is a real-device check, not a CI one.

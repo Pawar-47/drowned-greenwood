@@ -1,39 +1,43 @@
 extends Node
 ## Compile the project's real shader includes and report whether Godot accepts them.
 ##
-## Nothing ever compiled these before: check_scripts.py can spot a wrong hint, but only Godot
-## can say whether a shader actually builds. A shader that fails to compile fails silently at
+## Nothing compiled these before: check_scripts.py can spot a wrong hint, but only Godot can
+## say whether a shader actually builds. A shader that fails to compile fails silently at
 ## runtime as an unshaded surface, which is the kind of bug that reaches a device.
 ##
-## Two rules this script follows, both learned the hard way:
+## Four rules here, each learned from a specific failure:
 ##
-##   1. `quit()` is called on every path, including failure. The first version called a method
-##      that does not exist (`get_instance_shader_parameter_list`), the script errored before
-##      reaching quit(), and the job sat for its full 45-minute ceiling waiting for a scene that
-##      would never finish.
-##   2. No API is called that has not been checked. Godot surfaces shader compile errors as
-##      console output plus a null material, so that is what is tested — not an invented
-##      introspection method.
+##   1. `quit()` runs on every path. The first version called a method that does not exist,
+##      errored before reaching quit(), and the job sat until its 45-minute ceiling.
+##   2. Only documented APIs. `Shader.get_instance_shader_parameter_list()` does not exist;
+##      the real one is `Shader.get_shader_uniform_list()`.
+##   3. No duplicate declarations. The include already declares `wind_noise` and
+##      `gust_flowmap`; the wrapper used to declare them again, which is a compile error.
+##   4. A non-empty uniform list is evidence, not proof. Each include's expected uniforms are
+##      named, and the probe fails if they are missing — that is what "compiled" means here.
 ##
 ## Run:
-##   godot --headless --path <project> --quit-after 600 shader_probe.tscn
+##   godot --headless --path <project> --quit-after 120 shader_probe.tscn
 
 const INCLUDES := [
 	"res://includes/tech_wind_include.gdshaderinc",
 	"res://includes/tech_wetness_include.gdshaderinc",
 ]
 
-# A minimal spatial shader exercising each include the way the game will use it. Compiling the
-# include alone proves nothing; compiling it inside a shader that calls its functions is what
-# the materials actually do.
+# Each wrapper exercises its include the way the game will: the wind include from vertex(),
+# the wetness include from fragment(). The sampler uniforms are declared by the include, so
+# the wrapper must not repeat them.
+#
+# Each wrapper also declares `probe_marker`. The wetness include exposes only *global* uniforms,
+# which may not surface in get_shader_uniform_list(); without a regular uniform the probe could
+# see an empty list from a shader that compiled perfectly and call it a failure.
 const WRAPPERS := {
 	"tech_wind_include.gdshaderinc": """
 shader_type spatial;
 
 #include "res://includes/tech_wind_include.gdshaderinc"
 
-uniform sampler2D wind_noise : hint_default_black;
-uniform sampler2D gust_flowmap : hint_default_black;
+uniform float probe_marker : hint_range(0.0, 1.0) = 1.0;
 
 void vertex() {
 	VERTEX += wind_offset(VERTEX, COLOR, MODEL_MATRIX);
@@ -43,6 +47,8 @@ void vertex() {
 shader_type spatial;
 
 #include "res://includes/tech_wetness_include.gdshaderinc"
+
+uniform float probe_marker : hint_range(0.0, 1.0) = 1.0;
 
 void fragment() {
 	vec3 wet = wetness_albedo(vec3(0.4), 0.55, global_wetness);
@@ -54,6 +60,13 @@ void fragment() {
 """,
 }
 
+# The uniform a successfully compiled wrapper must expose. `probe_marker` is the one uniform
+# every wrapper declares itself, so its presence proves the shader parsed and built.
+const EXPECTED_UNIFORMS := {
+	"tech_wind_include.gdshaderinc": ["probe_marker", "wind_noise", "gust_flowmap"],
+	"tech_wetness_include.gdshaderinc": ["probe_marker"],
+}
+
 var _failures := 0
 var _compiled := 0
 
@@ -63,8 +76,12 @@ func _report(payload: Dictionary) -> void:
 
 
 func _ready() -> void:
-	# A try-equivalent: any error inside is caught and reported, and quit() always runs.
-	_run()
+	# Any escaped error inside _run() still leaves _ready() to report and quit.
+	var error := _run()
+	if error != "":
+		_report({"step": "shader_probe_error", "ok": false, "error": error})
+		_failures += 1
+
 	_report({
 		"step": "shader_summary",
 		"ok": _failures == 0 and _compiled > 0,
@@ -74,52 +91,59 @@ func _ready() -> void:
 	get_tree().quit(0 if _failures == 0 and _compiled > 0 else 1)
 
 
-func _run() -> void:
+func _run() -> String:
 	for include_path in INCLUDES:
 		var file_name: String = include_path.get_file()
+		# One result per include. A shared step name would let the last include overwrite the
+		# earlier ones in the report, so a passing shader could mask a failing one.
+		var step := "shader_compile_" + file_name.get_basename().replace(".", "_")
 
 		if not FileAccess.file_exists(include_path):
-			_report({"step": "shader_compile", "ok": false, "shader": file_name, "reason": "include_missing"})
+			_report({"step": step, "ok": false, "shader": file_name, "reason": "include_missing"})
 			_failures += 1
 			continue
 
 		var source: String = WRAPPERS.get(file_name, "")
 		if source.is_empty():
-			_report({"step": "shader_compile", "ok": false, "shader": file_name, "reason": "no_wrapper_defined"})
+			_report({"step": step, "ok": false, "shader": file_name, "reason": "no_wrapper_defined"})
 			_failures += 1
 			continue
 
 		var shader := Shader.new()
 		shader.code = source
 
-		# Godot reports a compile failure by leaving the shader unable to produce a material,
-		# and by printing the error to the console. A material that accepts the shader and
-		# reports a non-null shader back is the strongest signal available without a renderer.
-		var material := ShaderMaterial.new()
-		material.shader = shader
+		# The documented way to read a shader's uniforms. A shader that failed to compile
+		# returns an empty list, which is the failure this probe exists to catch.
+		var uniforms := shader.get_shader_uniform_list()
+		var names := []
+		for uniform in uniforms:
+			names.append(String(uniform.get("name", "")))
 
-		if material.shader == null:
-			_report({"step": "shader_compile", "ok": false, "shader": file_name, "reason": "material_rejected_shader"})
-			_failures += 1
-			continue
+		var expected: Array = EXPECTED_UNIFORMS.get(file_name, [])
+		var missing := []
+		for wanted in expected:
+			if not names.has(wanted):
+				missing.append(wanted)
 
-		# The wrapper's uniforms are the ones the include and the wrapper declare together.
-		# Listing them proves the shader parsed far enough to expose parameters.
-		var uniforms := material.get_property_list()
-		var uniform_count := 0
-		for property in uniforms:
-			if String(property.get("name", "")).begins_with("shader_parameter/"):
-				uniform_count += 1
-
-		if uniform_count == 0:
+		if missing.size() > 0:
 			_report({
-				"step": "shader_compile",
+				"step": step,
 				"ok": false,
 				"shader": file_name,
-				"reason": "no_shader_parameters_exposed",
+				"reason": "compile_failed_or_uniforms_missing",
+				"missing": missing,
+				"found": names,
 			})
 			_failures += 1
 			continue
 
-		_report({"step": "shader_compile", "ok": true, "shader": file_name, "parameters": uniform_count})
+		_report({
+			"step": step,
+			"ok": true,
+			"shader": file_name,
+			"uniforms": names.size(),
+			"names": names,
+		})
 		_compiled += 1
+
+	return ""

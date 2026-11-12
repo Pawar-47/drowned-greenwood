@@ -13,14 +13,22 @@ gates pass.
 
 ## Layout
 
+What exists now, and what is planned. Anything marked *planned* does not exist yet; it is
+listed so the intended shape is visible without being mistaken for present.
+
 ```
 assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skeleton definitions
-tools/           generators/ config/ validate/ phase0/ build_manifest.py TOOLS.md
+tools/           build_manifest.py, TOOLS.md, phase0/ (probes), validate/ (checks)
 shaders/         shared shader includes and SHADER_GLOBALS.md
 docs/            HISTORY_PURGE.md, LESSONS.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
+
+Planned, not present: `tools/generators/` and `tools/config/` (Phase 2 onward), an APK build
+workflow (Phase 9), and a `staging` branch. The staging branch is the intended path for binaries
+to reach `main`; until it exists, nothing binary is committed at all, which is why the repository
+is currently about 260 KB of tooling and definitions.
 
 ## The asset list
 
@@ -61,7 +69,7 @@ pushed.
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests | **Setup complete; verification nearly complete.** Verified in CI: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import and load of a real GLB (2208 tris), gltfpack `-noq` (1104 tris), Infinigen, glTF-Transform, Poly Haven, Modular Tree's 9 operators. **Quaternius measured: 43 clips, 16 of 41 families covered** — 25 missing, so most of Phase 5's animation list is authored with `bpy`. **MPFB2** fails with a real traceback now: it is an extension being installed as a legacy add-on; install path corrected. See `reports/tool_evaluation.md` |
+| 0 | Tool smoke tests | **Setup complete; verification incomplete.** Working: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import and load of a real GLB (2208 tris), gltfpack `-noq` (1104 tris), Infinigen, glTF-Transform, Poly Haven, the shader compile gate, and the report gate itself (it now fails the job on a defect). **Quaternius measured: 43 clips, 16 of 41 families** — 25 unmatched, so most Phase 5 animations are authored with `bpy`. **MPFB2 now registers and exports a human** (36,972 tris, 5.1 MB) — but with **no armature** and its data probe failing, and 36,972 tris is over the 12k–18k character budget, so decimation is required. **MTree registers 9 operators but cannot generate** (`cannot import name 'm_tree' from 'm_tree'`). See `reports/tool_evaluation.md` |
 | 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | in progress |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |

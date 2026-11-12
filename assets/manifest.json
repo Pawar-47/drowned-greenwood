@@ -34,7 +34,7 @@
     "4.O": 60,
     "4.P": 25
   },
-  "budget_notes": "Committed final assets target 700 MB, hard cap 800 MB. 4.P covers animal sign decals, hunting structures and the technical assets (impostor atlases, occluders, HLODs, navmesh hints, ragdoll proxies, cloth chains, scatter presets, test worlds). It was missing from this table until an audit pointed out that the declared total was therefore not the real total. A category that overflows its budget moves to a Release pack, one tag per category, and every affected asset records that pack plus its SHA-256.",
+  "budget_notes": "Committed final assets target 700 MB, hard cap 800 MB. Declared category budgets total 790 MB: deliberately above target while the plan has room, and 10 MB under the cap. check_manifest.py fails above the cap and warns above the target, so the headroom is visible rather than discovered when a category overflows. A category that overflows its budget moves to a Release pack, one tag per category, and every affected asset records that pack plus its SHA-256. Actual file sizes are checked when assets are built, not from this table.",
   "categories": {
     "4.A": {
       "label": "Sky, atmosphere, weather, light",
@@ -1326,12 +1326,13 @@
         "audio_music_war||P3"
       ]
     },
-    "4.P": {
-      "label": "Additions found during review: animal sign, hunting structures, technical assets",
-      "phase": 2,
+    "4.P.sign": {
+      "label": "Animal sign and tracking gameplay assets",
+      "phase": 4,
       "tier": "C",
       "priority": "P2",
       "source_tool": "custom",
+      "note": "Split out of the original 4.P batch. Animal sign belongs with the fauna work it describes, not with terrain in Phase 2: a scat decal or a game trail is only meaningful once the animals and the hunting loop exist.",
       "assets": [
         "sign_scat_deer||P1",
         "sign_scat_boar||P1",
@@ -1352,17 +1353,47 @@
         "sign_den_bear_log||P2",
         "sign_nest_ground_bird||P2",
         "sign_salt_lick||P2",
-        "sign_watering_hole_kit||P2",
+        "sign_watering_hole_kit||P2"
+      ]
+    },
+    "4.P.hunt": {
+      "label": "Hunting structures and stations",
+      "phase": 7,
+      "tier": "B",
+      "priority": "P2",
+      "source_tool": "custom",
+      "note": "Split out of the original 4.P batch. These are structures, built by the same kit as the settlements, so they belong with 4.I and 4.J rather than in Phase 2.",
+      "assets": [
         "hunt_tree_stand||P1",
         "hunt_ground_blind_brush||P2",
         "hunt_bait_station||P2",
         "hunt_skinning_rack||P2",
         "hunt_butcher_block||P2",
-        "hunt_trophy_wall_rack||P2",
+        "hunt_trophy_wall_rack||P2"
+      ]
+    },
+    "4.P.atm": {
+      "label": "Atmosphere extras: backdrop impostors, far ridges, canopy light shafts",
+      "phase": 2,
+      "tier": "C",
+      "priority": "P2",
+      "source_tool": "custom",
+      "note": "Stays in Phase 2, which is where the sky and atmosphere work lives. These are the distant layers the 1 km test world needs to look like it continues past the playable area.",
+      "assets": [
         "atm_mountain_backdrop_impostor||P2|4",
         "atm_far_ridge_layer||P2|3",
         "atm_thunder_cue_data||P2",
-        "atm_canopy_light_shaft_set||P2",
+        "atm_canopy_light_shaft_set||P2"
+      ]
+    },
+    "4.P.tech": {
+      "label": "Technical pipeline assets: impostors, occluders, HLODs, proxies, shader includes",
+      "phase": 9,
+      "tier": "C",
+      "priority": "P1",
+      "source_tool": "custom",
+      "note": "Split out of the original 4.P batch. These are produced by the pipeline at the end, once there is content to bake impostors and HLODs from: an impostor atlas needs a finished tree species, and a 1 km test world needs the assets it assembles. Priority stays P1 because later phases depend on them.",
+      "assets": [
         "tech_impostor_atlas||P1",
         "tech_occluder_forest_wall||P1",
         "tech_occluder_settlement||P1|4",

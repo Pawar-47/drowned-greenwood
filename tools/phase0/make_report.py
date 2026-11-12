@@ -41,6 +41,9 @@ DECISIONS = {
     "godot_import_gltfpack": ("Godot import of gltfpack output", "same decision, one step earlier"),
     "godot_import_gltfpack_noq": ("Godot import of gltfpack -noq output", "same decision, one step earlier"),
     "shader_compile": ("Shader compile", "the project's real shader includes build in Godot"),
+    "shader_compile_tech_wind_include": ("Shader compile: wind", "the wind include builds"),
+    "shader_compile_tech_wetness_include": ("Shader compile: wetness", "the wetness include builds"),
+    "shader_probe_error": ("Shader probe error", "the probe itself raised"),
     "shader_import": ("Shader project import", "the probe project must be imported before a scene runs"),
     "shader_summary": ("Shader compile summary", "how many includes compiled and how many failed"),
     "godot_scene_tree": ("Godot load of the MTree tree", "the tree MTree generated must import and load"),
@@ -114,9 +117,12 @@ FAILURE_CONSEQUENCE = {
     "polyhaven": "no CC0 texture source; materials fall back to procedural baking only",
     "quaternius_packs": "no CC0 clip source yet; the release is an open task on the owner and clips are authored instead",
     "quaternius_inventory": "clip coverage unknown; the animation report stays open",
-    "quaternius_coverage": "coverage is unknown, not zero: the packs downloaded but no clips were found inside them, so the extraction or the pack contents need looking at",
+    "quaternius_coverage": "coverage is incomplete: 25 of 41 animation families have no matching clip, so those are authored with bpy",
     "quaternius_unzip": "a pack did not extract; its clips are unknown",
     "shader_compile": "the shader includes do not build; every material using them fails at runtime",
+    "shader_compile_tech_wind_include": "the wind include does not build; every foliage material fails at runtime",
+    "shader_compile_tech_wetness_include": "the wetness include does not build; every ground material fails at runtime",
+    "shader_probe_error": "the probe itself failed, so the shaders remain uncompiled and unverified",
     "shader_summary": "one or more shader includes failed to compile",
     "godot_scene_tree": "MTree generates a tree that Godot cannot load; the tree pipeline is unverified",
     "godot_scene_human": "MPFB2 builds a human that Godot cannot load; the human pipeline is unverified",
@@ -142,7 +148,10 @@ EXPECTED_FAILURES = {
 }
 
 # Probes that must pass for Phase 0 to be considered closed. A failure here is a defect and
-# must fail the job, not merely appear in a table.
+# must fail the job, and so must a required probe that produced no result at all.
+#
+# MTree is here because it is retained as the production tree tool: registration alone is not
+# success, so generation, export and the Godot import of its tree are all gated.
 REQUIRED_PROBES = {
     "blender_checksum",
     "blender_env",
@@ -151,13 +160,23 @@ REQUIRED_PROBES = {
     "godot_version",
     "godot_import",
     "godot_scene_plain",
-    "shader_compile",
+    "shader_import",
+    "shader_compile_tech_wind_include",
+    "shader_compile_tech_wetness_include",
+    "shader_summary",
     "gltfpack_simplify",
     "gltfpack_noq",
     "godot_scene_gltfpack_noq",
     "polyhaven",
     "gltf_transform_install",
     "quaternius_download",
+    "quaternius_packs",
+    "mtree_extension_install",
+    "mtree_operators",
+    "mtree_generate",
+    "mtree_export",
+    "godot_scene_tree",
+    "godot_import_tree",
 }
 
 
@@ -297,15 +316,24 @@ def main():
         handle.write(text)
     print(text)
 
-    # Exit non-zero when a REQUIRED probe failed.
+    # Exit non-zero when a required probe FAILED, or when one never reported at all.
     #
-    # This used to return 0 unconditionally, so with `continue-on-error` on the probe steps the
-    # workflow stayed green while the report listed defects. A report that cannot fail the run
-    # is a diagnostic, not a gate, and Phase 0 was being described as "closed, 0 defects" on
-    # the strength of a green tick it had not earned.
-    required_failures = [
-        row for row in defects if row["name"] in REQUIRED_PROBES
-    ]
+    # The first version only looked for failed rows. A probe that timed out and produced no
+    # row was therefore invisible: the Godot shader step hung for 45 minutes, emitted nothing,
+    # and the report job still succeeded. A missing result is a failure — it is the one case
+    # where silence is indistinguishable from success unless it is treated as neither.
+    seen = {row["name"] for row in ordered}
+    missing_required = sorted(REQUIRED_PROBES - seen)
+    required_failures = [row for row in defects if row["name"] in REQUIRED_PROBES]
+
+    exit_code = 0
+    if missing_required:
+        print(
+            "\nFAILED: %d required probe(s) produced no result: %s"
+            % (len(missing_required), ", ".join(missing_required)),
+            file=sys.stderr,
+        )
+        exit_code = 1
     if required_failures:
         print(
             "\nFAILED: %d required probe(s) failed: %s"
@@ -315,8 +343,8 @@ def main():
             ),
             file=sys.stderr,
         )
-        return 1
-    return 0
+        exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":
