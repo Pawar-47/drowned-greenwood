@@ -21,7 +21,7 @@ is switched from "resolve" to "verify".
 | glTF-Transform CLI | `@gltf-transform/cli@4` (exact version recorded from run) | npm | dedup, prune, weld, resample animations, texture resize |
 | Python | `3.11` | `actions/setup-python` | Infinigen (its supported interpreter), pipeline scripts |
 | MPFB2 | commit recorded from first run | `git clone` of `makehumancommunity/mpfb2`; **enables but registers 0 operators — cause pending** | human bodies, heads, base clothing, auto-rig |
-| Modular Tree (MTree) | commit `faf77c1538ce8af3d70aed036b8a540058521347`, v5.6.0 | resolved by CI; **`blender_version_min = 4.5.0`**, so it needs the 4.5 job | procedural trees |
+| Modular Tree (MTree) | commit `faf77c1538ce8af3d70aed036b8a540058521347`, v5.6.0, run under Blender 4.5.16 | **verified in CI**: extension installs, 9 operators register in `bpy.ops.mtree` | procedural trees |
 | Infinigen | commit `53033dd55c7191cbc436be6ffbb63c026935a509` | resolved by CI; install, import and CLI all pass | rocks, plants, mushrooms, clouds, materials |
 | Poly Haven API | live, asset IDs recorded per download | `api.polyhaven.com` | CC0 PBR textures, HDRIs, scanned models |
 | Quaternius animation libraries | release `third-party-quaternius`, asset `Universal.Animation.Library.Standard.zip`, sha256 `cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724` | fetched from the release by CI, outside git | CC0 humanoid animation clips |
@@ -41,7 +41,7 @@ pins exactly one Blender version.
 | Godot visual checks | Not in CI. The Godot headless **import and load** check stays; anything that needs pixels happens on a real device. |
 | Infinigen | Approved as planned: `generate_individual_assets` only, CPU, small shards, never full scenes. |
 | Modular Tree | Approved. If the fork does not load in Blender 4.2, trees come from the Infinigen plant factories plus custom generators, and the quality loss is recorded in `reports/tool_evaluation.md`. A separate Blender version per job is allowed. |
-| Quaternius animations | Whatever clips the packs supply. The owner uploads the free Standard ZIPs to the Release `third-party-quaternius`, outside git; CI fetches them from there, unzips them and reports a **measured** clip count and coverage of the brief's animation families. Every clip the packs do not supply is authored with `bpy`. |
+| Quaternius animations | The release `third-party-quaternius` supplies `ual1_standard.{fbx,glb}` and `ual1_standard_rm.{fbx,glb}`: **whole animation libraries in single containers**, not one file per clip. Clip counts are therefore unknown until a GLB's animations are enumerated, which is a Phase 5 task. Every clip the packs do not supply is authored with `bpy`. |
 | fps | Not measured in CI. Static budgets only (triangles, draw calls, materials, texture memory); `tech_perf_overlay_stub` is P1 so real-device measurement is possible. |
 
 ## Release packs

@@ -19,28 +19,39 @@ Both fall back exactly as the brief prescribes.
 | Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd5` |
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list, file list, 1k download |
-| **MPFB2** | **REJECT** | 3 attempts, still `ModuleNotFoundError: No module named 'mpfb'` |
-| **Modular Tree** | **REJECT** | 3 attempts, registers 0 operators under Blender 4.5.16 |
-| Quaternius packs | **PARTIAL** | owner published `Universal.Animation.Library.Standard.zip` (15.9 MB, sha256 `cc73fc4e…`); CI fetches it, but the archive yielded only **4 animation files** (2 `.fbx`, 2 `.glb`) — see below |
+| **MPFB2** | **REJECT** | 3 attempts. Final run imports the module successfully (`module_file=…/addons/mpfb/__init__.py`) but registers **0 operators**, so `create_human` does not exist. The add-on needs its asset packs beyond the source, which this pipeline does not install. |
+| **Modular Tree** | **USE — correction** | 3 attempts. Final run: extension installs, **9 operators** register in `bpy.ops.mtree` (`add_leaves`, `generate_leaf`, `quick_generate`, preset appliers). An earlier rejection was a **false negative in my probe**, which looked for `bpy.ops.m_tree` and concluded the extension was inert. See below. |
+| Quaternius packs | **PARTIAL** | the archive contains **4 files, not 4 clips**: `ual1_standard.{fbx,glb}` and `ual1_standard_rm.{fbx,glb}`. Each is a whole animation library in one container, so the clip count cannot be read from file names. See below. |
 
-## Quaternius: the pack is much smaller than expected
+## Modular Tree: I was wrong, and the correction matters
 
-The first successful inventory of `Universal.Animation.Library.Standard.zip` found **4 animation
-files** in a 15.9 MB archive (`suffixes={'.fbx': 2, '.glb': 2, '.png': 3, '.txt': 2, '.zip': 1}`).
-Two `.fbx` and two `.glb` is most likely two animations in two formats, not a library.
+For several runs the report said Modular Tree registered zero operators. It does not. The
+extension registers fine; my probe asked for `bpy.ops.m_tree` when the operators live in
+`bpy.ops.mtree`. Two separate mistakes, both mine:
 
-The brief's expectation for this pack was "120+ animations", with the free Standard download
-covering only part of that. Four files is below even that. Two possibilities, and the next run
-distinguishes them because it now logs `unzip -l` and the clip file names:
+1. `hasattr(bpy.ops, "m_tree")` is always True, because `bpy.ops` resolves names lazily. That
+   produced a **false pass** once.
+2. Looking only at `m_tree` produced a **false failure** afterwards, because the real namespace
+   is `mtree`.
 
-1. **The upload is a sample or a teaser**, not the Standard pack. The fix is on the owner: upload
-   the full Standard ZIP from the pack page.
-2. **The pack really is this small.** Then Phase 5 authors nearly every clip with `bpy`, which
-   the brief already permits, and the animation coverage report will say so plainly.
+The probe now discovers the namespace instead of assuming it, and picks the generator from what
+it finds (`quick_generate` in this build). The rejection is retracted: Modular Tree is available
+for 4.E trees, which restores the node-based branch control the brief wanted.
 
-Either way, **no clip count is being claimed**. The inventory reports `coverage unknown` rather
-than "0 of 40 covered", because a pack that yields no clips has not proved anything about the
-clips it might contain.
+**What is still unproven:** that `quick_generate` actually produces a mesh and exports. The
+namespace discovery is measured; tree generation is the next run's job.
+
+## Quaternius: four files, and they are libraries
+
+The archive `Universal.Animation.Library.Standard.zip` contains `ual1_standard.fbx`,
+`ual1_standard.glb`, `ual1_standard_rm.fbx`, `ual1_standard_rm.glb`, plus a texture set and
+readme. These are **single containers holding a whole animation library**, which is how the
+Quaternius Universal Animation Library is distributed — not one file per clip.
+
+So `families_covered=0` is a limitation of my inventory, not a fact about the pack: counting
+clips by file name cannot work when one file holds 120 of them. The honest next step is to
+**open the GLB and enumerate its animations**, which needs Blender or glTF-Transform in CI. That
+is a Phase 5 task, and until it runs, the animation coverage is **unknown**, not zero.
 
 ## What the rejections mean for the asset list
 
@@ -50,13 +61,14 @@ from `char_skeleton_definition.json`, no MPFB2 skin/hair/clothing library. Conse
 plainly: heads and faces will be stylised rather than realistic, and clothing variety depends
 entirely on our own generators. Recorded in `reports/below_target.md` when the assets are built.
 
-**Trees (4.E).** Without MTree, trees come from Infinigen's plant/bush factories plus custom
-`bpy` generators, as the owner approved. Infinigen is verified working, so the giant-tree
-silhouettes and leaf cards are still reachable; what is lost is MTree's node-based branch
-control, which means more generator code for the same variety.
+**Trees (4.E).** Modular Tree is available after the correction above, so trees use it for the
+branch structure the brief wanted, with Infinigen's plant factories and custom `bpy` generators
+for the species MTree cannot express. What remains unproven is that `quick_generate` produces an
+exportable mesh; the next run answers that, and if it fails the fallback is the original plan:
+Infinigen plus custom generators, with the loss recorded.
 
-**Neither rejection blocks Phase 1.** Skeleton definitions, the manifest, workflows and
-validators are independent of both.
+**MPFB2 does block humans (4.G).** Skeleton definitions, the manifest, workflows and validators
+are independent of it, so Phase 1 proceeds; Phase 5 will build bodies with a custom generator.
 
 ## The import gate
 
