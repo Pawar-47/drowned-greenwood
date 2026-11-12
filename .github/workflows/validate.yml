@@ -40,14 +40,28 @@ jobs:
 
       - name: P1 set per phase
         run: |
-          python - <<'PY'
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           with open("assets/manifest.expanded.json", encoding="utf-8") as handle:
               manifest = json.load(handle)
-          p1 = [a for a in manifest["assets"] if a["priority"] == "P1"]
-          print("P1 assets: %d" % len(p1))
-          for asset in p1[:20]:
-              print("  phase %d  %-40s %s" % (asset["phase"], asset["name"], asset["category"]))
-          if len(p1) > 20:
-              print("  ... and %d more" % (len(p1) - 20))
+          summary = manifest["summary"]
+          assets = manifest["assets"]
+          print("## Asset manifest")
+          print()
+          print("| Measure | Count |")
+          print("|---|---|")
+          print("| Assets (variants expanded) | %d |" % summary["total"])
+          for priority, count in summary["by_priority"].items():
+              print("| %s | %d |" % (priority, count))
+          print()
+          print("| Phase | Assets | P1 |")
+          print("|---|---|---|")
+          for phase, count in summary["by_phase"].items():
+              p1 = sum(1 for a in assets if a["phase"] == int(phase) and a["priority"] == "P1")
+              print("| %s | %d | %d |" % (phase, count, p1))
+          print()
+          print("| Category | Assets |")
+          print("|---|---|")
+          for category, count in summary["by_category"].items():
+              print("| %s | %d |" % (category, count))
           PY
