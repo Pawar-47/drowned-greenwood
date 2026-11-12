@@ -24,7 +24,7 @@ is switched from "resolve" to "verify".
 | Modular Tree (MTree) | commit `faf77c1538ce8af3d70aed036b8a540058521347`, v5.6.0 | resolved by CI; **`blender_version_min = 4.5.0`**, so it needs the 4.5 job | procedural trees |
 | Infinigen | commit `53033dd55c7191cbc436be6ffbb63c026935a509` | resolved by CI; install, import and CLI all pass | rocks, plants, mushrooms, clouds, materials |
 | Poly Haven API | live, asset IDs recorded per download | `api.polyhaven.com` | CC0 PBR textures, HDRIs, scanned models |
-| Quaternius animation libraries | pack version recorded per clip | quaternius.com / OpenGameArt | CC0 humanoid animation clips |
+| Quaternius animation libraries | release `third-party-quaternius`, asset `Universal.Animation.Library.Standard.zip`, sha256 `cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724` | fetched from the release by CI, outside git | CC0 humanoid animation clips |
 
 ## Why Blender 4.2 LTS and not a newer major
 
@@ -41,7 +41,7 @@ pins exactly one Blender version.
 | Godot visual checks | Not in CI. The Godot headless **import and load** check stays; anything that needs pixels happens on a real device. |
 | Infinigen | Approved as planned: `generate_individual_assets` only, CPU, small shards, never full scenes. |
 | Modular Tree | Approved. If the fork does not load in Blender 4.2, trees come from the Infinigen plant factories plus custom generators, and the quality loss is recorded in `reports/tool_evaluation.md`. A separate Blender version per job is allowed. |
-| Quaternius animations | Whatever clips can be fetched legally by script. The free Standard ZIPs are downloaded manually by the owner and uploaded to the Release `third-party-quaternius`, outside git; CI fetches them from there. Every missing clip is authored with `bpy`. **No clip count is promised**: `reports/tool_evaluation.md` records the real number once the pack is present. |
+| Quaternius animations | Whatever clips the packs supply. The owner uploads the free Standard ZIPs to the Release `third-party-quaternius`, outside git; CI fetches them from there, unzips them and reports a **measured** clip count and coverage of the brief's animation families. Every clip the packs do not supply is authored with `bpy`. |
 | fps | Not measured in CI. Static budgets only (triangles, draw calls, materials, texture memory); `tech_perf_overlay_stub` is P1 so real-device measurement is possible. |
 
 ## Release packs

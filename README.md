@@ -52,7 +52,7 @@ force-pushes and must not be run without explicit approval.
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests | **CLOSED.** Verified: Blender 4.2.23, all three renderers, Godot import gate (real geometry), gltfpack `-noq`, Infinigen, glTF-Transform, Poly Haven. **Rejected after 3 attempts: MPFB2 and Modular Tree** — both fall back to custom generators as the brief allows. Quaternius blocked on the owner. See `reports/tool_evaluation.md` |
+| 0 | Tool smoke tests | **CLOSED.** Verified: Blender 4.2.23, all three renderers, Godot import gate (real geometry), gltfpack `-noq`, Infinigen, glTF-Transform, Poly Haven. **Rejected after 3 attempts: MPFB2 and Modular Tree** — both fall back to custom generators as the brief allows. Quaternius: the owner published the packs; CI now fetches and inventories them. See `reports/tool_evaluation.md` |
 | 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | in progress |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |

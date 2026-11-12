@@ -21,7 +21,7 @@ Both fall back exactly as the brief prescribes.
 | Poly Haven API | **USE** | asset list, file list, 1k download |
 | **MPFB2** | **REJECT** | 3 attempts, still `ModuleNotFoundError: No module named 'mpfb'` |
 | **Modular Tree** | **REJECT** | 3 attempts, registers 0 operators under Blender 4.5.16 |
-| Quaternius packs | **BLOCKED on owner** | release `third-party-quaternius` does not exist |
+| Quaternius packs | **AVAILABLE** | owner published `Universal.Animation.Library.Standard.zip` (15.9 MB, sha256 `cc73fc4e…`); CI fetches, unzips and inventories it |
 
 ## What the rejections mean for the asset list
 
@@ -66,6 +66,10 @@ probe name is unique.
 
 ## Open
 
-- Quaternius clip count: unknown until the owner uploads the packs to the release.
+- **Quaternius clip count and coverage**: the packs are now in the release and CI inventories
+  them, reporting both the real clip count and which of the brief's 39 animation families they
+  cover. The measured numbers are in the latest run's log and
+  `artifacts/phase0/quaternius_coverage.json`; they are deliberately not copied here, because a
+  number typed from memory is exactly the kind of claim this report exists to prevent.
 - MPFB2 under Blender 4.5: not attempted, and not planned. The brief ties MPFB2 to 4.2; its
   manifest declares `blender_version_min` 4.2.0, so a 4.5 run would not explain the failure.
