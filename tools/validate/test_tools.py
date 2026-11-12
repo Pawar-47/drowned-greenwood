@@ -418,14 +418,19 @@ def test_flow_accumulation_counts_upstream_area():
 
 
 def test_compute_downhill_picks_the_steepest_lower_neighbour():
-    """On a plane tilted only in x, every non-edge cell drains to its +x neighbour."""
+    """On a plane tilted only in x, every non-edge cell drains to its +x neighbour.
+
+    The +x and the diagonal +x±1 neighbours have the SAME drop, so this only holds if the
+    comparison is by gradient: the diagonal is sqrt(2) further away and therefore gentler. The
+    first version compared raw drops and sent the flow diagonally.
+    """
     samples = 5
     heights = [65535 - x * 1000 for _y in range(samples) for x in range(samples)]
     downhill = hydrology.compute_downhill(heights, samples)
     middle = 2 * samples + 2
     assert downhill[middle] == middle + 1, (
-        "the steepest lower neighbour of cell (2,2) is %r, expected %r"
-        % (downhill[middle], middle + 1)
+        "the steepest lower neighbour of cell (2,2) is %r, expected %r — a diagonal won a tie it "
+        "should have lost" % (downhill[middle], middle + 1)
     )
     # The last column has nothing lower: it is the outlet.
     for y in range(samples):
@@ -433,13 +438,22 @@ def test_compute_downhill_picks_the_steepest_lower_neighbour():
 
 
 def test_flow_accumulation_conserves_cells():
-    """Every cell contributes exactly one unit, so the total is the cell count."""
+    """Every cell drains to exactly one outlet, so the outlets' flow sums to the cell count.
+
+    Not the sum of ALL flow values — a cell's value is 1 plus everything upstream of it, so the
+    total of the array is much larger than the number of cells. The first version of this test
+    asserted the wrong invariant and failed against correct code.
+    """
     samples = 6
     heights = [65535 - ((x * 37 + y * 91) % 5000) for y in range(samples) for x in range(samples)]
     downhill = hydrology.compute_downhill(heights, samples)
     flow = hydrology.accumulate(heights, downhill, samples)
-    assert sum(flow) == float(samples * samples), (
-        "flow sums to %r, expected %d" % (sum(flow), samples * samples)
+
+    outlets = [flow[i] for i, target in enumerate(downhill) if target < 0]
+    assert outlets, "the grid has no outlet, which means it has a cycle"
+    assert sum(outlets) == float(samples * samples), (
+        "the outlets collect %r units, expected %d — flow is being lost or double counted"
+        % (sum(outlets), samples * samples)
     )
 
 

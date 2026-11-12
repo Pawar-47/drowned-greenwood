@@ -28,6 +28,7 @@ Outputs:
 import argparse
 import collections
 import json
+import math
 import os
 import sys
 
@@ -135,6 +136,13 @@ def read_heightmap(path):
 def compute_downhill(heights, samples=SAMPLES):
     """For each cell, the index of its steepest lower neighbour, or -1 for a pit.
 
+    Steepest means steepest GRADIENT, not largest drop. A diagonal neighbour is sqrt(2) cells
+    away, so an equal drop across it is a gentler slope. The first version compared raw drops,
+    which made a diagonal tie with a cardinal neighbour and — because the neighbour list is
+    scanned in a fixed order — win it. On a uniform slope that sends flow zig-zagging diagonally
+    instead of running straight down the fall line, which on real terrain shows up as spurious
+    diagonal channels in the river network.
+
     `samples` is a parameter rather than the module constant so this can be tested on a small
     grid. The first version read the global, which made the accumulation untestable — and flow
     accumulation is exactly the kind of code that is subtly wrong and still looks plausible.
@@ -146,15 +154,18 @@ def compute_downhill(heights, samples=SAMPLES):
             here = row + x
             h = heights[here]
             best = -1
-            best_drop = 0
+            best_slope = 0.0
             for dx, dy in NEIGHBOURS:
                 nx = x + dx
                 ny = y + dy
                 if 0 <= nx < samples and 0 <= ny < samples:
                     other = ny * samples + nx
                     drop = h - heights[other]
-                    if drop > best_drop:
-                        best_drop = drop
+                    if drop <= 0:
+                        continue
+                    slope = drop / math.hypot(dx, dy)
+                    if slope > best_slope:
+                        best_slope = slope
                         best = other
             downhill[here] = best
     return downhill
@@ -255,8 +266,6 @@ def main():
     # holds water flows nowhere — so the angle is encoded 1..255 to keep 0 free. The first version
     # used `(angle + pi) / 2pi * 255 & 0xFF`, which maps due west to 255 and, for the -pi that
     # atan2 can return on a negative zero, to 0: a flowing cell that reported "no flow".
-    import math
-
     direction = [0] * len(metres)
     for cell, target in enumerate(downhill):
         if target < 0:
