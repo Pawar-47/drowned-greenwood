@@ -27,12 +27,37 @@ VALID_TIERS = {"S", "A", "B", "C"}
 VALID_PRIORITIES = {"P1", "P2", "P3"}
 VALID_STATUS = {"pending", "built", "PASSED", "BELOW_TARGET", "PLACEHOLDER"}
 
+# Licence per source tool. This is a fact about the tool, not an assumption about the asset,
+# and each entry says where the fact comes from. An unknown tool gets None, which
+# check_manifest.py rejects — an unverified provenance must never read as CC0.
+LICENCE_BY_SOURCE = {
+    # Our own generators. The scripts are ours and the geometry they emit is ours.
+    "custom": "project-original",
+    # Poly Haven publishes everything on its API under CC0.
+    "polyhaven": "CC0-1.0",
+    # MPFB2's bundled assets (base mesh, skins, clothes) are CC0 per its LICENSE.ASSETS.md,
+    # even though the add-on code is GPL-3.0.
+    "mpfb2": "CC0-1.0",
+    # The Quaternius Universal Animation Library is CC0.
+    "quaternius": "CC0-1.0",
+    # Infinigen is BSD-3-Clause and its generated output is ours to license.
+    "infinigen": "project-original",
+    # Modular Tree is GPL-3.0. Generated geometry is normally not a derivative work of the
+    # generator, but that is a legal judgement this pipeline should not make silently, so it
+    # is flagged rather than declared. The owner decides; the validator keeps it visible.
+    "mtree": "NEEDS-REVIEW",
+}
+
+
+def licence_for(source_tool):
+    """The licence for an asset from this tool, or None if the tool is unknown."""
+    return LICENCE_BY_SOURCE.get(source_tool)
+
 # Section 3: `<prefix>_<name>_<variant>_<lod>`, lowercase, underscores.
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)+$")
 
 # Prefixes used by the brief's asset list. A name outside this set means either a typo or an
-# addition that has not been through assets/ADDITIONS.md.
-KNOWN_PREFIXES = {
+# addition that has not been through assets/ADDITIONS.md.KNOWN_PREFIXES = {
     "sky", "cloud", "fog", "godray", "light", "haze", "rain", "snow", "hail", "lightning",
     "thunder", "fx", "screen", "lut", "env", "ground", "terrain", "decal", "rock", "ore",
     "water", "aqua", "tree", "log", "stump", "branch", "root", "deadfall", "bark", "wood",
@@ -128,6 +153,11 @@ def build(manifest):
                     "priority": entry["priority"],
                     "variants": entry["variants"],
                     "source_tool": entry["source_tool"],
+                    # Derived from the tool, not assumed. A blanket CC0 default meant an
+                    # asset whose provenance was never checked looked identical to one whose
+                    # licence had been verified, which is the one thing a licence field must
+                    # never do.
+                    "source_license": licence_for(entry["source_tool"]),
                     "status": "pending",
                 }
             )

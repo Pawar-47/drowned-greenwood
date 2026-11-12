@@ -200,12 +200,19 @@ MTree generate       PASS  operator=mtree.quick_generate
 MTree tree export    PASS  meshes=2, tris=1840066, bytes=60025292
 ```
 
-**The tree is real and Godot loads it** — `Godot load of the MTree tree PASS, tris=1840066`.
+**The tree is real and Godot loads it.**
 
-But 1,840,066 triangles and 60 MB is not an asset; it is a generator's raw output. The brief caps
-a whole tree species set at 1.5 MB and a hero tree at 10k–16k triangles. MTree proves the pipeline
-end to end; turning its output into a shippable tree — leaf cards instead of individual leaf
-geometry, decimation, LODs, impostors — is Phase 3 work and the largest single piece of it.
+But the size figures in this report should be read as **a range, not a number**. MTree's output
+depends on a random seed, so the count varies widely between runs — observed values include
+52,588, 455,637 and 1,840,066 triangles, and file sizes from roughly 15 MB to 60 MB. Quoting any
+one of them as "the" size of an MTree tree would be wrong, which is why the README no longer
+pins a figure and this section states the spread.
+
+The conclusion does not depend on which run you look at. The brief caps a whole tree species set
+at 1.5 MB and a hero tree at 10k–16k triangles. Even the smallest observed output is three times
+the triangle budget and ten times the size cap. MTree proves the pipeline end to end; turning its
+output into a shippable tree — leaf cards instead of individual leaf geometry, decimation, LODs,
+impostors — is Phase 3 work and the largest single piece of it.
 
 ## Shaders: verified
 
@@ -251,10 +258,14 @@ Godot load of the MPFB2 human PASS  meshes=1, surfaces=1, materials=1, tris=3697
 
 Two honest caveats, both measured rather than assumed:
 
-1. **No armature.** `armatures=0, bones=0`. A mesh is not a character; rigging is Phase 5 work
-   and the probe now attempts MPFB2's own rig operators and reports what they produce.
+1. **The rig is not our rig.** `armatures=1, bones=137` via MPFB2's own `add_standard_rig`.
+   The brief caps a humanoid at 65 bones and `char_skeleton_definition.json` defines 56, so the
+   generated rig has to be reduced and remapped, or discarded and the mesh skinned to ours
+   directly. Neither is done yet.
 2. **36,972 triangles** against a 12k–18k budget for a player character. Decimation is
    mandatory, not optional.
+
+So MPFB2 is proven as a **mesh and rig generator**, not as a source of game-ready characters.
 
 ## MPFB2's data probe was itself broken
 
