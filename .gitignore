@@ -1,0 +1,33 @@
+# Never committed (see the brief, section 2B)
+*.blend
+*.blend1
+*.blend2
+staging/
+build/
+out/
+tmp/
+artifacts/
+phase0_log.txt
+
+# Godot import cache and build output
+.godot/
+export_presets.cfg.bak
+*.apk
+*.aab
+
+# Downloaded tools and archives (fetched fresh in CI, cached by actions/cache)
+tools/vendor/
+*.tar.xz
+*.tar.gz
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp

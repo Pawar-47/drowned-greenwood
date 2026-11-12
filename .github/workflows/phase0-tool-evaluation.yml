@@ -1,0 +1,319 @@
+name: phase0-tool-evaluation
+
+# Phase 0 gate: prove, on a real GitHub-hosted runner, that each third-party tool in the
+# brief's section 3A actually runs headless and produces something the pipeline can consume.
+# Every probe is isolated so one failure never hides the rest; the run's outcome is collected
+# into reports/tool_evaluation.md and the job summary.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/phase0/**"
+      - "tools/TOOLS.md"
+      - ".github/workflows/phase0-tool-evaluation.yml"
+
+permissions:
+  contents: read
+
+env:
+  BLENDER_VERSION: "4.2.23"
+  BLENDER_DIR: "blender-4.2.23-linux-x64"
+  BLENDER_URL: "https://download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz"
+  GODOT_VERSION: "4.7.2-stable"
+  GODOT_URL: "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
+  GLTFPACK_URL: "https://github.com/zeux/meshoptimizer/releases/download/v1.3/gltfpack-ubuntu.zip"
+
+jobs:
+  blender:
+    name: Blender, glTF export, previews, gltfpack
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Blender ${{ env.BLENDER_VERSION }}
+        run: |
+          set -euo pipefail
+          source tools/phase0/lib.sh
+          mkdir -p tools/vendor artifacts/phase0
+          if [ ! -d "tools/vendor/${BLENDER_DIR}" ]; then
+            curl -fsSL -o tools/vendor/blender.tar.xz "$BLENDER_URL"
+            curl -fsSL -o tools/vendor/blender.tar.xz.sha256 \
+              "https://download.blender.org/release/Blender4.2/blender-${BLENDER_VERSION}.sha256"
+            expected=$(grep -F "blender-${BLENDER_VERSION}-linux-x64.tar.xz" tools/vendor/blender.tar.xz.sha256 | awk '{print $1}')
+            actual=$(sha256sum tools/vendor/blender.tar.xz | awk '{print $1}')
+            echo "blender expected=${expected} actual=${actual}" | tee -a "$LOG"
+            [ "$expected" = "$actual" ] || { echo "RESULT blender_checksum exit=1" | tee -a "$LOG"; exit 1; }
+            tar -xJf tools/vendor/blender.tar.xz -C tools/vendor
+          fi
+          echo "RESULT blender_checksum exit=0" | tee -a "$LOG"
+          echo "RESULT blender_version version=${BLENDER_VERSION}" | tee -a "$LOG"
+          echo "tools/vendor/${BLENDER_DIR}" > tools/vendor/.blender_path
+
+      - name: Blender environment and glTF export probe
+        run: |
+          source tools/phase0/lib.sh
+          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          run_capture blender_env "$BLENDER" -b --factory-startup \
+            -P tools/phase0/blender_probe_env.py -- --out artifacts/phase0
+
+      - name: Preview render with Cycles CPU
+        run: |
+          source tools/phase0/lib.sh
+          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          run_capture render_cycles env PROBE_ENGINE=CYCLES PROBE_OUT=artifacts/phase0/render_cycles.png \
+            "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_render.py
+
+      - name: Install Mesa and Xvfb for software OpenGL
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            xvfb libgl1 libglx-mesa0 libgl1-mesa-dri libegl1 libgles2 \
+            libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libice6
+
+      - name: Preview render with Workbench under Xvfb + llvmpipe
+        run: |
+          source tools/phase0/lib.sh
+          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          run_capture render_workbench env LIBGL_ALWAYS_SOFTWARE=1 PROBE_ENGINE=BLENDER_WORKBENCH \
+            PROBE_OUT=artifacts/phase0/render_workbench.png \
+            xvfb-run -a --server-args="-screen 0 1280x720x24" \
+            "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_render.py
+
+      - name: Preview render with EEVEE Next under Xvfb + llvmpipe
+        run: |
+          source tools/phase0/lib.sh
+          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          run_capture render_eevee env LIBGL_ALWAYS_SOFTWARE=1 PROBE_ENGINE=BLENDER_EEVEE_NEXT \
+            PROBE_OUT=artifacts/phase0/render_eevee.png \
+            xvfb-run -a --server-args="-screen 0 1280x720x24" \
+            "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_render.py
+
+      - name: gltfpack simplification and cleanup
+        run: |
+          set -euo pipefail
+          source tools/phase0/lib.sh
+          mkdir -p tools/vendor/gltfpack
+          if [ ! -x tools/vendor/gltfpack/gltfpack ]; then
+            curl -fsSL -o tools/vendor/gltfpack.zip "$GLTFPACK_URL"
+            unzip -q -o tools/vendor/gltfpack.zip -d tools/vendor/gltfpack
+            chmod +x tools/vendor/gltfpack/gltfpack || true
+          fi
+          ./tools/vendor/gltfpack/gltfpack -h >>"$LOG" 2>&1
+          echo "RESULT gltfpack_help exit=$?" | tee -a "$LOG"
+          # Plain simplification only: no -cc (meshopt) and no -tc (KTX2) until Godot accepts them.
+          run_capture gltfpack_simplify ./tools/vendor/gltfpack/gltfpack \
+            -i artifacts/phase0/probe_sphere.glb \
+            -o artifacts/phase0/probe_sphere_simplified.glb -si 0.5
+
+      - name: Report sizes
+        run: |
+          source tools/phase0/lib.sh
+          du -ab artifacts/phase0 | sort -k1 -n | tail -20 >>"$LOG" 2>&1
+
+      - name: Upload Phase 0 probe outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-blender
+          path: |
+            phase0_log.txt
+            artifacts/phase0/*.glb
+            artifacts/phase0/*.png
+          retention-days: 3
+          if-no-files-found: warn
+
+  godot:
+    name: Godot headless import gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: blender
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Blender probe outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: phase0-blender
+          path: artifacts/phase0
+
+      - name: Fetch Godot ${{ env.GODOT_VERSION }}
+        run: |
+          set -euo pipefail
+          source tools/phase0/lib.sh
+          mkdir -p tools/vendor/godot
+          if [ ! -x tools/vendor/godot/godot ]; then
+            curl -fsSL -o tools/vendor/godot.zip "$GODOT_URL"
+            unzip -q -o tools/vendor/godot.zip -d tools/vendor/godot
+            chmod +x tools/vendor/godot/Godot_v4.7.2-stable_linux.x86_64
+            ln -sf Godot_v4.7.2-stable_linux.x86_64 tools/vendor/godot/godot
+          fi
+          echo "RESULT godot_version version=${GODOT_VERSION}" | tee -a "$LOG"
+          tools/vendor/godot/godot --version >>"$LOG" 2>&1 || true
+
+      - name: Import and load the generated GLB
+        run: |
+          source tools/phase0/lib.sh
+          GODOT="$PWD/tools/vendor/godot/godot"
+          cp artifacts/phase0/probe_sphere.glb tools/phase0/godot_probe/probe_sphere.glb
+          # --headless uses a dummy renderer: no pixels, but a real import and load.
+          run_capture godot_import "$GODOT" --headless --path tools/phase0/godot_probe --import
+          run_capture godot_load "$GODOT" --headless --path tools/phase0/godot_probe
+
+      - name: Import the gltfpack-simplified GLB
+        run: |
+          source tools/phase0/lib.sh
+          GODOT="$PWD/tools/vendor/godot/godot"
+          rm -rf tools/phase0/godot_probe_simplified
+          cp -r tools/phase0/godot_probe tools/phase0/godot_probe_simplified
+          # Start from a clean import cache so the swap cannot be masked by a stale hash.
+          rm -rf tools/phase0/godot_probe_simplified/.godot
+          rm -f tools/phase0/godot_probe_simplified/probe_sphere.glb
+          cp artifacts/phase0/probe_sphere_simplified.glb \
+            tools/phase0/godot_probe_simplified/probe_sphere.glb
+          run_capture godot_import_gltfpack "$GODOT" --headless \
+            --path tools/phase0/godot_probe_simplified --import
+          run_capture godot_load_gltfpack "$GODOT" --headless \
+            --path tools/phase0/godot_probe_simplified
+
+      - name: Upload Phase 0 Godot log
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-godot
+          path: phase0_log.txt
+          retention-days: 3
+
+  tools:
+    name: MPFB2, MTree, Infinigen, glTF-Transform, Poly Haven
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch Blender ${{ env.BLENDER_VERSION }}
+        run: |
+          set -euo pipefail
+          source tools/phase0/lib.sh
+          mkdir -p tools/vendor artifacts/phase0
+          if [ ! -d "tools/vendor/${BLENDER_DIR}" ]; then
+            curl -fsSL -o tools/vendor/blender.tar.xz "$BLENDER_URL"
+            tar -xJf tools/vendor/blender.tar.xz -C tools/vendor
+          fi
+          echo "tools/vendor/${BLENDER_DIR}" > tools/vendor/.blender_path
+
+      - name: MPFB2 clone, install, build and export a human
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          if [ ! -d tools/vendor/mpfb2 ]; then
+            git clone --depth 1 https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
+          fi
+          echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
+          bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 | tee -a "$LOG"
+          run_capture mpfb2 "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
+          ls -la artifacts/phase0 >>"$LOG" 2>&1
+
+      - name: MTree clone and add-on registration
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          if [ ! -d tools/vendor/modular_tree ]; then
+            git clone --depth 1 https://github.com/GoodPie/modular_tree tools/vendor/modular_tree
+          fi
+          echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
+          bash tools/phase0/install_blender_addon.sh tools/vendor/modular_tree modular_tree | tee -a "$LOG"
+          run_capture mtree_register "$BLENDER" -b --factory-startup \
+            --python-expr "import addon_utils; print([m.__name__ for m in addon_utils.modules()])"
+
+      - name: glTF-Transform CLI
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          npm install --no-audit --no-fund --prefix tools/vendor/gltf-transform @gltf-transform/cli@4 >>"$LOG" 2>&1
+          echo "RESULT gltf_transform_install exit=$?" | tee -a "$LOG"
+          npx --prefix tools/vendor/gltf-transform gltf-transform --version >>"$LOG" 2>&1
+          echo "RESULT gltf_transform_version exit=$?" | tee -a "$LOG"
+
+      - name: Poly Haven API probe
+        continue-on-error: true
+        run: |
+          source tools/phase0/lib.sh
+          run_capture polyhaven python3 tools/phase0/polyhaven_probe.py --out artifacts/phase0
+
+      - name: Infinigen clone and install
+        continue-on-error: true
+        timeout-minutes: 60
+        env:
+          INFINIGEN_MINIMAL_INSTALL: "False"
+          INFINIGEN_INSTALL_TERRAIN: "True"
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          if [ ! -d tools/vendor/infinigen ]; then
+            git clone --depth 1 https://github.com/princeton-vl/infinigen tools/vendor/infinigen
+          fi
+          echo "infinigen_commit=$(git -C tools/vendor/infinigen rev-parse HEAD)" | tee -a "$LOG"
+          python -m venv tools/vendor/infinigen_venv
+          . tools/vendor/infinigen_venv/bin/activate
+          pip install -q --upgrade pip setuptools wheel >>"$LOG" 2>&1
+          run_capture infinigen_install pip install -q -e "tools/vendor/infinigen[infinigen1]"
+          run_capture infinigen_import python -c "import infinigen, sys; print(infinigen.__file__); print(sys.version)"
+          run_capture infinigen_cli python -m infinigen_examples.generate_individual_assets --help
+
+      - name: Upload Phase 0 tools log
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-tools
+          path: |
+            phase0_log.txt
+            artifacts/phase0/probe_human.glb
+            artifacts/phase0/polyhaven_sample.jpg
+          retention-days: 3
+          if-no-files-found: warn
+
+  report:
+    name: Collect tool evaluation report
+    runs-on: ubuntu-latest
+    needs: [blender, godot, tools]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/downloaded
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build reports/tool_evaluation.md
+        run: |
+          set -uo pipefail
+          python tools/phase0/make_report.py \
+            --logs "$(find artifacts/downloaded -name 'phase0_log.txt' | tr '\n' ' ')" \
+            --out reports/tool_evaluation.md
+
+      - name: Job summary
+        run: cat reports/tool_evaluation.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-report
+          path: reports/tool_evaluation.md
+          retention-days: 14
