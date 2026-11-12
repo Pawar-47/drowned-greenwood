@@ -54,11 +54,16 @@ MAX_HEIGHT_M = 200.0
 # that bug.
 CELL_SPACING_M = 1000.0 / CELLS
 
-# Slope thresholds as dimensionless gradients. 0.55 is about 29° (bare rock, nothing holds soil),
-# 0.30 is about 17° (scree and gravel), below that soil and roots hold.
-SLOPE_ROCK = 0.55
-SLOPE_SCREE = 0.30
-SLOPE_RIVER_STONE = 0.25
+# Slope thresholds as dimensionless gradients, from where soil actually stops holding:
+#   0.70 is 35° — bare rock. Vegetation grows on far steeper ground than intuition suggests;
+#                alpine grass and scrub hold to about 35°, and only beyond that does rock show.
+#   0.40 is 22° — scree and loose gravel, where soil is thin and plants are sparse.
+# The first version used 0.55 (29°) for rock, which is a conservative guess that made a normal
+# forested hillside read as a cliff. Combined with a too-steep terrain it produced a world that
+# was 82 % bare rock.
+SLOPE_ROCK = 0.70
+SLOPE_SCREE = 0.40
+SLOPE_RIVER_STONE = 0.30
 
 # Biome bits. These are a bit field rather than an enum because a cell can be both ridge and
 # forest, and a scatter pass wants to ask "is this forest?" without decoding a priority order.
@@ -102,17 +107,18 @@ DEEP_WATER_M = 22.0
 #
 #   round 1: 600 m relief, noise blended 40/60 with the rim  -> 82 % bare rock
 #   round 2: 200 m relief, additive, RIM 0.62 / POWER 3.0     -> 40 % bare rock
+#   round 3: RIM 0.50 / POWER 2.6                             -> 30 % bare rock
 #
-# Round 2 was still a mountain, and 40 % was exactly the quality floor, which means the floor was
-# doing no work. The cause is geometric: the four corners of a square map all clamp to radius 1,
-# so any rim steep enough to be a cliff at r=0.9 is a sheer wall across 21 % of the map.
+# Round 3 was still wrong, and the reason was not the terrain at all: the rock threshold was
+# 29°, which is a conservative guess at where soil stops holding. Vegetation grows on steeper
+# ground than that. The threshold is now 35°, and the rim is a little gentler again.
 #
 # The rim gradient is RIM_AMPLITUDE · RIM_POWER · r^(RIM_POWER-1) · MAX_HEIGHT_M / 500. At
-# 0.50 / 2.6 that is 0.52 · r^1.6, which peaks just BELOW the 0.55 rock threshold, so rock appears
-# only where the noise adds to it. A ridge you can walk up, rather than a wall you cannot.
+# 0.45 / 2.6 that peaks at 0.47 — a ridge you can walk up, well below the 35° rock threshold, so
+# bare rock appears only where the noise adds enough on top of it.
 FLOOR = 0.22
 NOISE_AMPLITUDE = 0.14
-RIM_AMPLITUDE = 0.50
+RIM_AMPLITUDE = 0.45
 RIM_POWER = 2.6
 
 
