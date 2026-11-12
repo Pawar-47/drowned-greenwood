@@ -122,9 +122,27 @@ jobs:
           if grep -qi "usage" "$probe"; then code=0; fi
           echo "RESULT gltfpack_help exit=${code}" | tee -a "$LOG"
           # Plain simplification only: no -cc (meshopt) and no -tc (KTX2) until Godot accepts them.
-          run_capture gltfpack_simplify ./tools/vendor/gltfpack/gltfpack \
+          # Output is captured: gltfpack prints its statistics to stdout, and those numbers are
+          # the only way to tell whether the file it wrote actually contains geometry.
+          set +e
+          ./tools/vendor/gltfpack/gltfpack \
             -i artifacts/phase0/probe_sphere.glb \
-            -o artifacts/phase0/probe_sphere_simplified.glb -si 0.5
+            -o artifacts/phase0/probe_sphere_simplified.glb -si 0.5 \
+            >artifacts/phase0/gltfpack_simplify.txt 2>&1
+          simplify_code=$?
+          # A second file with quantization off: the control that separates "Godot cannot load
+          # gltfpack output" from "Godot cannot load quantized attributes".
+          ./tools/vendor/gltfpack/gltfpack \
+            -i artifacts/phase0/probe_sphere.glb \
+            -o artifacts/phase0/probe_sphere_noq.glb -si 0.5 -noq \
+            >artifacts/phase0/gltfpack_noq.txt 2>&1
+          noq_code=$?
+          set -e
+          cat artifacts/phase0/gltfpack_simplify.txt >>"$LOG"
+          cat artifacts/phase0/gltfpack_noq.txt >>"$LOG"
+          echo "RESULT gltfpack_simplify exit=${simplify_code}" | tee -a "$LOG"
+          echo "RESULT gltfpack_noq exit=${noq_code}" | tee -a "$LOG"
+          ls -l artifacts/phase0/probe_sphere*.glb >>"$LOG" 2>&1 || true
 
       - name: Report sizes
         run: |
@@ -189,28 +207,34 @@ jobs:
           cp artifacts/phase0/probe_sphere.glb tools/phase0/godot_probe/probe_sphere.glb
           # --headless uses a dummy renderer: no pixels, but a real import and load.
           run_capture godot_import "$GODOT" --headless --path tools/phase0/godot_probe --import
-          run_capture godot_load "$GODOT" --headless --path tools/phase0/godot_probe
+          run_capture godot_load "$GODOT" --headless --path tools/phase0/godot_probe -- label=plain
 
-      - name: Import the gltfpack-simplified GLB
+      - name: Import and load the gltfpack-simplified GLBs
         run: |
           source tools/phase0/lib.sh
           GODOT="$PWD/tools/vendor/godot/godot"
-          if [ ! -f artifacts/phase0/probe_sphere_simplified.glb ]; then
-            echo "RESULT godot_import_gltfpack exit=1 reason=gltfpack_output_missing" | tee -a "$LOG"
-            echo "gltfpack produced nothing; see the Blender job's gltfpack_simplify result."
-            exit 1
-          fi
-          rm -rf tools/phase0/godot_probe_simplified
-          cp -r tools/phase0/godot_probe tools/phase0/godot_probe_simplified
-          # Start from a clean import cache so the swap cannot be masked by a stale hash.
-          rm -rf tools/phase0/godot_probe_simplified/.godot
-          rm -f tools/phase0/godot_probe_simplified/probe_sphere.glb
-          cp artifacts/phase0/probe_sphere_simplified.glb \
-            tools/phase0/godot_probe_simplified/probe_sphere.glb
-          run_capture godot_import_gltfpack "$GODOT" --headless \
-            --path tools/phase0/godot_probe_simplified --import
-          run_capture godot_load_gltfpack "$GODOT" --headless \
-            --path tools/phase0/godot_probe_simplified
+          # Two runs: quantized (the default) and -noq. If the first fails to load and the
+          # second succeeds, quantization is the cause and -noq is the setting to use.
+          for variant in gltfpack gltfpack_noq; do
+            if [ "$variant" = "gltfpack" ]; then
+              src=artifacts/phase0/probe_sphere_simplified.glb
+            else
+              src=artifacts/phase0/probe_sphere_noq.glb
+            fi
+            if [ ! -f "$src" ]; then
+              echo "RESULT godot_scene_${variant} ok=False reason=gltfpack_output_missing" | tee -a "$LOG"
+              continue
+            fi
+            dir="tools/phase0/godot_probe_${variant}"
+            rm -rf "$dir"
+            cp -r tools/phase0/godot_probe "$dir"
+            # Start from a clean import cache so the swap cannot be masked by a stale hash.
+            rm -rf "$dir/.godot"
+            rm -f "$dir/probe_sphere.glb"
+            cp "$src" "$dir/probe_sphere.glb"
+            run_capture "godot_import_${variant}" "$GODOT" --headless --path "$dir" --import
+            run_capture "godot_load_${variant}" "$GODOT" --headless --path "$dir" -- "label=${variant}"
+          done
 
       - name: Collect the log
         if: always()
@@ -258,12 +282,14 @@ jobs:
         run: |
           set -uo pipefail
           source tools/phase0/lib.sh
-          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          BLENDER_ROOT="$(cat tools/vendor/.blender_path)"
+          BLENDER="${BLENDER_ROOT}/blender"
           if [ ! -d tools/vendor/mpfb2 ]; then
             git clone --depth 1 https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
           fi
           echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
-          bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 | tee -a "$LOG"
+          # Install into the Blender installation itself, under the add-on's own package name.
+          bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
           run_capture mpfb2 "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
           ls -la artifacts/phase0 >>"$LOG" 2>&1
 
@@ -272,16 +298,29 @@ jobs:
         run: |
           set -uo pipefail
           source tools/phase0/lib.sh
-          BLENDER="$(cat tools/vendor/.blender_path)/blender"
+          BLENDER_ROOT="$(cat tools/vendor/.blender_path)"
+          BLENDER="${BLENDER_ROOT}/blender"
           if [ ! -d tools/vendor/modular_tree ]; then
             git clone --depth 1 https://github.com/GoodPie/modular_tree tools/vendor/modular_tree
           fi
           echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
           # The installer always exits 0 and reports the layout it found, so a failure here
           # cannot abort the step before the probe runs.
-          bash tools/phase0/install_blender_addon.sh tools/vendor/modular_tree modular_tree 2>&1 | tee -a "$LOG"
-          run_capture mtree_register "$BLENDER" -b --factory-startup \
-            --python-expr "import addon_utils; addon_utils.enable('modular_tree', default_set=True); import bpy; print('mtree_ops', hasattr(bpy.ops, 'm_tree'))"
+          bash tools/phase0/install_blender_addon.sh tools/vendor/modular_tree modular_tree "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
+          # Judged on whether the operator namespace exists, not on Blender's exit code:
+          # Blender exits 0 even when the add-on it was asked to enable registered nothing.
+          set +e
+          out="$(mktemp)"
+          "$BLENDER" -b --factory-startup --python-expr "
+          import addon_utils, bpy
+          addon_utils.enable('modular_tree', default_set=True)
+          has = hasattr(bpy.ops, 'm_tree')
+          print('RESULT ' + __import__('json').dumps({'step': 'mtree_register', 'ok': has, 'has_m_tree_ops': has}))
+          " >"$out" 2>&1
+          cat "$out" >>"$LOG"
+          grep -q '^RESULT ' "$out" || echo "RESULT mtree_register ok=False reason=blender_produced_no_result" | tee -a "$LOG"
+          rm -f "$out"
+          set -e
 
       - name: glTF-Transform CLI
         continue-on-error: true

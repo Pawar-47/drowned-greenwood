@@ -1,79 +1,92 @@
 # Tool evaluation (Phase 0)
 
-**Run recorded:** `fe39869` (Phase 0 workflow, run 43207155426). Every entry below comes from
-that run's logs. Nothing here is estimated, and anything not measured says so.
+**Runs recorded:** `fe39869` (43207155426) and `60a1104` (43209599382). Every entry comes
+from those runs' logs. Anything not measured says so.
 
 > CI regenerates this file from its own logs on every run (`tools/phase0/make_report.py`).
-> This version is the written-up result of the first complete run, kept because the raw
-> generator output does not carry the reasoning.
+> This version is the written-up result, kept because the raw generator output does not carry
+> the reasoning.
 
-## Outcome
+## The import gate passes
 
-15 of 17 probes passed. The two failures are the two most expensive tools, and both have a
-fallback the brief already defines.
+This was the question that mattered most, and it is answered:
 
-| Tool | Result | Measured detail | Decision |
-|---|---|---|---|
-| Blender 4.2.23 download | PASS | SHA-256 matched the vendor's published checksum | pinned, use as is |
-| Blender headless startup | PASS | `-b --factory-startup` | conversion hub confirmed |
-| Blender glTF 2.0 exporter | PASS | probe sphere: 2208 tris, 53,608 bytes, material survived | the export path works |
-| Cycles CPU render | PASS | 640×360, 32 samples, denoise, clipped black 0.0, clipped white 0.0 | **official preview renderer** |
-| Workbench via Xvfb + llvmpipe | PASS | same scene, software GL | usable, not depended on |
-| EEVEE Next via Xvfb + llvmpipe | PASS | mean luma 0.339, clipping 0.0 | usable, not depended on |
-| Godot 4.7.2-stable | PASS | `--version` reports 4.7.2-stable | import gate tool confirmed |
-| Godot import and load of the GLB | **NOT MEASURED** | job failed before the probe: the artifact arrived re-nested, so `cp` found no GLB | harness bug, fixed; re-run needed |
-| gltfpack `-si` simplification | **NOT MEASURED** | the step aborted on `gltfpack -h`'s non-zero exit, so neither probe emitted a result | harness bug, fixed; re-run needed |
-| Infinigen install | PASS | installs and imports on Python 3.11 in 12m 32s total job time | use as planned |
-| Infinigen asset generator CLI | PASS | `generate_individual_assets --help` resolves | use as planned |
-| glTF-Transform CLI | PASS | installs, `--version` runs | use as planned |
-| Poly Haven API | PASS | asset list, file list, 1k map download | use as planned |
-| MPFB2 enable | PASS | Blender accepts the add-on | — |
-| MPFB2 operators | **FAIL** | `count=0` — enabled but registered no operators | see below |
-| MPFB2 create_human | **FAIL** | `could not be found` | see below |
-| MTree install | **FAIL** | `no __init__.py containing bl_info`; the repo root has an `__init__.py` without `bl_info` | see below |
-| Quaternius packs | NOT RUN | step added after this run; the release does not exist yet | open task on the owner |
+| Probe | Result | Meaning |
+|---|---|---|
+| Godot 4.7.2-stable | PASS | the pinned engine runs headless |
+| Import of Blender's GLB | PASS | Godot accepts the exporter's output |
+| **Load of Blender's GLB** | **PASS** | meshes and triangles arrive in a scene |
+| Import of gltfpack output | PASS | the file parses |
+| Load of gltfpack output | **FAIL** | imports, then yields no geometry |
 
-## Two failures, with the cause
+So the pipeline's spine works: Blender to `.glb` to Godot, verified in CI on every run. The
+LOD question is narrowed but not closed — see below.
 
-**MPFB2 registers zero operators.** `addon_utils.enable()` returns success and the module
-still exposes no `bpy.ops.mpfb` namespace, which means the add-on's own import failed and
-Blender swallowed the error. The probe now imports the module directly to capture the real
-traceback, so the next run says *why* rather than only *that*.
+## Everything else measured
 
-**MTree does not install as a legacy add-on.** Commit
-`faf77c1538ce8af3d70aed036b8a540058521347`. Its `__init__.py` has no `bl_info` block, which is
-the signature of a Blender 4.2+ **extension** rather than an add-on. Copying files into
-`scripts/addons` cannot register an extension; it has to be installed as one, or run under the
-Blender version the fork targets. Per the owner's decision, a separate Blender version per job
-is allowed, so this is worth one more attempt before falling back.
+| Tool | Result | Detail |
+|---|---|---|
+| Blender 4.2.23 | PASS | SHA-256 matches the vendor's checksum; headless startup; glTF export (2208 tris, 53,608 bytes, material intact) |
+| Cycles CPU render | PASS | 640x360, 32 samples, denoise, clipping 0.0 |
+| Workbench via Xvfb | PASS | software GL, mean luma 0.474 |
+| EEVEE Next via Xvfb | PASS | software GL, mean luma 0.339 |
+| Infinigen | PASS | installs, imports and exposes its asset CLI; job took 11m 41s |
+| glTF-Transform | PASS | installs, `--version` runs |
+| Poly Haven API | PASS | asset list, file list, 1k download |
+| gltfpack | PASS | runs; `-si` writes a file |
+| **MPFB2** | **FAIL** | `ModuleNotFoundError: No module named 'mpfb'` |
+| **MTree** | **FAIL** | was reported PASS; that was a false pass (below) |
+
+## Three failures, each with its cause
+
+**MPFB2 — the add-on was installed under the wrong name.** The installer copied the repository
+as `mpfb2`, but the package holding `bl_info` is `src/mpfb`, and Blender imports an add-on by
+its package name. `import mpfb` therefore failed while the files sat there. Two fixes: install
+under the discovered package name, and install into the Blender installation's own
+`4.2/scripts/addons` rather than the user config directory, which `--factory-startup` may not
+pick up.
+
+**MTree — a false pass I created.** The probe printed `mtree_ops False` and exited 0, and the
+harness judged it on the exit code alone, so the report said PASS. It is now judged on whether
+`bpy.ops.m_tree` exists. The fork at `faf77c1` also has no `bl_info`, which is the shape of a
+Blender 4.2+ extension rather than a legacy add-on, so this needs one more attempt with the
+correct install route before the fallback applies.
+
+**gltfpack output loads as nothing.** Import succeeds, then `load()` finds no mesh nodes —
+which is what `--headless`'s dummy renderer does for meshopt-compressed geometry. The brief
+warns about exactly this (`-cc`). A control run with `-noq` now separates "Godot cannot load
+gltfpack output" from "Godot cannot load quantized attributes". If `-noq` loads, gltfpack stays
+with quantization off; if it does not, gltfpack is dropped and LODs come from Blender's
+Decimate modifier, as the brief allows.
 
 ## Harness bugs found and fixed
 
-These were mine, not the tools', and they are why this run could not answer two of its own
-questions:
+All mine, and all of the kind that produces a confident wrong answer:
 
-1. **Multi-path artifact upload re-nests on download.** A multi-path upload roots the artifact
-   at the least common ancestor of its paths, so the Godot job received the GLBs one directory
-   deeper than it looked. Each job now uploads one directory, with its log copied in first.
-2. **`gltfpack -h` aborts its step.** GitHub's default shell is `bash -e`, so a non-zero exit
-   killed the step before the simplification probe ran. The call is now guarded.
-3. **Probes shared one result name.** All three renders reported `step="render"`, so Cycles and
-   Workbench were overwritten by EEVEE and never appeared. Each now reports its own name.
-4. **The add-on installer aborted its step.** It exited 1 on a layout it did not recognise,
-   taking the probe with it. It now always exits 0 and reports the layout it found.
+1. **Multi-path artifact upload re-nests on download** — the Godot job received the GLBs one
+   directory deeper than it looked.
+2. **`gltfpack -h` aborts its step** — GitHub's default shell is `bash -e`, so a non-zero exit
+   killed the step before the simplification probe ran.
+3. **Probes shared one result name** — all three renders reported `step="render"`, so Cycles
+   and Workbench were overwritten by EEVEE; `run_capture` then added a bare exit-code row over
+   the Python probe's detailed one, discarding the numbers.
+4. **The add-on installer aborted its step** on a layout it did not recognise.
+5. **A probe that printed a negative result still exited 0**, and the harness trusted the exit
+   code. GDScript and Python probes now emit their own JSON RESULT and the wrapper leaves it
+   alone.
 
-## What the next run must answer
+## Still open
 
-- Does Godot import and load the Blender GLB, and the gltfpack-simplified one?
-- Does `gltfpack -si` produce output Godot accepts? This decides the LOD pipeline.
-- What is the real MPFB2 import error?
+- Does MPFB2 build and export a rigged human once installed under the right name and location?
 - Is MTree a 4.2 extension that can be installed, or does it need another Blender version?
+- Does `-noq` make gltfpack output loadable in Godot?
+- Quaternius: the `third-party-quaternius` release does not exist yet, so no clip count can be
+  reported. That is an open task on the owner.
 
-## Consequences already decided
+## Decisions that stand
 
-- **Preview rendering** is Cycles CPU, as agreed. Workbench and EEVEE also work under
-  llvmpipe, which is a bonus, not a dependency.
-- **Infinigen** is usable on the free runners: install, import and CLI all pass, in a
-  12m 32s job rather than the 120-minute ceiling I budgeted. Small shards remain the plan.
-- **Humans and trees** are not yet decided: both depend on the two failures above, and both
-  fall back to custom generators if the next run does not clear them.
+- **Previews** are Cycles CPU. Workbench and EEVEE also work under llvmpipe — a bonus, not a
+  dependency.
+- **Infinigen** is usable on free runners in about twelve minutes per job. Small shards remain
+  the plan.
+- **Godot import gate** stays in CI and now verifies real geometry, not just file parsing.

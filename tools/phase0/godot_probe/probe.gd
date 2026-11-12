@@ -1,26 +1,50 @@
 extends Node
-## Phase 0 probe: load the GLB written by Blender, count what actually arrived, and exit.
-## Prints one RESULT line so the workflow log shows the import gate's outcome.
+## Phase 0 probe: load the GLB beside this scene, count what actually arrived, and exit.
+##
+## Prints one JSON RESULT line so the workflow log carries the detail, not just an exit code.
+## The label distinguishes the runs (plain, gltfpack, gltfpack_noq) so their rows cannot
+## overwrite each other in the report.
+##
+## Run:
+##   godot --headless --path <project> -- label=plain
+
+const GLB := "res://probe_sphere.glb"
+
+
+func _label() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("label="):
+			return arg.substr("label=".length())
+	return "unlabelled"
+
+
+func _finish(label: String, payload: Dictionary) -> void:
+	payload["step"] = "godot_scene_%s" % label
+	print("RESULT " + JSON.stringify(payload))
+	get_tree().quit(0 if payload.get("ok", false) else 1)
+
 
 func _ready() -> void:
-	const PATH := "res://probe_sphere.glb"
-	if not ResourceLoader.exists(PATH):
-		print("RESULT godot_load ok=False reason=glb_missing")
-		get_tree().quit(1)
+	var label := _label()
+
+	if not ResourceLoader.exists(GLB):
+		_finish(label, {"ok": false, "reason": "glb_missing"})
 		return
 
-	var packed: Resource = load(PATH)
+	var packed: Resource = load(GLB)
 	if packed == null:
-		print("RESULT godot_load ok=False reason=load_returned_null")
-		get_tree().quit(1)
+		_finish(label, {"ok": false, "reason": "load_returned_null"})
 		return
 
 	var root: Node = packed.instantiate()
 	add_child(root)
 
 	var meshes := 0
-	var triangles := 0
 	var surfaces := 0
+	var triangles := 0
+	var empty_meshes := 0
+	var materials := 0
+
 	var stack: Array[Node] = [root]
 	while stack.size() > 0:
 		var node: Node = stack.pop_back()
@@ -29,17 +53,29 @@ func _ready() -> void:
 		if node is MeshInstance3D:
 			meshes += 1
 			var mesh: Mesh = (node as MeshInstance3D).mesh
-			if mesh != null:
-				for surface in range(mesh.get_surface_count()):
-					surfaces += 1
-					var arrays := mesh.surface_get_arrays(surface)
-					var indices = arrays[Mesh.ARRAY_INDEX]
-					if indices != null:
-						triangles += int(indices.size() / 3)
-					else:
-						var vertices = arrays[Mesh.ARRAY_VERTEX]
-						if vertices != null:
-							triangles += int(vertices.size() / 3)
+			if mesh == null:
+				empty_meshes += 1
+				continue
+			for surface in range(mesh.get_surface_count()):
+				surfaces += 1
+				if mesh.surface_get_material(surface) != null:
+					materials += 1
+				var arrays := mesh.surface_get_arrays(surface)
+				var indices = arrays[Mesh.ARRAY_INDEX]
+				if indices != null:
+					triangles += int(indices.size() / 3)
+				else:
+					var vertices = arrays[Mesh.ARRAY_VERTEX]
+					if vertices != null:
+						triangles += int(vertices.size() / 3)
 
-	print("RESULT godot_load ok=True meshes=%d surfaces=%d tris=%d" % [meshes, surfaces, triangles])
-	get_tree().quit(0 if meshes > 0 and triangles > 0 else 1)
+	# A mesh node whose mesh failed to decode is the failure worth naming: it means Godot
+	# accepted the file but could not build geometry from it.
+	_finish(label, {
+		"ok": meshes > 0 and triangles > 0,
+		"meshes": meshes,
+		"empty_meshes": empty_meshes,
+		"surfaces": surfaces,
+		"materials": materials,
+		"tris": triangles,
+	})

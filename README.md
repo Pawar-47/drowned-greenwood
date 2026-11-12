@@ -52,7 +52,7 @@ force-pushes and must not be run without explicit approval.
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests: Blender headless render, glTF export, Godot import, gltfpack, glTF-Transform, MPFB2, MTree, Infinigen, Poly Haven API, Quaternius packs | **first run done: 15/17 probes pass.** Godot import and gltfpack still unmeasured (harness bugs, fixed). MPFB2 and MTree fail; fallbacks pending one more attempt. See `reports/tool_evaluation.md` |
+| 0 | Tool smoke tests: Blender headless render, glTF export, Godot import, gltfpack, glTF-Transform, MPFB2, MTree, Infinigen, Poly Haven API, Quaternius packs | **import gate PASSES** (Blender to GLB to Godot verified). Infinigen, glTF-Transform, Poly Haven, gltfpack and all three renderers pass. MPFB2 and MTree still fail, gltfpack output does not load; causes found and fixes in. See `reports/tool_evaluation.md` |
 | 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | pending |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |
