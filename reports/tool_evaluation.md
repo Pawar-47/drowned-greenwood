@@ -80,10 +80,14 @@ from the next run.
 
 ```
 Godot import of the MTree tree  PASS  exit=0
-Godot load of the MTree tree    PASS  meshes=2, surfaces=2, materials=2, tris=35504
+Godot load of the MTree tree    PASS  meshes=2, surfaces=2, materials=2, tris=52588
 ```
 
 A tree is generated, exported as a GLB, uploaded, downloaded by the Godot job and loaded there.
+The triangle count varies with the generated seed (35,504 in one run, 52,588 in another), which
+is expected for procedural output and is why the gate checks for non-zero geometry rather than a
+fixed count.
+
 That is the end-to-end proof the earlier "9 operators registered" never was.
 
 ## Quaternius: measured, at last
@@ -257,6 +261,27 @@ The pipeline's spine is verified end to end, and it is the part every later phas
 Blender 4.2.23 --glTF--> probe.glb --> Godot 4.7.2 headless import --> load --> 2208 tris
 ```
 
+## The report parser was dropping real probes
+
+The last run reached **44 probes, 43 passed, 1 expected, 0 defects** — and then failed the build
+because two *required* probes "produced no result". They had both run and succeeded. The parser
+only accepted two shapes:
+
+```
+RESULT <name> exit=<n>      # exactly, nothing after the number
+RESULT {...}                # JSON
+```
+
+The workflow emitted `RESULT godot_version version=4.7.2-stable`, and the Poly Haven probe
+emitted `RESULT polyhaven_download ok=True ...`. Neither matched, so both were discarded and
+then reported as missing. Any probe that reported in key=value form was invisible — the same
+class of failure as the earlier `run_capture` bug, in a different place.
+
+The parser now accepts key=value lines as well, treating them as a success unless they say
+`ok=False`, and Poly Haven emits proper JSON with a single `polyhaven` summary row. The Gate
+section added in the previous commit is what surfaced this at all: without it, the build would
+simply have failed with no explanation in the report.
+
 ## Harness bugs found and fixed (all mine)
 
 Every one of these produced a confident wrong answer, which is why they are listed:
@@ -269,10 +294,16 @@ Every one of these produced a confident wrong answer, which is why they are list
 6. `hasattr(bpy.ops, ...)` as a registration test — always true, so MTree passed falsely once.
 7. The installer printed `key=value`, which the report parser drops — two runs were blind to it.
 8. Both installer calls shared one step name, so MPFB2's install row was overwritten by MTree's.
+9. The report parser still dropped `RESULT godot_version version=...` and
+   `RESULT polyhaven_download ok=True ...`, so two probes that had run and passed were reported
+   as missing.
+10. A required probe that produced no row at all was not a failure, so a 45-minute timeout
+    vanished from the gate.
+11. The Gate's reason went to stderr, which buffering pushed out of the visible log.
 
-The last four all belong to one class: **a probe whose output never reaches the report**. The
-harness now treats a missing or malformed RESULT line as a failure worth naming, and every
-probe name is unique.
+The last five all belong to one class: **a probe whose output never reaches the report, or
+reaches it in a shape the reader ignores**. The parser now accepts three shapes, a missing
+required probe fails the build, and the reason is written into the report body.
 
 ## Open
 
@@ -281,10 +312,10 @@ probe name is unique.
   are assigned to the custom `bpy` pipeline. The matcher is a name-keyword heuristic and is
   optimistic: it counts `Pistol_Aim` as a bow aim, so the real usable coverage is lower than 16.
   Retargeting is **not** verified: no clip has been retargeted onto the target skeleton yet.
-- **MPFB2 rigging**: a mesh exports, an armature does not. Binding it to
-  `char_skeleton_definition.json` is untested.
-- **MTree generation**: `cannot import name 'm_tree' from 'm_tree'` — the module is found but is
-  an empty namespace package. The extension's real import path inside its own layout is the next
-  thing to determine.
+- **MPFB2 rigging**: a mesh exports, an armature does not. The probe now prefers
+  `add_standard_rig` over `add_custom_rig` (which needs a rig already selected) and reports
+  whether an armature appears. Binding to `char_skeleton_definition.json` is still untested.
+- **MPFB2 triangle budget**: 36,972 at LOD0 against 12k–18k. Decimation is required before any
+  human asset can pass the geometry gate.
 - **Godot Mobile renderer**: the probe project uses `gl_compatibility`. Nothing here proves the
   Mobile (Vulkan) path, and per the owner's decision that is a real-device check, not a CI one.

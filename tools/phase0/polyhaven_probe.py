@@ -17,6 +17,11 @@ API = "https://api.polyhaven.com"
 HEADERS = {"User-Agent": "drowned-greenwood-asset-pipeline/phase0"}
 
 
+def result(**fields):
+    """Emit one machine-readable line, in the shape the report parser reads."""
+    print("RESULT " + json.dumps(fields, sort_keys=True))
+
+
 def get_json(url):
     request = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(request, timeout=90) as response:
@@ -30,18 +35,18 @@ def main():
     os.makedirs(args.out, exist_ok=True)
 
     assets = get_json(API + "/assets?t=textures")
-    print("RESULT polyhaven_assets ok=True count=%d" % len(assets))
+    result(step="polyhaven_assets", ok=True, count=len(assets))
 
     wanted = ("forest", "moss", "dirt", "ground", "soil")
     preferred = [name for name in sorted(assets) if any(key in name for key in wanted)]
     pick = (preferred or sorted(assets))[0]
-    print("RESULT polyhaven_pick ok=True id=%s" % pick)
+    result(step="polyhaven_pick", ok=True, asset_id=pick)
 
     files = get_json(API + "/files/" + pick)
     diffuse = files.get("Diffuse", {}).get("1k", {}).get("jpg", {})
     url = diffuse.get("url")
     if not url:
-        print("RESULT polyhaven_diffuse ok=False reason=no 1k jpg diffuse for %s" % pick)
+        result(step="polyhaven", ok=False, reason="no 1k jpg diffuse for %s" % pick)
         return 1
 
     destination = os.path.join(args.out, "polyhaven_sample.jpg")
@@ -49,11 +54,10 @@ def main():
     with urllib.request.urlopen(request, timeout=120) as response:
         with open(destination, "wb") as handle:
             handle.write(response.read())
-    print(
-        "RESULT polyhaven_download ok=True id=%s bytes=%d"
-        % (pick, os.path.getsize(destination))
-    )
-    return 0
+    size = os.path.getsize(destination)
+    # The single summary row the report gates on.
+    result(step="polyhaven", ok=size > 0, asset_id=pick, bytes=size)
+    return 0 if size > 0 else 1
 
 
 if __name__ == "__main__":

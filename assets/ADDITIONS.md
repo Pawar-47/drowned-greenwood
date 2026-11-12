@@ -5,10 +5,10 @@ The brief's asset list is final and named. The additions below are **approved ad
 built: all are **P1** and all are scheduled into the phases shown. They are in
 `assets/manifest.json` like any other asset.
 
-**Five additions, in six table rows.** The four from the review, plus two animal skeleton
-families found while writing the validator, which share one row in the original review text and
-are listed separately here because they are separate assets. This count is the one the README
-and the manifest use.
+**Six additions, in six table rows.** The four from the review, plus two animal skeleton families
+found while writing the validator. Those two were not in the review; they are listed separately
+because they are separate assets, and they are recorded here rather than slipped into the
+manifest unannounced. This is the count the README uses.
 
 | Asset | Category | Tier | Priority | Phase | Why it is needed |
 |---|---|---|---|---|---|
@@ -19,7 +19,7 @@ and the manifest use.
 | `animal_skeleton_amphibian` | 4.G.rig | C | P1 | 1 | Found while writing the coverage check: frogs, toads and salamanders were in the manifest with no skeleton family of their own. A frog's hind limbs fold in two planes for the crouch and the jump, which a small-mammal leg chain cannot express, so they get a **23-bone** family rather than being forced into one that cannot animate them. |
 | `animal_skeleton_bat` | 4.G.rig | C | P1 | 1 | Found the same way: `animal_bat_pipistrelle` was covered by no family. A bat's wing is a membrane over elongated fingers, so the bird skeleton's beak, crest and three-segment wing cannot express it; 14 bones. |
 
-Five additions in total, not four: the two skeleton families above were found while writing the
+Six additions in total, not four: the two skeleton families above were found while writing the
 validator, and each is recorded here rather than being slipped into the manifest unannounced.
 
 ## Naming decisions (not new assets)

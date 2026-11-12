@@ -253,7 +253,7 @@ jobs:
             chmod +x tools/vendor/godot/Godot_v4.7.2-stable_linux.x86_64
             ln -sf Godot_v4.7.2-stable_linux.x86_64 tools/vendor/godot/godot
           fi
-          echo "RESULT godot_version version=${GODOT_VERSION}" | tee -a "$LOG"
+          echo "RESULT {\"step\": \"godot_version\", \"ok\": true, \"version\": \"${GODOT_VERSION}\"}" | tee -a "$LOG"
           tools/vendor/godot/godot --version >>"$LOG" 2>&1 || true
 
       - name: Compile the project's shader includes

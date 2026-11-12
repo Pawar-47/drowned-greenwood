@@ -16,8 +16,11 @@ import os
 import re
 import sys
 
-SHELL_RESULT = re.compile(r"^RESULT (\S+) exit=(\d+)\s*$")
+SHELL_RESULT = re.compile(r"^RESULT (\S+) exit=(-?\d+)\s*(.*)$")
 PY_RESULT = re.compile(r"^RESULT (\{.*\})\s*$")
+# Any other RESULT line: `RESULT <name> <key=value...>`. Probes that report this way are
+# parsed rather than dropped — see parse() for why that matters.
+GENERIC_RESULT = re.compile(r"^RESULT (\S+)\s*(.*)$")
 
 # What each probe means for the pipeline, keyed by the probe's name.
 DECISIONS = {
@@ -77,6 +80,8 @@ DECISIONS = {
     "gltf_transform_install": ("glTF-Transform CLI", "dedup, prune, animation resample, texture resize"),
     "gltf_transform_version": ("glTF-Transform version", "pin recorded for tools/TOOLS.md"),
     "polyhaven": ("Poly Haven API", "CC0 PBR textures, HDRIs and scanned models"),
+    "polyhaven_assets": ("Poly Haven asset list", "the API answers at all"),
+    "polyhaven_pick": ("Poly Haven asset pick", "which CC0 texture set was chosen"),
     "quaternius_packs": ("Quaternius animation packs", "CC0 humanoid clips; every missing clip is authored with bpy"),
     "quaternius_download": ("Quaternius release download", "fetching the owner's ZIPs outside git"),
     "quaternius_coverage": ("Quaternius coverage", "which of the brief's animation families the packs actually supply"),
@@ -197,20 +202,27 @@ REQUIRED_PROBES = {
 
 
 def parse(path):
+    """Parse every RESULT line a run produced.
+
+    Three shapes are accepted, and the third is the important one:
+
+      RESULT {"step": "...", "ok": true, ...}   JSON, from the Python and GDScript probes
+      RESULT <name> exit=<n> [trailing text]     shell probes
+      RESULT <name> <anything else>              shell probes written as key=value
+
+    That last shape was previously dropped silently, and it hid real probes: the workflow
+    emitted `RESULT godot_version version=4.7.2-stable` and the Poly Haven probe emitted
+    `RESULT polyhaven_download ok=True ...`, neither of which matched the two strict patterns.
+    Both were then reported as "required probe produced no result" even though they had run and
+    succeeded. A probe's report must never depend on it guessing the exact punctuation.
+    """
     rows = []
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
         for raw in handle:
             line = raw.strip()
-            match = SHELL_RESULT.match(line)
-            if match:
-                rows.append(
-                    {
-                        "name": match.group(1),
-                        "ok": match.group(2) == "0",
-                        "detail": "exit=%s" % match.group(2),
-                    }
-                )
+            if not line.startswith("RESULT "):
                 continue
+
             match = PY_RESULT.match(line)
             if match:
                 try:
@@ -224,6 +236,31 @@ def parse(path):
                         "name": name,
                         "ok": ok,
                         "detail": ", ".join("%s=%s" % (k, v) for k, v in sorted(payload.items())),
+                    }
+                )
+                continue
+
+            match = SHELL_RESULT.match(line)
+            if match:
+                rows.append(
+                    {
+                        "name": match.group(1),
+                        "ok": match.group(2) == "0",
+                        "detail": ("exit=%s %s" % (match.group(2), match.group(3))).strip(),
+                    }
+                )
+                continue
+
+            match = GENERIC_RESULT.match(line)
+            if match:
+                name = match.group(1)
+                rest = match.group(2).strip()
+                rows.append(
+                    {
+                        "name": name,
+                        # A key=value probe is a success unless it says otherwise.
+                        "ok": "ok=False" not in rest and "ok=false" not in rest,
+                        "detail": rest,
                     }
                 )
     return rows

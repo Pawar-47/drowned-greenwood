@@ -51,9 +51,9 @@ python tools/validate/check_manifest.py   # structure, budgets, licences
 python tools/validate/check_skeletons.py  # bone caps, hierarchy, LOD counts
 ```
 
-`assets/ADDITIONS.md` records the five approved additions, all P1 and scheduled: weather
-environment presets, hydrology data, the surface-ID map, and two animal skeleton families found
-while writing the validator.
+`assets/ADDITIONS.md` records the six approved additions, all P1 and scheduled: weather
+environment presets, hydrology data, the surface-ID map, the shared skeleton and retarget
+artifacts, and two animal skeleton families found while writing the validator.
 
 ## Size and history
 
