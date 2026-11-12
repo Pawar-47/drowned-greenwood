@@ -60,7 +60,7 @@
     {
       "source_tool": "custom",
       "status": "planned",
-      "status_note": "Not implemented and not tested. Every clip the packs cannot supply is to be authored with bpy against the target skeleton directly, so it needs no retarget map. This is a plan for Phase 5, not a working generator: the 25 animation families Quaternius does not cover depend on it.",
+      "status_note": "Not implemented and not tested. Every clip the packs cannot supply is to be authored with bpy against the target skeleton directly, so it needs no retarget map. This is a plan for Phase 5, not a working generator: the 27 animation families Quaternius does not cover depend on it (measured, not estimated — see the quaternius_coverage line in reports/tool_evaluation.md, which is the live figure and will move as the matcher changes).",
       "reason": "Every clip the packs cannot supply is authored with bpy against the target skeleton directly, so it needs no retarget map at all. This is the fallback for the whole animation list if the release never appears.",
       "authored_directly": true
     }

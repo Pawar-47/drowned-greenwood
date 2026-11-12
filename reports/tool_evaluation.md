@@ -26,7 +26,7 @@ defects**, and the gate passes.
 | **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 1 |
 | **MPFB2** | **USE — builds and rigs** | human exports and loads: `meshes=1, tris=36972, armatures=1, bones=137`. Both counts over budget |
 | **Modular Tree** | **USE — verified end to end** | generates a tree Godot loads: `meshes=2, tris=1840066`. Installed from the prebuilt release, which carries the compiled `m_tree` module |
-| Quaternius packs | **MEASURED — naming corrected** | **43 clips.** The rig uses **Unreal-mannequin** bone names, not Mixamo: `thigh_l`, `spine_01`, `upperarm_l`, `calf_l`. Measured `joints_in_glb=65` against `mapped_names=23`, **matched=1** (`Head`, the only shared name). The retarget map has been rewritten from the measured joints. Family coverage is matched on clip-name tokens, so the figure moves between runs; the artifact is the current one |
+| Quaternius packs | **MEASURED — naming corrected** | **43 clips across 2 containers.** The rig uses **Unreal-mannequin** bone names, not Mixamo: `thigh_l`, `spine_01`, `upperarm_l`, `calf_l`. Measured `joints_in_glb=65` against `mapped_names=23`, **matched=1** (`Head`, the only shared name). The map has been rewritten from the measured joints. Family coverage is **14 of 41** by token matching — and that figure has errors in both directions, listed below |
 
 ## Withdrawn claims
 
@@ -44,6 +44,25 @@ quietly edited out, because a report that hides its own corrections cannot be tr
    never checked. The pack uses Unreal-mannequin names, and the `retarget_bones` probe found
    **1 of 23** map entries existed as real joints. The map is now written from the measured
    joint list. Recorded here because a report that hides its own corrections cannot be trusted.
+
+## Quaternius coverage: 14 of 41, wrong in both directions
+
+Token matching replaced substring matching, which removed the `Elbow`/`bow` false positive. The
+remaining errors are known and named rather than averaged into one number:
+
+- **False positive: `anim_bow`.** Matched by the keyword `aim` against `Pistol_Aim_Down`,
+  `Pistol_Aim_Up`, `Pistol_Aim_Neutral` and `Pistol_Shoot`. The pack has no bow clip; it has
+  pistol and spell clips. So `anim_bow` is reported covered when it is not.
+- **False negative: `anim_run`.** Reported missing because no clip name contains the token `run`
+  — the pack calls it `Jog_Fwd_Loop`. A jog is a run, so this family is covered in substance and
+  missing by name.
+- **Also reported missing but arguably present:** `anim_wade` (only `Swim_Fwd_Loop`) and
+  `anim_prone` (no crawl clip at all — this one is genuinely absent).
+
+The honest reading is that 14 is neither an upper nor a lower bound: it is a count of name
+matches. Which families are truly usable needs a human to watch the clips, and that is Phase 5
+work. What this probe can do — and now does — is prove the *pack's contents and bone names*
+rather than assume them.
 
 ## MPFB2: from "inert" to a human in Godot
 
