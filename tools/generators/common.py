@@ -48,14 +48,27 @@ def write_gray_png(path, rows, bit_depth=8):
     or 16 (heightmaps). Colour type 0 is grayscale, so there is no palette to keep in sync and no
     sRGB profile to strip.
     """
+    return write_png(path, rows, bit_depth=bit_depth, channels=1)
+
+
+def write_png(path, rows, bit_depth=8, channels=1):
+    """Write a 1- or 2-channel PNG.
+
+    Colour type 0 is grayscale and 4 is grayscale+alpha, which is the cheapest way to carry two
+    independent masks in one file: the hydrology mask is water depth in R and flow direction in
+    G, and packing them as LA rather than as two textures halves the memory and the fetch.
+    """
+    if channels not in (1, 2):
+        raise ValueError("channels must be 1 or 2, got %r" % (channels,))
     if not rows:
         raise ValueError("no rows to write")
-    width = len(rows[0])
+    width = len(rows[0]) // channels
     height = len(rows)
     for index, row in enumerate(rows):
-        if len(row) != width:
+        if len(row) != width * channels:
             raise ValueError(
-                "row %d has %d values, expected %d" % (index, len(row), width)
+                "row %d has %d values, expected %d (%d pixels x %d channels)"
+                % (index, len(row), width * channels, width, channels)
             )
 
     limit = (1 << bit_depth) - 1
@@ -75,9 +88,10 @@ def write_gray_png(path, rows, bit_depth=8):
         else:
             raise ValueError("bit_depth must be 8 or 16, got %r" % (bit_depth,))
 
-    # IHDR: width, height, bit depth, colour type 0 (grayscale), deflate, adaptive filter, no
-    # interlace.
-    header = struct.pack(">IIBBBBB", width, height, bit_depth, 0, 0, 0, 0)
+    # IHDR: width, height, bit depth, colour type (0 grayscale, 4 grayscale+alpha), deflate,
+    # adaptive filter, no interlace.
+    colour_type = 0 if channels == 1 else 4
+    header = struct.pack(">IIBBBBB", width, height, bit_depth, colour_type, 0, 0, 0)
     payload = PNG_SIGNATURE
     payload += _chunk(b"IHDR", header)
     payload += _chunk(b"IDAT", zlib.compress(bytes(raw), 9))
@@ -86,6 +100,100 @@ def write_gray_png(path, rows, bit_depth=8):
     with open(path, "wb") as handle:
         handle.write(payload)
     return len(payload)
+
+
+COLOUR_CHANNELS = {0: 1, 4: 2}
+
+
+def read_png(path):
+    """Read a 1- or 2-channel PNG written by this module.
+
+    Returns (width, height, channels, rows) where rows are flat channel-interleaved ints.
+
+    The writer always emits filter type 0, so this reader only *needs* to handle that — but it
+    handles all five, because the heightmap is an intermediate file and someone will eventually
+    re-save one in an image editor. A reader that silently mis-decodes a filtered file would
+    produce a terrain with no rivers and no error.
+    """
+    with open(path, "rb") as handle:
+        data = handle.read()
+    if not data.startswith(PNG_SIGNATURE):
+        raise ValueError("%s is not a PNG" % path)
+
+    width = height = bit_depth = colour_type = None
+    idat = bytearray()
+    pos = len(PNG_SIGNATURE)
+    while pos + 8 <= len(data):
+        length = struct.unpack(">I", data[pos : pos + 4])[0]
+        tag = data[pos + 4 : pos + 8]
+        payload = data[pos + 8 : pos + 8 + length]
+        pos += 12 + length
+        if tag == b"IHDR":
+            width, height, bit_depth, colour_type = struct.unpack(">IIBB", payload[:10])
+        elif tag == b"IDAT":
+            idat += payload
+        elif tag == b"IEND":
+            break
+
+    if width is None:
+        raise ValueError("%s has no IHDR" % path)
+    if colour_type not in COLOUR_CHANNELS:
+        raise ValueError(
+            "%s has colour type %r; only grayscale (0) and grayscale+alpha (4) are supported"
+            % (path, colour_type)
+        )
+    if bit_depth not in (8, 16):
+        raise ValueError("%s has bit depth %r" % (path, bit_depth))
+
+    channels = COLOUR_CHANNELS[colour_type]
+    sample_bytes = 2 if bit_depth == 16 else 1
+    bpp = channels * sample_bytes
+    stride = width * bpp
+    raw = zlib.decompress(bytes(idat))
+
+    rows = []
+    previous = bytearray(stride)
+    for y in range(height):
+        start = y * (stride + 1)
+        filter_type = raw[start]
+        line = bytearray(raw[start + 1 : start + 1 + stride])
+        if filter_type == 0:
+            pass
+        elif filter_type == 1:  # Sub
+            for i in range(bpp, stride):
+                line[i] = (line[i] + line[i - bpp]) & 0xFF
+        elif filter_type == 2:  # Up
+            for i in range(stride):
+                line[i] = (line[i] + previous[i]) & 0xFF
+        elif filter_type == 3:  # Average
+            for i in range(stride):
+                left = line[i - bpp] if i >= bpp else 0
+                line[i] = (line[i] + ((left + previous[i]) >> 1)) & 0xFF
+        elif filter_type == 4:  # Paeth
+            for i in range(stride):
+                left = line[i - bpp] if i >= bpp else 0
+                up = previous[i]
+                up_left = previous[i - bpp] if i >= bpp else 0
+                p = left + up - up_left
+                pa, pb, pc = abs(p - left), abs(p - up), abs(p - up_left)
+                if pa <= pb and pa <= pc:
+                    predictor = left
+                elif pb <= pc:
+                    predictor = up
+                else:
+                    predictor = up_left
+                line[i] = (line[i] + predictor) & 0xFF
+        else:
+            raise ValueError("%s: unknown filter type %d on row %d" % (path, filter_type, y))
+        previous = line
+
+        if bit_depth == 16:
+            values = [struct.unpack(">H", line[i : i + 2])[0] for i in range(0, stride, 2)]
+        else:
+            values = list(line)
+        rows.append(values)
+
+    return width, height, channels, rows
 
 
 def sha256_file(path):

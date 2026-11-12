@@ -163,6 +163,55 @@ jobs:
           print("OK: %d assets" % len(report["assets"]))
           PY
 
+      # Hydrology reads the heightmap terrain_maps just wrote, so it proves the sidecar contract
+      # too: if the scale metadata were missing or stale, this step would refuse rather than
+      # placing water at the wrong height.
+      - name: Hydrology derives from the heightmap
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:-/tmp}/terrain"
+          python tools/generators/hydrology.py \
+            --heightmap "$out/terrain_heightmap_master_1km.png" \
+            --out "$out" --report "$out/hydrology.json"
+          python - "$out" <<'PY'
+          import json, os, sys
+
+          out = sys.argv[1]
+          with open(os.path.join(out, "hydrology.json"), encoding="utf-8") as handle:
+              report = json.load(handle)
+          coverage = report["coverage"]
+          print("hydrology: %.2f%% water, %d river points, max flow %d cells"
+                % (coverage["water_percent"], coverage["river_points"], coverage["max_flow_cells"]))
+
+          for name in ("terrain_hydrology_mask.png", "terrain_shore_mask.png",
+                       "terrain_river_splines.json", "terrain_water_level_table.json"):
+              if not os.path.exists(os.path.join(out, name)):
+                  raise SystemExit("%s was not produced" % name)
+
+          # A river that does not exist is the failure worth catching: flow accumulation is
+          # easy to get subtly wrong (wrong neighbour order, wrong iteration direction) and the
+          # output still looks like a plausible mask.
+          if coverage["river_points"] < 20:
+              raise SystemExit(
+                  "only %d river centreline points: the channel did not form"
+                  % coverage["river_points"]
+              )
+          if coverage["water_percent"] <= 0.0:
+              raise SystemExit("no water: neither the bog nor the river formed")
+
+          with open(os.path.join(out, "terrain_river_splines.json"), encoding="utf-8") as handle:
+              spline = json.load(handle)["points"]
+          # The river must run downhill. A centreline that climbs is the signature of flow
+          # accumulation iterating in the wrong direction.
+          drops = sum(1 for a, b in zip(spline, spline[1:]) if b["height_m"] <= a["height_m"])
+          if spline and drops < 0.8 * (len(spline) - 1):
+              raise SystemExit(
+                  "the river climbs: only %d of %d segments go downhill"
+                  % (drops, len(spline) - 1)
+              )
+          print("river runs downhill in %d of %d segments" % (drops, len(spline) - 1))
+          PY
+
       - name: P1 set per phase
         run: |
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"

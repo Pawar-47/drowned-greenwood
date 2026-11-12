@@ -364,6 +364,35 @@ def main():
         }
     )
 
+    # A sidecar recording the heightmap's scale, so the hydrology generator decodes it correctly
+    # instead of duplicating the constants and drifting. The hash binds it to the exact file it
+    # describes: a stale sidecar is caught rather than trusted.
+    meta_path = os.path.join(args.out, "terrain_meta.json")
+    with open(meta_path, "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "name": "terrain_meta",
+                "note": "The scale of the heightmap beside this file. Read by hydrology.py; "
+                "duplicating these numbers in another generator is how water ends up at the "
+                "wrong height with no error.",
+                "generator": "terrain_maps",
+                "version": GENERATOR_VERSION,
+                "seed": args.seed,
+                "samples": SAMPLES,
+                "cells": CELLS,
+                "cell_spacing_m": CELL_SPACING_M,
+                "max_height_m": MAX_HEIGHT_M,
+                "water_level_m": WATER_LEVEL_M,
+                "deep_water_m": DEEP_WATER_M,
+                "heightmap_sha256": sha256_file(height_path),
+                "input_hash": in_hash,
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+
     report = {
         "generator": "terrain_maps",
         "version": GENERATOR_VERSION,

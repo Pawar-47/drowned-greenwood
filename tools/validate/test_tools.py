@@ -46,6 +46,7 @@ build_manifest = load_module("build_manifest", os.path.join("tools", "build_mani
 make_report = load_module("make_report", os.path.join("tools", "phase0", "make_report.py"))
 generator_common = load_module("generator_common", os.path.join("tools", "generators", "common.py"))
 terrain = load_module("terrain_maps", os.path.join("tools", "generators", "terrain_maps.py"))
+hydrology = load_module("hydrology", os.path.join("tools", "generators", "hydrology.py"))
 
 
 def manifest_with(**categories):
@@ -343,6 +344,123 @@ def test_surface_ids_are_still_the_numbers_the_generator_writes():
     terrain.check_surface_ids()
 
 
+def test_png_round_trip_preserves_every_value():
+    """The hydrology generator reads back a heightmap another generator wrote.
+
+    A reader that mis-decodes a filter would place water at the wrong height with no error at all,
+    so the round trip is checked value for value rather than by eye.
+    """
+    rows = [[0, 1, 255], [17, 128, 200]]
+    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    handle.close()
+    try:
+        generator_common.write_gray_png(handle.name, rows, bit_depth=8)
+        width, height, channels, decoded = generator_common.read_png(handle.name)
+        assert (width, height, channels) == (3, 2, 1), (width, height, channels)
+        assert decoded == rows, "round trip changed the data: %r -> %r" % (rows, decoded)
+    finally:
+        os.unlink(handle.name)
+
+
+def test_png_round_trip_sixteen_bit():
+    """The heightmap is 16-bit; 8-bit assumptions would truncate it to a tenth of its range."""
+    rows = [[0, 65535], [1000, 32768]]
+    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    handle.close()
+    try:
+        generator_common.write_gray_png(handle.name, rows, bit_depth=16)
+        _w, _h, _c, decoded = generator_common.read_png(handle.name)
+        assert decoded == rows, "16-bit round trip changed the data: %r -> %r" % (rows, decoded)
+    finally:
+        os.unlink(handle.name)
+
+
+def test_png_round_trip_two_channel():
+    """The hydrology mask packs depth and flow direction as grayscale+alpha."""
+    rows = [[0, 0, 255, 1], [12, 191, 34, 7]]
+    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    handle.close()
+    try:
+        generator_common.write_png(handle.name, rows, bit_depth=8, channels=2)
+        width, height, channels, decoded = generator_common.read_png(handle.name)
+        assert (width, height, channels) == (2, 2, 2), (width, height, channels)
+        assert decoded == rows, "2-channel round trip changed the data: %r -> %r" % (rows, decoded)
+    finally:
+        os.unlink(handle.name)
+
+
+def test_flow_accumulation_counts_upstream_area():
+    """Each cell in a downhill chain adds the one before it: 1, 2, 3, 4, 5.
+
+    `downhill` is supplied explicitly rather than derived, because the point under test is the
+    accumulation order, not the neighbour search. Deriving it drags in D8's diagonal tie-breaking,
+    and the first version of this test assumed a chain that the tie-breaking did not actually
+    produce — which is a good illustration of how easy it is to believe the wrong thing about this
+    algorithm.
+
+    Heights decrease by index, so the counting sort visits cell 0 first: exactly the order a
+    correct accumulation needs.
+    """
+    samples = 5
+    heights = [65535 - i * 100 for i in range(samples * samples)]
+    downhill = [-1] * (samples * samples)
+    for i in range(4):
+        downhill[i] = i + 1
+
+    flow = hydrology.accumulate(heights, downhill, samples)
+
+    assert [flow[i] for i in range(5)] == [1.0, 2.0, 3.0, 4.0, 5.0], (
+        "accumulation along the chain is %r, expected [1, 2, 3, 4, 5]"
+        % [flow[i] for i in range(5)]
+    )
+    # Everything off the chain is a single cell with no upstream.
+    assert all(flow[i] == 1.0 for i in range(5, 25)), "a cell off the chain accumulated flow"
+
+
+def test_compute_downhill_picks_the_steepest_lower_neighbour():
+    """On a plane tilted only in x, every non-edge cell drains to its +x neighbour."""
+    samples = 5
+    heights = [65535 - x * 1000 for _y in range(samples) for x in range(samples)]
+    downhill = hydrology.compute_downhill(heights, samples)
+    middle = 2 * samples + 2
+    assert downhill[middle] == middle + 1, (
+        "the steepest lower neighbour of cell (2,2) is %r, expected %r"
+        % (downhill[middle], middle + 1)
+    )
+    # The last column has nothing lower: it is the outlet.
+    for y in range(samples):
+        assert downhill[y * samples + samples - 1] == -1
+
+
+def test_flow_accumulation_conserves_cells():
+    """Every cell contributes exactly one unit, so the total is the cell count."""
+    samples = 6
+    heights = [65535 - ((x * 37 + y * 91) % 5000) for y in range(samples) for x in range(samples)]
+    downhill = hydrology.compute_downhill(heights, samples)
+    flow = hydrology.accumulate(heights, downhill, samples)
+    assert sum(flow) == float(samples * samples), (
+        "flow sums to %r, expected %d" % (sum(flow), samples * samples)
+    )
+
+
+def test_flow_direction_reserves_zero_for_no_flow():
+    """0 means "no flow", so a flowing cell must never encode as 0.
+
+    The first encoding masked the angle with & 0xFF, which mapped a due-west flow — and the -pi
+    that atan2 returns on a negative zero — to 0: a flowing cell reporting that it flows nowhere.
+    """
+    import math
+
+    for step in range(-8, 9):
+        for dy in (-1, 0, 1):
+            dx = step
+            if dx == 0 and dy == 0:
+                continue
+            angle = math.atan2(dy, dx)
+            encoded = 1 + int(round((angle + math.pi) / (2 * math.pi) * 254))
+            assert 1 <= encoded <= 255, "direction %r encodes to %d" % ((dx, dy), encoded)
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -369,6 +487,13 @@ TESTS = [
     ("generators: slope is metres per metre", test_slope_is_metres_per_metre),
     ("generators: slope is zero on flat ground", test_slope_is_zero_on_flat_ground),
     ("generators: surface ids match the contract", test_surface_ids_are_still_the_numbers_the_generator_writes),
+    ("generators: PNG round trip 8-bit", test_png_round_trip_preserves_every_value),
+    ("generators: PNG round trip 16-bit", test_png_round_trip_sixteen_bit),
+    ("generators: PNG round trip 2-channel", test_png_round_trip_two_channel),
+    ("hydrology: flow accumulates upstream", test_flow_accumulation_counts_upstream_area),
+    ("hydrology: downhill picks the steepest", test_compute_downhill_picks_the_steepest_lower_neighbour),
+    ("hydrology: flow conserves cells", test_flow_accumulation_conserves_cells),
+    ("hydrology: direction reserves zero", test_flow_direction_reserves_zero_for_no_flow),
 ]
 
 
