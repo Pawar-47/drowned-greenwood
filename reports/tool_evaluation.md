@@ -319,3 +319,8 @@ required probe fails the build, and the reason is written into the report body.
   human asset can pass the geometry gate.
 - **Godot Mobile renderer**: the probe project uses `gl_compatibility`. Nothing here proves the
   Mobile (Vulkan) path, and per the owner's decision that is a real-device check, not a CI one.
+- **Animal skeleton hierarchies**: the eight families declare bone names, counts and species
+  coverage, but not per-bone parent links or rest-pose transforms the way the humanoid definition
+  does. The humanoid is complete and validated; the animals are a bone inventory. Filling them in
+  is Phase 4 work, and it is recorded here rather than guessed at now: inventing rest poses
+  without a generator to test them against would produce data that looks complete and is not.

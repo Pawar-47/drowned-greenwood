@@ -145,6 +145,30 @@ indistinguishable from a probe that was never invoked.
 (`mpfb_crash`, `mtree_crash`) carrying its traceback. Then "no result" always means a harness
 bug, never a silent crash.
 
+## 16. The reader must accept every shape a writer may produce
+
+The report parser accepted exactly two forms — `RESULT <name> exit=<n>` and JSON — and silently
+dropped everything else. The workflow emitted `RESULT godot_version version=4.7.2-stable` and
+the Poly Haven probe emitted `RESULT polyhaven_download ok=True ...`. Both had run and passed;
+both were reported as "required probe produced no result", and the build failed on two
+non-problems.
+
+This is the third instance of one class: **a probe whose output never reaches the report**, after
+`run_capture` overwriting a probe's row and the installer printing a shape the parser dropped.
+
+**Rule:** a reader tolerates more than the writer is documented to send. Accept JSON, exit codes
+and key=value; default to success unless the line says otherwise. Then a probe cannot vanish
+because of its punctuation.
+
+## 17. A gate that fails must say why, in the body
+
+stderr is unbuffered; stdout is block-buffered. On a piped CI log that means the one line
+explaining the failure is written hundreds of lines before the report it belongs to — and was
+truncated out of the run view entirely. The build failed and the reason was invisible.
+
+**Rule:** anything that fails a build is written into the artefact the build produces, not only
+to stderr. The report now ends with a Gate section naming every missing or failed required probe.
+
 ## Applying these
 
 The asset validators in Phase 2 onward are probes with the same failure modes. In particular:
