@@ -8,8 +8,12 @@ The owner uploads the free Standard ZIPs to the release `third-party-quaternius`
 them from there, outside git. This unzips them and reports what is really inside, so the
 manifest can state a measured clip count instead of a promised one.
 
-It also reports coverage against the brief's animation list, because "how many clips" is a far
-less useful number than "which of the clips we need are missing".
+An earlier version of this file reported `animation_files=4` and `families_covered=0` at the
+same time, which is self-contradictory: if any clip exists, at least one family should match.
+It also counted the downloaded ZIP itself as a file and walked the archive alongside its own
+extracted copy. Both are fixed here: archives are excluded from the inventory, the extraction
+directory is skipped while walking, and every animation file's name is reported so a zero
+coverage result can be explained rather than guessed at.
 """
 
 import argparse
@@ -22,9 +26,9 @@ import zipfile
 ANIMATION_SUFFIXES = {".fbx", ".glb", ".gltf", ".bvh", ".blend"}
 
 # The brief's animation families, in the words the manifest uses. A clip counts as covering a
-# family when its file name contains one of the family's keywords, case-insensitively.
-# This is an approximation and says so: a clip called "Climb" matches both the ladder and the
-# rope family. It is a coverage map to steer Phase 5, not a validator.
+# family when its file name contains one of the family's keywords, case-insensitively. This is
+# a heuristic to steer Phase 5, not a validator: a clip called "Climb" matches both the ladder
+# and the rope family.
 FAMILIES = {
     "anim_idle": ["idle"],
     "anim_walk": ["walk"],
@@ -69,11 +73,6 @@ FAMILIES = {
 }
 
 
-def extract(archive, destination):
-    with zipfile.ZipFile(archive) as handle:
-        handle.extractall(destination)
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", required=True)
@@ -84,25 +83,30 @@ def main():
         print("RESULT " + json.dumps({"step": "quaternius_inventory", "ok": False, "reason": "directory_missing"}))
         return 1
 
+    root_dir = os.path.abspath(args.dir)
+    extract_dir = os.path.join(root_dir, "extracted")
+
     # Unzip anything still packed, so the inventory sees files rather than archives.
     archives = []
-    for root, _dirs, files in os.walk(args.dir):
+    for root, _dirs, files in os.walk(root_dir):
         for name in files:
             if name.lower().endswith(".zip"):
                 archives.append(os.path.join(root, name))
     for archive in archives:
-        target = os.path.join(args.dir, "extracted", os.path.basename(archive)[:-4])
+        target = os.path.join(extract_dir, os.path.basename(archive)[:-4])
         os.makedirs(target, exist_ok=True)
         try:
-            extract(archive, target)
+            zipfile.ZipFile(archive).extractall(target)
             print("unzipped %s -> %s" % (os.path.basename(archive), target))
         except zipfile.BadZipFile:
             print("RESULT " + json.dumps({"step": "quaternius_unzip", "ok": False, "archive": archive}))
 
+    # Inventory the extracted content only. Walking the root would count the downloaded ZIP
+    # as a file and see every clip twice, once packed and once extracted.
     by_suffix = collections.Counter()
     animation_files = []
     total = 0
-    for root, _dirs, files in os.walk(args.dir):
+    for root, _dirs, files in os.walk(extract_dir):
         for name in files:
             suffix = os.path.splitext(name)[1].lower()
             by_suffix[suffix] += 1
@@ -115,22 +119,27 @@ def main():
         "step": "quaternius_packs",
         "ok": clips > 0,
         "archives": len(archives),
-        "files": total,
+        "extracted_files": total,
         "animation_files": clips,
         "suffixes": dict(sorted(by_suffix.items())),
+        # Named so a zero-coverage result can be explained instead of guessed at.
+        "sample_clips": sorted(animation_files)[:15],
     }))
 
-    # Which of the brief's families the packs actually cover.
     covered = {}
     for family, keywords in FAMILIES.items():
-        hits = sum(1 for name in animation_files if any(k in name for k in keywords))
-        covered[family] = hits
+        covered[family] = sum(1 for name in animation_files if any(k in name for k in keywords))
     present = sorted(f for f, n in covered.items() if n > 0)
     missing = sorted(f for f, n in covered.items() if n == 0)
 
+    # Coverage is only meaningful once clips exist. With none, the honest answer is "unknown",
+    # not "0 of 40 covered": a pack that failed to extract has not proved anything about the
+    # clips inside it.
+    ok = clips > 0
     print("RESULT " + json.dumps({
         "step": "quaternius_coverage",
-        "ok": len(present) > 0,
+        "ok": ok,
+        "reason": "" if ok else "no_animation_files_found_after_extraction",
         "families_total": len(FAMILIES),
         "families_covered": len(present),
         "families_missing": len(missing),
@@ -140,15 +149,26 @@ def main():
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as handle:
-            json.dump({"coverage": covered, "clips": clips, "present": present, "missing": missing},
-                      handle, indent=2, sort_keys=True)
+            json.dump(
+                {
+                    "archives": [os.path.basename(a) for a in archives],
+                    "clips": clips,
+                    "coverage": covered,
+                    "present": present,
+                    "missing": missing,
+                    "sample_clips": sorted(animation_files)[:50],
+                },
+                handle,
+                indent=2,
+                sort_keys=True,
+            )
         print("wrote %s" % args.out)
 
     print("clips found: %d across %d archives" % (clips, len(archives)))
     print("families covered %d of %d" % (len(present), len(FAMILIES)))
     if missing:
         print("missing families: " + ", ".join(missing))
-    return 0 if clips > 0 else 1
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

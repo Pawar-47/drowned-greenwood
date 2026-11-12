@@ -387,8 +387,10 @@ jobs:
           mkdir -p artifacts/phase0/quaternius
           gh release download third-party-quaternius --dir artifacts/phase0/quaternius --clobber >>"$LOG" 2>&1
           echo "RESULT quaternius_download exit=$?" | tee -a "$LOG"
-          find artifacts/phase0/quaternius -type f -printf '%f %s\n' | sort >>"$LOG" 2>&1
-          # Unzips what was downloaded and reports clips plus coverage of the brief's list.
+          # Report the archive itself, and what is inside it. An earlier run saw 10 files and
+          # only 4 "clips" because it walked the archive beside its own extracted copy.
+          find artifacts/phase0/quaternius -maxdepth 1 -type f -printf '%f %s\n' | sort >>"$LOG" 2>&1
+          unzip -l artifacts/phase0/quaternius/*.zip >>"$LOG" 2>&1 || true
           python3 tools/phase0/quaternius_inventory.py \
             --dir artifacts/phase0/quaternius \
             --out artifacts/phase0/quaternius_coverage.json | tee -a "$LOG"

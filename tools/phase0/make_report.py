@@ -91,7 +91,8 @@ FAILURE_CONSEQUENCE = {
     "polyhaven": "no CC0 texture source; materials fall back to procedural baking only",
     "quaternius_packs": "no CC0 clip source yet; the release is an open task on the owner and clips are authored instead",
     "quaternius_inventory": "clip coverage unknown; the animation report stays open",
-    "quaternius_coverage": "clip coverage unknown; the animation report stays open",
+    "quaternius_coverage": "coverage is unknown, not zero: the packs downloaded but no clips were found inside them, so the extraction or the pack contents need looking at",
+    "quaternius_unzip": "a pack did not extract; its clips are unknown",
 }
 
 # Probes that are SUPPOSED to fail. Two kinds live here, and neither is a defect:
@@ -158,21 +159,15 @@ def parse(path):
 
 
 def collapse_exit_rows(rows):
-    """Drop the bare exit-code row for a probe that already reported its own result.
+    """Drop the bare exit-code row that run_capture adds beside a probe's own result.
 
-    When a probe prints a detailed RESULT and then exits non-zero, run_capture adds a second
-    row named `<probe>_exit` so the failure is visible. Once the probe has reported, that row
-    is noise that inflates the failure count. It is folded into the probe's own row instead.
+    run_capture only emits `<name>_exit` when the command already printed a RESULT line and
+    then exited non-zero, so the row is always redundant. It was only being dropped when
+    `<name>` also matched a probe name, which it does not: run_capture is called with
+    `mtree` while the probe reports `mtree_operators`, so `mtree_exit` survived and was
+    counted as a defect. Drop them unconditionally.
     """
-    names = {row["name"] for row in rows}
-    kept = []
-    for row in rows:
-        if row["name"].endswith("_exit"):
-            base = row["name"][: -len("_exit")]
-            if base in names:
-                continue
-        kept.append(row)
-    return kept
+    return [row for row in rows if not row["name"].endswith("_exit")]
 
 
 def main():
