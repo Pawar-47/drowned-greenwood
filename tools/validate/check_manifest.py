@@ -185,14 +185,28 @@ def main():
             "source_license values outside the allowlist: %s" % bad_licences
         )
 
-    # A record that claims to be built must have a path and a hash; otherwise "built" is an
-    # assertion with nothing behind it.
+    # A record that claims to be built must carry the evidence, not just two fields.
+    #
+    # Path and hash alone are too easy to satisfy: a hand-written path and a copied hex string
+    # pass. Reproducibility needs the input hash (what was fed to the generator) and the tool
+    # version (what ran), and honesty about quality needs gate_results (what was measured).
+    # Without those four, "built" is an assertion rather than a record.
     for record in assets:
-        if record.get("status") in {"built", "PASSED", "BELOW_TARGET"}:
-            if not record.get("path"):
-                problems.append("%s: status %s but no path" % (record["name"], record["status"]))
-            if not record.get("sha256"):
-                problems.append("%s: status %s but no sha256" % (record["name"], record["status"]))
+        if record.get("status") not in {"built", "PASSED", "BELOW_TARGET"}:
+            continue
+        required = {
+            "path": record.get("path"),
+            "sha256": record.get("sha256"),
+            "input_hash": record.get("input_hash"),
+            "tool_version": record.get("tool_version"),
+            "gate_results": record.get("gate_results"),
+        }
+        missing = sorted(k for k, v in required.items() if not v)
+        if missing:
+            problems.append(
+                "%s: status %s but missing %s"
+                % (record["name"], record["status"], ", ".join(missing))
+            )
 
     p1_by_phase = {}
     for record in assets:

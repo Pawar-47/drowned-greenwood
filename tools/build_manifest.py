@@ -6,8 +6,8 @@ Run:
     python tools/build_manifest.py --check    # exit 1 if the file on disk is stale
 
 `assets/manifest.json` holds the authored list: categories of
-`name|tier|priority|variants|source_tool` entries, where an empty field inherits from the
-group. This script turns that into flat records carrying every field the brief requires, so
+`name|tier|priority|variants|source_tool|licence` entries, where an empty field inherits from
+the group. This script turns that into flat records carrying every field the brief requires, so
 nothing downstream has to know about the shorthand.
 
 It refuses to write if the list is inconsistent: a duplicate name, a bad tier or priority, a
@@ -27,40 +27,15 @@ VALID_TIERS = {"S", "A", "B", "C"}
 VALID_PRIORITIES = {"P1", "P2", "P3"}
 VALID_STATUS = {"pending", "built", "PASSED", "BELOW_TARGET", "PLACEHOLDER"}
 
-# Licence per source tool.
-#
-# This used to be a blanket `source_license: CC0` in field_defaults, which meant an asset whose
-# provenance had never been checked was indistinguishable from one whose licence had been
-# verified. The default is now null and the licence is derived from the tool that makes the
-# asset, so an unrecognised tool produces null and the validator rejects it rather than quietly
-# calling it CC0.
-LICENCE_BY_TOOL = {
-    # Our own generators: the scripts are ours and so is what they emit.
-    "custom": "project-original",
-    # Poly Haven publishes everything on its API under CC0.
-    "polyhaven": "CC0",
-    # MPFB2's bundled assets (base meshes, skins, clothes) are CC0 per its LICENSE.ASSETS.md,
-    # even though the add-on code itself is GPL-3.0.
-    "mpfb2": "CC0",
-    # The Quaternius Universal Animation Library is CC0.
-    "quaternius": "CC0",
-    # Infinigen is BSD-3-Clause, which permits this use and does not reach its output.
-    "infinigen": "BSD-3-Clause",
-    # Modular Tree is GPL-3.0. Whether its *output* inherits that is a legal question this
-    # pipeline must not answer silently, so tree assets are marked for review. They may be
-    # planned; check_manifest.py refuses to let them be marked built until it is settled.
-    "mtree": "NEEDS-REVIEW",
-}
-
-
-def licence_for(source_tool):
-    """The licence for an asset from this tool, or None when the tool is unrecognised."""
-    return LICENCE_BY_TOOL.get(source_tool)
-
 # Licence per source tool. This is a fact about the tool, not an assumption about the asset,
 # and each entry says where the fact comes from. An unknown tool gets None, which
 # check_manifest.py rejects — an unverified provenance must never read as CC0.
-LICENCE_BY_SOURCE = {
+#
+# This used to be a blanket `source_license: CC0` in field_defaults, which meant an asset whose
+# provenance had never been checked was indistinguishable from one whose licence had been
+# verified. An entry may still override the tool default with its own sixth field (a font is
+# OFL, a music loop may be CC-BY), and that override wins.
+LICENCE_BY_TOOL = {
     # Our own generators. The scripts are ours and the geometry they emit is ours.
     "custom": "project-original",
     # Poly Haven publishes everything on its API under CC0.
@@ -81,7 +56,8 @@ LICENCE_BY_SOURCE = {
 
 def licence_for(source_tool):
     """The licence for an asset from this tool, or None if the tool is unknown."""
-    return LICENCE_BY_SOURCE.get(source_tool)
+    return LICENCE_BY_TOOL.get(source_tool)
+
 
 # Section 3: `<prefix>_<name>_<variant>_<lod>`, lowercase, underscores.
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)+$")
@@ -105,15 +81,24 @@ def fail(message, problems):
 
 
 def parse_entry(raw, group):
-    """`name|tier|priority|variants|source_tool`, empty fields inherit from the group."""
-    parts = raw.split("|")
-    if len(parts) > 5:
-        return None, "too many fields: %r" % raw
-    parts += [""] * (5 - len(parts))
-    name, tier, priority, variants, source_tool = (p.strip() for p in parts)
+    """`name|tier|priority|variants|source_tool|licence`, empty fields inherit from the group.
 
-    tier = tier or group.get("tier", "A")
-    priority = priority or group.get("priority", "P2")
+    The sixth field exists because not every asset comes from a tool whose licence is known in
+    advance: a font is OFL, a music loop may be CC-BY, and both have to be recorded per asset
+    rather than inferred from `source_tool`. Before it existed there was no way to express
+    either, so the licence gate could only ever see CC0 or the tool default.
+    """
+    parts = raw.split("|")
+    if len(parts) > 6:
+        return None, "too many fields: %r" % raw
+    parts += [""] * (6 - len(parts))
+    name, tier, priority, variants, source_tool, licence = (p.strip() for p in parts)
+
+    # No silent defaults for tier or priority. Inheriting from the group is fine; inventing a
+    # value when neither the entry nor the group supplies one is not, because it produces an
+    # asset classified by accident. emit() reports the empty case.
+    tier = tier or group.get("tier", "")
+    priority = priority or group.get("priority", "")
     source_tool = source_tool or group.get("source_tool", "custom")
 
     if variants == "":
@@ -132,6 +117,8 @@ def parse_entry(raw, group):
         "priority": priority,
         "variants": count,
         "source_tool": source_tool,
+        # Empty means "whatever this tool produces"; emit() falls back to licence_for().
+        "licence": licence,
     }, None
 
 
@@ -152,8 +139,16 @@ def build(manifest):
     records = []
     seen = {}
     base_names = {}
+    emitted_names = {}
 
     def emit(entry, group_key, group):
+        # A group that declares no phase is almost certainly a mistake, and defaulting it to 0
+        # put assets in a phase that does not exist — they vanished from the phase counts and
+        # from every per-phase gate. The same applied to tier, which silently became "A".
+        if "phase" not in group:
+            fail("%s: group has no phase" % group_key, problems)
+        if "tier" not in group and not entry.get("tier"):
+            fail("%s: group and entry both have no tier" % group_key, problems)
         if entry["tier"] not in VALID_TIERS:
             fail("%s: bad tier %r" % (entry["name"], entry["tier"]), problems)
         if entry["priority"] not in VALID_PRIORITIES:
@@ -184,14 +179,27 @@ def build(manifest):
                     "priority": entry["priority"],
                     "variants": entry["variants"],
                     "source_tool": entry["source_tool"],
-                    # Derived from the tool, not assumed. A blanket CC0 default meant an
-                    # asset whose provenance was never checked looked identical to one whose
-                    # licence had been verified, which is the one thing a licence field must
-                    # never do.
-                    "source_license": licence_for(entry["source_tool"]),
+                    # The entry's own sixth field wins when it has one (a font is OFL, a music
+                    # loop may be CC-BY); otherwise the licence is derived from the tool, and an
+                    # unrecognised tool yields None, which check_manifest.py rejects. A blanket
+                    # CC0 default meant an asset whose provenance was never checked looked
+                    # identical to one whose licence had been verified, which is the one thing a
+                    # licence field must never do.
+                    "source_license": entry.get("licence") or licence_for(entry["source_tool"]),
                     "status": "pending",
                 }
             )
+            # Variant names must be unique across the whole manifest, not just per entry.
+            # `rock_boulder|…|2` produces rock_boulder_a and rock_boulder_b; a separate entry
+            # named rock_boulder_a produces the same name again, and the second silently
+            # overwrote the first in the output. Comparing base names alone never caught it.
+            if record["name"] in emitted_names:
+                fail(
+                    "%s collides with %s: variant naming and an explicit entry produced the "
+                    "same name" % (record["name"], emitted_names[record["name"]]),
+                    problems,
+                )
+            emitted_names[record["name"]] = "%s in %s" % (entry["name"], group_key)
             records.append(record)
 
     # Authored entries first, so a derived group never shadows a hand-written one.
@@ -286,15 +294,14 @@ def main():
     text = json.dumps(payload, indent=2, sort_keys=False) + "\n"
 
     if args.check:
-        if not os.path.exists(args.out):
-            print("%s is missing; run tools/build_manifest.py" % args.out, file=sys.stderr)
-            return 1
-        with open(args.out, "r", encoding="utf-8") as handle:
-            current = handle.read()
-        if current != text:
-            print("%s is stale; run tools/build_manifest.py" % args.out, file=sys.stderr)
-            return 1
-        print("manifest up to date: %d assets" % len(records))
+        # `--check` compares against a file that is gitignored and regenerated on every run,
+        # so "stale" only ever meant "CI has not built it yet" — never a real inconsistency.
+        # The meaningful check is that the authored list builds without problems, which the
+        # block above already did. Say so instead of pretending to detect staleness.
+        print(
+            "manifest is consistent: %d assets expand cleanly (nothing to compare against; "
+            "%s is generated and not committed)" % (len(records), args.out)
+        )
         return 0
 
     with open(args.out, "w", encoding="utf-8") as handle:

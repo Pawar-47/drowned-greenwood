@@ -38,12 +38,14 @@ The checks that do run are the tool and definition gates, and their results live
 `reports/tool_evaluation.md` rather than here, because they measure tools and definitions, not
 assets:
 
-- `tools/validate/check_scripts.py` — every Python, shell, JSON, shader and workflow file parses,
-  plus a sampler-hint check against Godot's documented hint list
+- `tools/validate/check_scripts.py` — every Python, shell, JSON, shader and workflow file parses
+  (including the shell inside each workflow `run:` block, via `bash -n`), duplicate JSON keys are
+  rejected, plus a sampler-hint check against Godot's documented hint list
 - `tools/validate/check_manifest.py` — expanded assets, budget coverage, licence allowlist,
   built-record path/hash requirement
-- `tools/validate/check_skeletons.py` — bone caps, hierarchy, Godot profile names, LOD counts
-  recomputed from the bone list, bilateral optional bones, species coverage, retarget status
+- `tools/validate/check_skeletons.py` — bone caps, humanoid hierarchy, Godot profile names, LOD
+  counts and the cloth-chain budget recomputed from the bone list, bilateral optional bones,
+  species coverage, retarget status
 
 ## What the manifest validator does NOT check yet
 
@@ -73,10 +75,18 @@ failure mode in `docs/LESSONS.md` #3.
   the logic is right.
 - **The shader hint check is a static allowlist.** It catches `hint_black`; it cannot prove a
   shader compiles. Only the Godot shader probe does that, and only for the two includes it knows.
+- **The shader gate compiles under the Compatibility renderer, not Mobile.** The probe project is
+  `gl_compatibility` because that is the renderer that compiles shaders on a CPU-only runner with
+  no GPU. The game ships on Mobile, so a shader that builds in CI can still fail there: that is a
+  real-device check, not a CI one, and it is listed here rather than left implied.
 - **Quaternius coverage is a name-keyword heuristic.** It counts `Pistol_Aim` as a bow aim, so
   16 of 41 is an optimistic figure, not a measurement of usable clips.
 - **`check_skeletons.py` validates definitions, not deformation.** It proves the bone lists are
   consistent and within budget; it cannot prove a skinned mesh deforms correctly.
+- **Animal skeletons have no hierarchy to validate.** Those families are flat lists of bone names
+  with no parent links, so only caps, duplicates, optional-bone pairing and species coverage are
+  checked. The validator now prints that limit instead of letting "skeleton checks passed" imply
+  the animal rigs were validated as deeply as the humanoid one.
 
 ## Declared budgets versus the target
 

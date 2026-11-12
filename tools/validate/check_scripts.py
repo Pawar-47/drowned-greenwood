@@ -22,6 +22,7 @@ guarantees that a run gets to start.
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -103,12 +104,66 @@ def check_shell(path):
     return None
 
 
+# GitHub's `${{ ... }}` expression syntax is not shell, and bash rejects it as a bad
+# substitution. It is blanked out before the syntax check so that a valid workflow is not
+# reported as a broken script. An expression with a brace inside it (fromJSON('{"a":1}')) is
+# the one case this leaves behind, and it fails loudly rather than passing quietly.
+WORKFLOW_EXPRESSION = re.compile(r"\$\{\{[^{}]*\}\}")
+
+# Which workflow steps had their shell checked, so main() can refuse to report success if the
+# check never ran. A checker that silently checks nothing is the failure mode in LESSONS #3.
+RUN_BLOCKS_CHECKED = []
+
+
+def check_run_block(step, path, job_name):
+    """`bash -n` the shell a workflow step will actually run.
+
+    The `run:` blocks were the one scripts in this repository that nothing syntax-checked: the
+    .sh files were, and the YAML was, but the shell inline in a workflow was not. A quoting
+    mistake there surfaces only when the runner reaches that step, minutes or hours in — which
+    is the failure mode this whole file exists to move earlier. GitHub runs these with
+    `bash -e {0}` by default, so `bash -n` is the right check for them.
+    """
+    script = step.get("run")
+    if not isinstance(script, str) or not script.strip():
+        return None
+    shell = step.get("shell") or ""
+    if shell and not str(shell).startswith("bash"):
+        return None  # python, pwsh and friends are not bash
+    RUN_BLOCKS_CHECKED.append("%s:%s" % (path, job_name))
+    stripped = WORKFLOW_EXPRESSION.sub("EXPR", script)
+    try:
+        result = subprocess.run(["bash", "-n"], input=stripped, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        detail = result.stderr.strip().replace("\n", " | ")[:300]
+        return "%s: job %s: run block is not valid shell (%s)" % (path, job_name, detail)
+    return None
+
+
+def no_duplicate_keys(pairs):
+    """Reject a JSON object that repeats a key.
+
+    Valid JSON, and silently wrong: the loader keeps the last value and drops the rest, so a
+    second "note" in a manifest group vanishes without a word. This was found by writing one.
+    """
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError("duplicate key %r in one object" % key)
+        seen[key] = value
+    return seen
+
+
 def check_json(path):
     try:
         with open(path, "r", encoding="utf-8") as handle:
-            json.load(handle)
+            json.load(handle, object_pairs_hook=no_duplicate_keys)
     except json.JSONDecodeError as exc:
         return "%s:%s: %s" % (path, exc.lineno, exc.msg)
+    except ValueError as exc:
+        return "%s: %s" % (path, exc)
     except OSError as exc:
         return "%s: cannot read (%s)" % (path, exc)
     return None
@@ -152,6 +207,9 @@ def check_workflow(path):
                     job_name,
                     str(step)[:60],
                 )
+            error = check_run_block(step, path, job_name)
+            if error:
+                return error
     return None
 
 
@@ -296,13 +354,14 @@ def main():
             problems.append(error)
 
     print(
-        "checked: %d python, %d shell, %d json, %d shader, %d workflow yaml"
+        "checked: %d python, %d shell, %d json, %d shader, %d workflow yaml, %d run block"
         % (
             counts["python"],
             counts["shell"],
             counts["json"],
             counts["shader"],
             counts["yaml"],
+            len(RUN_BLOCKS_CHECKED),
         )
     )
 
@@ -318,6 +377,10 @@ def main():
         problems.append("the walker found no workflow YAML; the workflow filter is wrong")
     if counts["shader"] == 0:
         problems.append("the walker found no shaders; the shader filter is wrong")
+    if counts["yaml"] and not RUN_BLOCKS_CHECKED:
+        problems.append(
+            "no workflow run block was shell-checked; the run-block check is not running"
+        )
 
     problems.extend(check_repo_hygiene())
 

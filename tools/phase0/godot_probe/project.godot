@@ -12,6 +12,11 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [rendering]
 
+; The game ships on the Mobile renderer (see README). This probe project deliberately uses
+; Compatibility instead: it is the renderer that compiles the shading language deterministically
+; on a CPU-only runner with no GPU and no Vulkan driver, so it is the only one that can gate the
+; shader includes in CI at all. Mobile-renderer compilation is therefore NOT proven here — it is
+; part of the real-device check, and reports/quality_report.md lists it as a weaker check.
 renderer/rendering_method="gl_compatibility"
 
 ; Shader globals, matching shaders/SHADER_GLOBALS.md.

@@ -15,7 +15,12 @@ Checks, in the order the brief states the limits:
   * no cycles in the hierarchy
   * the manifest's declared bone_count matches the actual list
   * humanoid bone names match Godot's SkeletonProfileHumanoid, since the definition claims they do
+  * the cloth chains a character may wear fit in the spare bones, computed from the bone list
   * animal families do not exceed the cap, and every species in the asset list is covered
+
+What it does not check: animal bone *hierarchy*. Those families are flat lists of bone names with
+no parent links, so there is nothing to walk; it says so out loud rather than letting "skeleton
+checks passed" imply the animal rigs were validated as deeply as the humanoid one.
 """
 
 import json
@@ -140,6 +145,49 @@ def check_lod_counts(skeleton, bones, problems):
     )
 
 
+def check_cloth_budget(skeleton, bones, problems):
+    """The cloth chains a character can wear must fit in the spare bones.
+
+    This file used to say the 9 spare bones were "deliberately unallocated" because cloth chains
+    are separate assets. They are separate assets, but their bones join the character's skeleton
+    when worn, so they spend this budget: a cape's 6 bones put the character at 62, and a cape and
+    a tabard at once need 68 against a cap of 65. That is a design constraint, so it is computed
+    here rather than asserted in prose nobody re-derives.
+    """
+    label = "char_skeleton_definition"
+    budget = skeleton.get("cloth_bone_budget")
+    if not isinstance(budget, dict):
+        problems.append("%s: no cloth_bone_budget, so the spare bones are unaccounted for" % label)
+        return
+    chains = budget.get("max_chains_at_once")
+    per_chain = budget.get("max_bones_per_chain")
+    if not isinstance(chains, int) or isinstance(chains, bool) or chains < 1:
+        problems.append("%s: cloth_bone_budget.max_chains_at_once must be a positive integer" % label)
+        return
+    if not isinstance(per_chain, int) or isinstance(per_chain, bool) or per_chain < 1:
+        problems.append("%s: cloth_bone_budget.max_bones_per_chain must be a positive integer" % label)
+        return
+
+    total = len(bones) + chains * per_chain
+    if total > HUMANOID_MAX_BONES:
+        problems.append(
+            "%s: %d bones + %d chain(s) x %d = %d, over the %d cap"
+            % (label, len(bones), chains, per_chain, total, HUMANOID_MAX_BONES)
+        )
+    # The declared limit must be the real limit. If one more chain would also fit, the budget
+    # understates what the skeleton allows and the number in the file is a fiction.
+    one_more = len(bones) + (chains + 1) * per_chain
+    if one_more <= HUMANOID_MAX_BONES:
+        problems.append(
+            "%s: cloth_bone_budget allows %d chain(s) of %d bones, but %d would also fit (%d of %d)"
+            % (label, chains, per_chain, chains + 1, one_more, HUMANOID_MAX_BONES)
+        )
+    print(
+        "cloth budget: %d + %d x %d = %d of %d bones (one more chain would need %d)"
+        % (len(bones), chains, per_chain, total, HUMANOID_MAX_BONES, one_more)
+    )
+
+
 def check_bilateral_optional(families, problems):
     """An optional bone must have its mirror optional too, or one side vanishes asymmetrically."""
     for family in families:
@@ -174,6 +222,7 @@ def check_humanoid(problems):
 
     check_hierarchy(bones, problems, label)
     check_lod_counts(skeleton, bones, problems)
+    check_cloth_budget(skeleton, bones, problems)
 
     for bone in bones:
         if bone["name"] not in GODOT_HUMANOID:
@@ -271,6 +320,14 @@ def check_animals(problems):
         )
 
     check_bilateral_optional(families, problems)
+
+    # Say what is not checked. These families are flat lists of bone names with no parent links,
+    # so check_hierarchy() cannot run on them; a silent "skeleton checks passed" read as if the
+    # animal rigs had been validated as deeply as the humanoid one, which they have not.
+    print(
+        "animals: bone hierarchy NOT validated — these families carry no parent links; only "
+        "caps, duplicates, optional-bone pairing and coverage are checked"
+    )
 
     for family in families:
         label = family["name"]

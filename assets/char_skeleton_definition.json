@@ -14,8 +14,14 @@
     }
   },
   "bone_count": 56,
-  "bone_budget_note": "56 of the 65 allowed bones. The 9 spare are deliberately unallocated: cloth chains (cape, banner, tabard) are separate tech_cloth_bone_chain_* assets with their own <= 6-bone chains, so they must not eat this budget.",
-  "units": "metres, Y-up, character faces -Z in rest pose",
+  "bone_budget_note": "56 of the 65 allowed bones, which leaves 9. Cloth chains (cape, banner, tabard) are separate tech_cloth_bone_chain_* assets, but their bones still join the character's skeleton when worn, so they spend this budget. One 6-bone chain fits (56 + 6 = 62); a cape and a tabard at once need 68 and do not. cloth_bone_budget states the limit and tools/validate/check_skeletons.py computes it rather than trusting this sentence.",
+  "cloth_bone_budget": {
+    "max_chains_at_once": 1,
+    "max_bones_per_chain": 6,
+    "second_piece_rule": "A second cloth piece worn with a 6-bone chain is either rigid-parented to its parent bone or given a chain of at most 3 bones: 56 + 6 + 3 = 65.",
+    "note": "An earlier version of this file called the 9 spare bones 'deliberately unallocated', which read as if cloth cost nothing. It does cost, and the arithmetic is checked so the claim cannot drift again."
+  },
+  "units": "metres, Y-up, right-handed. The character's front is -Z in this file: the eyes and the toes point towards -Z. glTF's convention is that the front of an asset faces +Z, so the export step rotates the rig 180 degrees about Y before writing the GLB and Godot's importer then makes that its own -Z forward. An export that skips the rotation produces a character that walks backwards.",
   "rest_pose": {
     "type": "T-pose",
     "arms": "straight out along X, palms down",
@@ -101,7 +107,7 @@
   },
   "lod_policy": {
     "note": "Finger bones are the first thing to go on distant characters. The budget for skinned characters at full animation rate is 8 LOW / 16 MEDIUM / 24 HIGH, so distant NPCs use a reduced skeleton.",
-    "bone_math": "56 bones = 26 non-finger (Root, Hips, Spine, Chest, UpperChest, Neck, Head, 2 eyes, Jaw, 2 shoulders, 6 arm bones, 8 leg bones, 2 toes) + 30 finger bones (5 fingers x 3 segments x 2 hands).",
+    "bone_math": "56 bones = 26 non-finger (Root, Hips, Spine, Chest, UpperChest, Neck, Head, 2 eyes, Jaw, 2 shoulders, 6 arm bones, 6 leg bones, 2 toes) + 30 finger bones (5 fingers x 3 segments x 2 hands).",
     "lod0": "all 56 bones",
     "lod1": "one bone per finger: 26 non-finger + 10 finger = 36 bones",
     "lod2": "no finger bones and toes merged: 26 - 2 toes = 24 bones",

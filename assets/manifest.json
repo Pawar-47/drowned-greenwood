@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "The Drowned Greenwood",
   "note": "Source of truth for the asset list. Every named asset from the brief's section 4 is present exactly once, plus the six approved additions: four from section 4 of the review, and two animal skeleton families found while writing the coverage validator. assets/ADDITIONS.md is the record of what each one is and why. `categories` is the authored source; `tools/build_manifest.py` expands it into one record per asset (variants included) and writes `assets/manifest.expanded.json`, which is what the validators and the game consume. Never hand-edit a built record: edit this file, then rebuild.",
-  "entry_format": "name|tier|priority|variants|source_tool  — an empty field inherits from the group",
+  "entry_format": "name|tier|priority|variants|source_tool|licence  — an empty field inherits from the group, except `licence`, which falls back to the source tool's licence",
   "field_defaults": {
     "path": null,
     "tris": 0,
@@ -720,6 +720,7 @@
     "4.G.rig": {
       "label": "Shared skeleton and retarget artifacts (approved addition 4)",
       "phase": 1,
+      "note": "Everything here is written in Phase 1 except the last entry's final form. `anim_retarget_report` is issued twice: the Phase 1 report states the retarget map's status and what the Phase 0 inventory probe verified (which pack joints exist, which families are covered), and it is re-issued in Phase 5 once real clips exist to retarget. Keeping it here rather than in 4.G.anim is deliberate — it is a rig artifact, and the report is the thing that records that the map is still pending_verification.",
       "tier": "C",
       "priority": "P1",
       "source_tool": "custom",
@@ -1389,10 +1390,10 @@
     "4.P.tech": {
       "label": "Technical pipeline assets: impostors, occluders, HLODs, proxies, shader includes",
       "phase": 9,
+      "note": "Two entries here already exist as source files and are not waiting for Phase 9 to be written: `tech_wind_include` is shaders/tech_wind_include.gdshaderinc and `tech_wetness_include` is shaders/tech_wetness_include.gdshaderinc, and both are compiled by the Phase 0 shader gate on every run. Their manifest entries track the delivered, tuned asset — the version that has passed the Phase 9 quality gate against real materials — not the first draft. The path is the same, so nothing is built twice and nothing is double-counted in the budget. Split out of the original 4.P batch: the rest are produced by the pipeline at the end, once there is content to bake impostors and HLODs from — an impostor atlas needs a finished tree species, and a 1 km test world needs the assets it assembles. Priority stays P1 because later phases depend on them.",
       "tier": "C",
       "priority": "P1",
       "source_tool": "custom",
-      "note": "Split out of the original 4.P batch. These are produced by the pipeline at the end, once there is content to bake impostors and HLODs from: an impostor atlas needs a finished tree species, and a 1 km test world needs the assets it assembles. Priority stays P1 because later phases depend on them.",
       "assets": [
         "tech_impostor_atlas||P1",
         "tech_occluder_forest_wall||P1",

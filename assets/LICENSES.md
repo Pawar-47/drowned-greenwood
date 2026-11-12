@@ -37,6 +37,14 @@ thing a licence field must never do.
 | `mtree` | `NEEDS-REVIEW` | see below |
 | anything else | none | `check_manifest.py` rejects it |
 
+An authored entry may override the tool default with a sixth field, because not every asset's
+licence follows from the tool that fetched it — a font is OFL, a music loop may be CC-BY:
+
+    audio_ambience_rain|C|P2|1|none|CC-BY-4.0
+
+The override is checked against the same allowlist as the derived value, so it cannot be used to
+smuggle in a licence the brief forbids.
+
 ## Open question: Modular Tree output
 
 Modular Tree is **GPL-3.0**. Geometry it generates is normally not a derivative work of the

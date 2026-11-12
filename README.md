@@ -32,8 +32,9 @@ is currently about 260 KB of tooling and definitions.
 
 ## The asset list
 
-`assets/manifest.json` is the authored source: categories of `name|tier|priority|variants|source_tool`
-entries, where an empty field inherits from the group. `tools/build_manifest.py` expands it into
+`assets/manifest.json` is the authored source: categories of
+`name|tier|priority|variants|source_tool|licence` entries, where an empty field inherits from the
+group and an empty `licence` falls back to the source tool's licence. `tools/build_manifest.py` expands it into
 `assets/manifest.expanded.json` — one record per asset, carrying every field the brief requires
 (`tier`, `priority`, `path`, `tris`, `lod_tris`, texture sizes, `bones`, `anims`, `tags`,
 `source_tool`, `tool_version`, `source_license`, `input_hash`, `sha256`, `pack`, `size_kb`,
@@ -48,7 +49,7 @@ a SHA-256 now fails `check_manifest.py`.
 python tools/build_manifest.py            # expand
 python tools/validate/check_scripts.py    # every script, shader and workflow parses
 python tools/validate/check_manifest.py   # structure, budgets, licences
-python tools/validate/check_skeletons.py  # bone caps, hierarchy, LOD counts
+python tools/validate/check_skeletons.py  # bone caps, humanoid hierarchy, LOD and cloth budgets, animal coverage
 ```
 
 `assets/ADDITIONS.md` records the six approved additions, all P1 and scheduled: weather
@@ -57,7 +58,10 @@ artifacts, and two animal skeleton families found while writing the validator.
 
 ## Size and history
 
-`main` stays around 700 MB; 800 MB is the absolute cap. Binaries reach `main` only by merging
+`main` stays under 800 MB, the absolute cap. The plan's category budgets total **790 MB** against
+a **700 MB** target, so the headroom is 10 MB and it is meant to be visible: `check_manifest.py`
+warns above the target and fails above the cap, rather than letting the overrun be discovered when
+a category overflows. Binaries reach `main` only by merging
 the staging branch after the gates pass. A category that overflows its budget moves to a
 GitHub Release, one tag per category, and every affected asset records its `pack` and
 `sha256`. Prevention first: if history ever has to be rewritten, `docs/HISTORY_PURGE.md` has
@@ -127,6 +131,9 @@ generated on a workstation. Pinned versions and the owner's decisions on the too
 
 - **Previews** are Cycles CPU renders: low samples, denoise, contact sheets at roughly 640×360.
 - **Godot** runs a headless import-and-load gate in CI. Anything that needs pixels happens on a
-  real device.
+  real device. The gate's probe project is set to the **Compatibility** renderer, not the Mobile
+  one the game ships with: Compatibility is the renderer that compiles shaders deterministically
+  in a container with no GPU, and it is what makes the shader gate possible at all. Mobile-renderer
+  shader compilation is part of the real-device check, and the report says so.
 - **fps** is not measured in CI. Static budgets only; `tech_perf_overlay_stub` is P1 so real
   measurement is possible later.

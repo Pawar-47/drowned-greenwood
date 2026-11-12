@@ -93,11 +93,31 @@ def count_mesh_geometry():
 
 
 def export_glb(path):
-    """Export the whole scene as a GLB. Returns (ok, bytes, error)."""
+    """Export the whole scene as a GLB. Returns (ok, bytes, error).
+
+    `export_vertex_color="ACTIVE"` is not a style choice. The wind include reads its per-vertex
+    mask from the alpha of the vertex colour, and Blender's exporter drops COLOR_0 unless a
+    material actually samples it — so the mask vanished on export and every tree would have
+    looked rigid. ACTIVE writes the active colour attribute whether or not a material uses it.
+    Older exporters have no such option and raise TypeError, so the first attempt falls back
+    rather than failing a probe over a keyword.
+    """
     import os
 
+    options = {
+        "filepath": path,
+        "export_format": "GLB",
+        "use_selection": False,
+        "export_vertex_color": "ACTIVE",
+    }
     try:
-        bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=False)
+        bpy.ops.export_scene.gltf(**options)
+    except TypeError:
+        options.pop("export_vertex_color", None)
+        try:
+            bpy.ops.export_scene.gltf(**options)
+        except Exception:  # noqa: BLE001
+            return False, 0, short(traceback.format_exc(), 300)
     except Exception:  # noqa: BLE001
         return False, 0, short(traceback.format_exc(), 300)
     if not os.path.exists(path):

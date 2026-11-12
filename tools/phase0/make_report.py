@@ -222,13 +222,16 @@ def parse(path):
 
       RESULT {"step": "...", "ok": true, ...}   JSON, from the Python and GDScript probes
       RESULT <name> exit=<n> [trailing text]     shell probes
-      RESULT <name> <anything else>              shell probes written as key=value
+      RESULT <name> ok=<bool> [key=value...]     shell probes written as key=value
 
-    That last shape was previously dropped silently, and it hid real probes: the workflow
-    emitted `RESULT godot_version version=4.7.2-stable` and the Poly Haven probe emitted
-    `RESULT polyhaven_download ok=True ...`, neither of which matched the two strict patterns.
-    Both were then reported as "required probe produced no result" even though they had run and
-    succeeded. A probe's report must never depend on it guessing the exact punctuation.
+    That third shape was previously dropped silently, and it hid real probes: the Poly Haven probe
+    emitted `RESULT polyhaven_download ok=True ...`, which matched neither strict pattern, and was
+    then reported as "required probe produced no result" even though it had run and succeeded.
+
+    Every shape must state its own verdict. The key=value shape used to be read as a pass unless
+    it contained `ok=False`, so a probe reporting `RESULT something reason=...` — no verdict at
+    all — counted as green. Silence is not a verdict: a key=value line with no `ok=` is a failure,
+    and so is a line that meant to be JSON and is not.
     """
     rows = []
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
@@ -241,10 +244,40 @@ def parse(path):
             if match:
                 try:
                     payload = json.loads(match.group(1))
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as exc:
+                    # A line that meant to be JSON and is not is a broken probe, not a line to
+                    # skip: dropping it made the probe look as if it never reported at all.
+                    rows.append(
+                        {
+                            "name": "malformed_result",
+                            "ok": False,
+                            "detail": "%s: %s" % (exc.msg, match.group(1)[:160]),
+                        }
+                    )
+                    continue
+                if not isinstance(payload, dict):
+                    rows.append(
+                        {
+                            "name": "malformed_result",
+                            "ok": False,
+                            "detail": "JSON result is a %s, not an object" % type(payload).__name__,
+                        }
+                    )
                     continue
                 name = payload.pop("step", "unknown")
-                ok = bool(payload.pop("ok", True))
+                # Every JSON emitter in tools/phase0 writes `ok`. A payload without one has no
+                # verdict, so it is a failure that says so rather than a silent pass — the same
+                # rule the key=value shape follows.
+                if "ok" not in payload:
+                    rows.append(
+                        {
+                            "name": name,
+                            "ok": False,
+                            "detail": "JSON result has no ok field: %s" % str(payload)[:160],
+                        }
+                    )
+                    continue
+                ok = bool(payload.pop("ok"))
                 rows.append(
                     {
                         "name": name,
@@ -269,14 +302,31 @@ def parse(path):
             if match:
                 name = match.group(1)
                 rest = match.group(2).strip()
-                rows.append(
-                    {
-                        "name": name,
-                        # A key=value probe is a success unless it says otherwise.
-                        "ok": "ok=False" not in rest and "ok=false" not in rest,
-                        "detail": rest,
-                    }
-                )
+                # The verdict is read, never assumed. Assuming success unless `ok=False` appears
+                # meant a probe reporting `RESULT something reason=...` — no verdict at all — was
+                # counted as green, which is the same class of bug as dropping the line.
+                fields = {}
+                for part in rest.split():
+                    if "=" in part:
+                        key, value = part.split("=", 1)
+                        fields[key] = value
+                verdict = fields.get("ok")
+                if verdict is None:
+                    rows.append(
+                        {
+                            "name": name,
+                            "ok": False,
+                            "detail": "no ok= verdict in %r" % rest[:200],
+                        }
+                    )
+                else:
+                    rows.append(
+                        {
+                            "name": name,
+                            "ok": verdict.lower() in {"true", "1", "yes"},
+                            "detail": rest,
+                        }
+                    )
     return rows
 
 
