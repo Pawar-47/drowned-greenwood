@@ -59,6 +59,8 @@ DECISIONS = {
     "gltf_transform_version": ("glTF-Transform version", "pin recorded for tools/TOOLS.md"),
     "polyhaven": ("Poly Haven API", "CC0 PBR textures, HDRIs and scanned models"),
     "quaternius_packs": ("Quaternius animation packs", "CC0 humanoid clips; every missing clip is authored with bpy"),
+    "quaternius_download": ("Quaternius release download", "fetching the owner's ZIPs outside git"),
+    "quaternius_coverage": ("Quaternius coverage", "which of the brief's animation families the packs actually supply"),
     "quaternius_inventory": ("Quaternius inventory", "the real clip count, measured rather than promised"),
     "infinigen_install": ("Infinigen install", "rocks, plants, fungi, clouds, materials"),
     "infinigen_import": ("Infinigen import", "same decision, checked after install"),
@@ -89,6 +91,36 @@ FAILURE_CONSEQUENCE = {
     "polyhaven": "no CC0 texture source; materials fall back to procedural baking only",
     "quaternius_packs": "no CC0 clip source yet; the release is an open task on the owner and clips are authored instead",
     "quaternius_inventory": "clip coverage unknown; the animation report stays open",
+    "quaternius_coverage": "clip coverage unknown; the animation report stays open",
+}
+
+# Probes that are SUPPOSED to fail. Two kinds live here, and neither is a defect:
+#
+#   * control runs that prove a decision. The quantized gltfpack load is meant to fail; that
+#     failure is the evidence for using -noq. Counting it as a defect inverts its meaning.
+#   * tools rejected after the brief's three attempts. Their probes keep running so a later
+#     change is noticed, but a failure there is the expected state, not news.
+EXPECTED_FAILURES = {
+    "godot_scene_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
+    "godot_load_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
+    "godot_import_gltfpack": "the control run for the LOD decision",
+    "mpfb2": "MPFB2 is rejected after 3 attempts; the custom generator is the plan, not a fallback",
+    "mpfb2_exit": "MPFB2 is rejected after 3 attempts",
+    "mpfb_enable": "MPFB2 is rejected after 3 attempts",
+    "mpfb_import": "MPFB2 is rejected after 3 attempts",
+    "mpfb_operators": "MPFB2 is rejected after 3 attempts",
+    "mpfb_create_human": "MPFB2 is rejected after 3 attempts",
+    "mpfb_diagnostics": "MPFB2 is rejected after 3 attempts",
+    "addon_install_mpfb2": "MPFB2 is rejected after 3 attempts",
+    "mtree": "Modular Tree is rejected after 3 attempts; Infinigen plus custom generators is the plan",
+    "mtree_register": "Modular Tree is rejected after 3 attempts",
+    "mtree_enable": "Modular Tree is rejected after 3 attempts",
+    "mtree_operators": "Modular Tree is rejected after 3 attempts",
+    "mtree_add_tree": "Modular Tree is rejected after 3 attempts",
+    "mtree_export": "Modular Tree is rejected after 3 attempts",
+    "mtree_diagnostics": "Modular Tree is rejected after 3 attempts",
+    "addon_install_modular_tree": "Modular Tree is rejected after 3 attempts",
+    "quaternius_packs": "the release was empty until the owner uploaded the packs; now expected to pass",
 }
 
 
@@ -125,6 +157,24 @@ def parse(path):
     return rows
 
 
+def collapse_exit_rows(rows):
+    """Drop the bare exit-code row for a probe that already reported its own result.
+
+    When a probe prints a detailed RESULT and then exits non-zero, run_capture adds a second
+    row named `<probe>_exit` so the failure is visible. Once the probe has reported, that row
+    is noise that inflates the failure count. It is folded into the probe's own row instead.
+    """
+    names = {row["name"] for row in rows}
+    kept = []
+    for row in rows:
+        if row["name"].endswith("_exit"):
+            base = row["name"][: -len("_exit")]
+            if base in names:
+                continue
+        kept.append(row)
+    return kept
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--logs", default="")
@@ -135,6 +185,7 @@ def main():
     rows = []
     for path in paths:
         rows.extend(parse(path))
+    rows = collapse_exit_rows(rows)
 
     # A probe run more than once keeps its last result, which is the run that counted.
     latest = {}
@@ -161,34 +212,53 @@ def main():
 
     lines.append("## Probes")
     lines.append("")
-    lines.append("| Probe | Result | Detail | Consequence if it failed |")
+    lines.append("| Probe | Result | Detail | What it means |")
     lines.append("|---|---|---|---|")
     for row in ordered:
         label, purpose = DECISIONS.get(row["name"], (row["name"], ""))
         status = "PASS" if row["ok"] else "FAIL"
-        consequence = FAILURE_CONSEQUENCE.get(row["name"], "")
+        # A failed probe has one of two meanings, and conflating them is what made this report
+        # read as a wall of failure. Either the pipeline is broken (a defect), or the probe was
+        # the control run proving that the fallback is correct (a decision, not a defect).
         if row["ok"]:
-            consequence = purpose
-        lines.append(
-            "| %s | %s | %s | %s |" % (label, status, row["detail"], consequence)
-        )
+            meaning = purpose
+        elif row["name"] in EXPECTED_FAILURES:
+            status = "EXPECTED FAIL"
+            meaning = EXPECTED_FAILURES[row["name"]]
+        else:
+            meaning = FAILURE_CONSEQUENCE.get(row["name"], "see the probe detail")
+        lines.append("| %s | %s | %s | %s |" % (label, status, row["detail"], meaning))
     lines.append("")
 
-    failed = [r for r in ordered if not r["ok"]]
+    expected = [r for r in ordered if not r["ok"] and r["name"] in EXPECTED_FAILURES]
+    defects = [r for r in ordered if not r["ok"] and r["name"] not in EXPECTED_FAILURES]
+
     lines.append("## Outcome")
     lines.append("")
     lines.append("- Probes run: **%d**" % len(ordered))
-    lines.append("- Passed: **%d**" % (len(ordered) - len(failed)))
-    lines.append("- Failed: **%d**" % len(failed))
-    if failed:
-        lines.append("")
-        lines.append("Failed probes, and the fallback the brief already defines for each:")
-        lines.append("")
-        for row in failed:
-            label, _ = DECISIONS.get(row["name"], (row["name"], ""))
-            consequence = FAILURE_CONSEQUENCE.get(row["name"], "see the probe detail")
-            lines.append("- **%s** — %s" % (label, consequence))
+    lines.append("- Passed: **%d**" % (len(ordered) - len(expected) - len(defects)))
+    lines.append("- Expected failures (controls that prove a decision): **%d**" % len(expected))
+    lines.append("- Defects (something is actually broken): **%d**" % len(defects))
     lines.append("")
+    if expected:
+        lines.append("### Expected failures")
+        lines.append("")
+        for row in expected:
+            label, _ = DECISIONS.get(row["name"], (row["name"], ""))
+            lines.append("- **%s** — %s" % (label, EXPECTED_FAILURES[row["name"]]))
+        lines.append("")
+    if defects:
+        lines.append("### Defects, and the fallback the brief defines for each")
+        lines.append("")
+        for row in defects:
+            label, _ = DECISIONS.get(row["name"], (row["name"], ""))
+            lines.append(
+                "- **%s** — %s" % (label, FAILURE_CONSEQUENCE.get(row["name"], "see the probe detail"))
+            )
+        lines.append("")
+    else:
+        lines.append("No defects.")
+        lines.append("")
 
     text = "\n".join(lines)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)

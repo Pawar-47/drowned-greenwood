@@ -154,6 +154,27 @@
       }
     },
     {
+      "name": "animal_skeleton_amphibian",
+      "used_by": [
+        "amph_common_frog", "amph_toad", "amph_fire_salamander", "amph_newt",
+        "amph_giant_salamander"
+      ],
+      "bone_count": 20,
+      "bones": [
+        "Root", "Hips", "Spine", "Chest", "Neck", "Head", "Jaw",
+        "Tail1", "Tail2",
+        "LeftUpperLeg_F", "LeftLowerLeg_F", "LeftFoot_F",
+        "RightUpperLeg_F", "RightLowerLeg_F", "RightFoot_F",
+        "LeftUpperLeg_B", "LeftLowerLeg_B", "LeftFoot_B",
+        "RightUpperLeg_B", "RightLowerLeg_B", "RightFoot_B"
+      ],
+      "notes": {
+        "why_not_shared_with_small_mammals": "A frog's hind limbs fold in two planes for the crouch and the jump, which a small-mammal leg chain cannot express; a salamander needs a lateral spine. Sharing would cost more in corrective shapes than it saves.",
+        "tail": "Salamanders use Tail1/Tail2; frogs and toads drop them. A dropped bone is never renamed.",
+        "hop_clip": "The jump is the defining animation for this family."
+      }
+    },
+    {
       "name": "animal_skeleton_serpent",
       "used_by": [
         "animal_adder_snake", "rept_grass_snake", "rept_slow_worm", "rept_lizard_common"

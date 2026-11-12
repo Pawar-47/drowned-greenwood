@@ -378,19 +378,20 @@ jobs:
           set -uo pipefail
           source tools/phase0/lib.sh
           # The free Standard ZIPs are downloaded manually by the owner and uploaded to the
-          # Release "third-party-quaternius", outside git. Until that release exists this step
-          # reports the gap rather than failing: the pack is an open task on the owner.
+          # Release "third-party-quaternius", outside git. CI fetches them from there and
+          # reports what is really inside: a measured clip count, never a promised one.
           if ! gh release view third-party-quaternius >/dev/null 2>&1; then
             echo "RESULT quaternius_packs exit=1 reason=release third-party-quaternius not found" | tee -a "$LOG"
             exit 0
           fi
           mkdir -p artifacts/phase0/quaternius
           gh release download third-party-quaternius --dir artifacts/phase0/quaternius --clobber >>"$LOG" 2>&1
-          found=$(find artifacts/phase0/quaternius -type f | wc -l)
-          echo "RESULT quaternius_packs exit=0 files=${found}" | tee -a "$LOG"
-          # Report what is actually in the packs. No clip count is promised until this runs.
+          echo "RESULT quaternius_download exit=$?" | tee -a "$LOG"
           find artifacts/phase0/quaternius -type f -printf '%f %s\n' | sort >>"$LOG" 2>&1
-          python3 tools/phase0/quaternius_inventory.py --dir artifacts/phase0/quaternius | tee -a "$LOG"
+          # Unzips what was downloaded and reports clips plus coverage of the brief's list.
+          python3 tools/phase0/quaternius_inventory.py \
+            --dir artifacts/phase0/quaternius \
+            --out artifacts/phase0/quaternius_coverage.json | tee -a "$LOG"
 
       - name: Infinigen clone and install
         continue-on-error: true
