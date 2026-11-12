@@ -50,9 +50,15 @@ env:
   # Git dependencies are pinned to an exact commit or tag. A HEAD clone means an upstream
   # commit can change a generated asset without this repository changing.
   MPFB2_TAG: "v2.0.18"
-  MTREE_COMMIT: "faf77c1538ce8af3d70aed036b8a540058521347"
   INFINIGEN_COMMIT: "53033dd55c7191cbc436be6ffbb63c026935a509"
   GLTF_TRANSFORM_VERSION: "4.2.1"
+  # Modular Tree ships a compiled pybind11 extension (`m_tree`), so a source clone can never
+  # work: `import m_tree` finds the C++ source directory, not a built module, which is exactly
+  # the "cannot import name 'm_tree' from 'm_tree'" failure. Its CD workflow publishes a
+  # prebuilt linux_x64 extension zip, which is what we install.
+  MTREE_VERSION: "5.6.0"
+  MTREE_ZIP_URL: "https://github.com/GoodPie/modular_tree/releases/download/5.6.0/modular_tree-5.6.0-linux_x64.zip"
+  MTREE_ZIP_SHA256: "698cf57c2fc9e695d241aea7d232493f48027b5930538e6062a6e9e320c9044a"
 
 jobs:
   # Seconds, not minutes. Catches what would otherwise cost a full run.
@@ -431,33 +437,41 @@ jobs:
             "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
           ls -l artifacts/phase0/probe_human.glb >>"$LOG" 2>&1 || true
 
-      - name: MTree clone, install as extension, and generate a tree
+      - name: MTree download prebuilt extension and generate a tree
         continue-on-error: true
         run: |
           set -uo pipefail
           source tools/phase0/lib.sh
           BLENDER45="$(pwd)/tools/vendor/${BLENDER45_DIR}/blender"
-          # Pinned to an exact commit. --depth 1 cannot check out an arbitrary SHA, so fetch
-          # just that commit instead of the whole history.
-          if [ ! -d tools/vendor/modular_tree ]; then
-            mkdir -p tools/vendor/modular_tree
-            git -C tools/vendor/modular_tree init --quiet
-            git -C tools/vendor/modular_tree remote add origin https://github.com/GoodPie/modular_tree
-            git -C tools/vendor/modular_tree fetch --depth 1 origin "${MTREE_COMMIT}"
-            git -C tools/vendor/modular_tree checkout --quiet FETCH_HEAD
+
+          # Download the PREBUILT release, not the source. MTree's operators call
+          # `from m_tree import m_tree`, and `m_tree` is a compiled pybind11 extension built
+          # with scikit-build-core. A source clone has the C++ source under a directory named
+          # `m_tree`, so Python finds a namespace package with no module inside it:
+          #   cannot import name 'm_tree' from 'm_tree' (unknown location)
+          # The project's CD workflow builds the extension and packages it with the addon; the
+          # linux_x64 asset is that package. Verified against the published sha256.
+          mkdir -p tools/vendor
+          if [ ! -f tools/vendor/modular_tree.zip ]; then
+            curl -fsSL -o tools/vendor/modular_tree.zip "${MTREE_ZIP_URL}"
           fi
-          echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
-          # install-file takes a zip whose single top-level folder holds the manifest. The
-          # helper finds the manifest rather than assuming it sits at the repository root, and
-          # names the folder after the manifest's id, which is how Blender installs it.
-          python3 tools/phase0/zip_extension.py tools/vendor/modular_tree tools/vendor/modular_tree.zip | tee -a "$LOG"
+          actual=$(sha256sum tools/vendor/modular_tree.zip | awk '{print $1}')
+          echo "mtree expected=${MTREE_ZIP_SHA256} actual=${actual}" | tee -a "$LOG"
+          if [ "$actual" != "${MTREE_ZIP_SHA256}" ]; then
+            echo "RESULT mtree_download exit=1 reason=checksum_mismatch" | tee -a "$LOG"
+            exit 0
+          fi
+          echo "RESULT mtree_download exit=0 version=${MTREE_VERSION}" | tee -a "$LOG"
+          unzip -l tools/vendor/modular_tree.zip | head -30 >>"$LOG" 2>&1
+
           set +e
+          out="$(mktemp)"
           "$BLENDER45" -b --factory-startup \
             --command extension install-file -r user_default --enable \
-            "tools/vendor/modular_tree.zip" >"$LOG.tmp" 2>&1
+            tools/vendor/modular_tree.zip >"$out" 2>&1
           ext_code=$?
-          cat "$LOG.tmp" >>"$LOG"
-          rm -f "$LOG.tmp"
+          cat "$out" >>"$LOG"
+          rm -f "$out"
           echo "RESULT mtree_extension_install exit=${ext_code}" | tee -a "$LOG"
           set -e
           # PROBE_OUT into the uploaded directory, so the generated tree survives the run and

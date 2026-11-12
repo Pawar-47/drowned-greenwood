@@ -81,16 +81,18 @@ def body():
     # that was just enabled, which is exactly what the previous run tripped over.
     clear_scene()
 
-    # `quick_generate` failed with "No module named 'm_tree'": the extension's operator imports
-    # its inner package by a bare name, which only resolves if the extension's own directory is
-    # on sys.path. Blender puts the extensions repo root there, not the package root, so add it.
-    for module in addon_utils.modules():
-        if "modular_tree" not in module.__name__:
-            continue
-        package_dir = os.path.dirname(getattr(module, "__file__", "") or "")
-        if package_dir and package_dir not in sys.path:
-            sys.path.insert(0, package_dir)
-            report(step="mtree_syspath", ok=True, added=package_dir)
+    # Report whether the native module the operators need is importable. MTree's operators do
+    # `from m_tree import m_tree`, and m_tree is a compiled pybind11 extension delivered as a
+    # wheel by the release zip. If that import fails, generation cannot work, and saying so
+    # here is clearer than a RuntimeError from inside the operator.
+    native = ""
+    try:
+        import m_tree  # noqa: F401
+
+        native = getattr(m_tree, "__file__", "") or str(getattr(m_tree, "__path__", ""))
+    except Exception:  # noqa: BLE001
+        native = short(traceback.format_exc(), 300)
+    report(step="mtree_native_module", ok=bool(native) and "Error" not in native, detail=native)
 
     ops = getattr(bpy.ops, namespace)
     generator = next(

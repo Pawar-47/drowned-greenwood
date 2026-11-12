@@ -82,6 +82,10 @@ def parse_entry(raw, group):
 def variant_name(name, index, count):
     if count == 1:
         return name
+    # chr(ord("a") + index) runs past 'z' and into punctuation above 26 variants. Refuse
+    # rather than emit a name the naming convention cannot express.
+    if index >= 26:
+        raise ValueError("variant index %d exceeds the 26 single-letter suffixes" % index)
     return "%s_%s" % (name, chr(ord("a") + index))
 
 
@@ -138,6 +142,11 @@ def build(manifest):
                 continue
             emit(entry, group_key, group)
 
+    # Snapshot the authored entries ONCE, before any derived group is built. emit() adds to
+    # base_names as it goes, so a snapshot taken inside the derived loop would let a second
+    # derived group derive from the first group's derived entries — icons of icons.
+    authored = list(base_names.items())
+
     # Derived groups: one entry per matching asset in the named source categories.
     for group_key, group in categories.items():
         sources = group.get("derive_from")
@@ -148,9 +157,6 @@ def build(manifest):
         if not prefix or not filters:
             fail("%s: derive_from needs derive_prefix and derive_filter" % group_key, problems)
             continue
-        # Snapshot: emit() adds to base_names as it goes, and a derived group must only ever
-        # be built from authored entries, never from another derived group.
-        authored = list(base_names.items())
         for source_key in sources:
             if source_key not in categories:
                 fail("%s: derive_from names unknown category %r" % (group_key, source_key), problems)

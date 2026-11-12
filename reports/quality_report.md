@@ -38,10 +38,12 @@ The checks that do run are the tool and definition gates, and their results live
 `reports/tool_evaluation.md` rather than here, because they measure tools and definitions, not
 assets:
 
-- `tools/validate/check_scripts.py` — every Python, shell, JSON, shader and workflow file parses
-- `tools/validate/check_manifest.py` — expanded assets, budget coverage, licence allowlist
-- `tools/validate/check_skeletons.py` — bone caps, hierarchy, Godot profile names, LOD counts,
-  bilateral optional bones, species coverage
+- `tools/validate/check_scripts.py` — every Python, shell, JSON, shader and workflow file parses,
+  plus a sampler-hint check against Godot's documented hint list
+- `tools/validate/check_manifest.py` — expanded assets, budget coverage, licence allowlist,
+  built-record path/hash requirement
+- `tools/validate/check_skeletons.py` — bone caps, hierarchy, Godot profile names, LOD counts
+  recomputed from the bone list, bilateral optional bones, species coverage, retarget status
 
 ## Declared budgets versus the target
 

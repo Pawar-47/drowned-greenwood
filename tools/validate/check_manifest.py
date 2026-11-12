@@ -130,8 +130,11 @@ def main():
         "CC-BY-4.0",
         "CC-BY-3.0",
     }
+    # str() around the value matters: sorted() raises TypeError on a set mixing None and str,
+    # so a single record with the field absent would crash the validator instead of reporting
+    # the missing licence.
     bad_licences = sorted(
-        {record.get("source_license") for record in assets} - allowed_licences
+        {str(record.get("source_license")) for record in assets} - allowed_licences
     )
     if bad_licences:
         problems.append(

@@ -5,68 +5,76 @@
 > truth. This file carries the reasoning the generated tables cannot, and is updated by hand
 > when the reasoning changes. If the two disagree, the artifact wins.
 
-**Runs recorded:** `fe39869` through `ecca637`. Every entry comes from those runs' logs.
+**Runs recorded:** `fe39869` through `1aed003`. Every entry comes from those runs' logs.
 Anything not measured says so.
 
 ## Verdict
 
-Phase 0 is **setup complete, verification incomplete**. It is not "closed with zero defects":
-several claims earlier versions of this file made have since been withdrawn, and three checks
-had never been run at all until an audit pointed at them.
+Phase 0 is **nearly closed**. The last run reports **37 passed, 1 expected failure, 2 defects**,
+and both defects have since been addressed:
 
 | Tool | State | Evidence |
 |---|---|---|
 | Blender 4.2.23 and 4.5.16 | **USE** | checksums verified, headless startup, glTF export with material intact (2208 tris) |
 | Cycles CPU | **USE — official preview renderer** | 640x360, 32 samples, denoise, clipping 0.0 |
 | Workbench / EEVEE via Xvfb | available, not depended on | both render under llvmpipe |
-| Godot 4.7.2 | **USE — import gate and shader compile gate** | imports and loads Blender's GLB: `meshes=1, tris=2208` |
+| Godot 4.7.2 | **USE — import gate and shader compile gate** | imports and loads Blender's GLB: `tris=2208`; compiles both shader includes |
 | gltfpack v1.3 | **USE with `-noq`** | quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50 %) |
 | Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd` |
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list, file list, 1k download |
-| **MPFB2** | **UNDER REPAIR** | `register()` raises `ValueError: The "package" does not name an extension`. It is an extension (`src/mpfb/blender_manifest.toml`) that was being installed as a legacy add-on. Now installed via `extension install-file` |
-| **Modular Tree** | **USE — correction** | 9 operators register in `bpy.ops.mtree`. `quick_generate` failed with `No module named 'm_tree'` — the extension's package directory is not on `sys.path`; the probe now adds it |
+| **Shaders** | **USE — verified** | both includes compile in Godot: wind exposes 6 uniforms, wetness 1 |
+| **MPFB2** | **USE for meshes** | builds and exports a human that Godot loads (`tris=36972`); **no armature**, and over the triangle budget |
+| **Modular Tree** | **USE — prebuilt release** | registers 9 operators; installed from the release zip because the source ships only C++ |
 | Quaternius packs | **MEASURED** | **43 clips, 16 of 41 families covered.** 25 families missing, including every melee weapon, skinning, butchering and the bow |
 
 ## Withdrawn claims
 
-Two statements in earlier versions of this file were wrong, and are recorded here rather than
+Three statements in earlier versions of this file were wrong, and are recorded here rather than
 quietly edited out, because a report that hides its own corrections cannot be trusted:
 
 1. **"Modular Tree rejected after 3 attempts."** Wrong. The extension registers 9 operators.
    My probe looked for `bpy.ops.m_tree`; the real namespace is `bpy.ops.mtree`.
 2. **"MPFB2 needs asset packs this pipeline does not install."** Wrong. Its data ships in the
    repository: `src/mpfb/data/3dobjs/base.obj` alone is 1.7 MB.
+3. **"MTree registers but cannot generate because its package directory is not on sys.path."**
+   Half wrong. Adding it to `sys.path` exposed the real cause: `m_tree` is a compiled C++
+   extension, so no `sys.path` change could ever work. The prebuilt release does.
 
-## The MPFB2 failure, precisely
+## MPFB2: from "inert" to a human in Godot
 
-What is established: the module imports from the installed path
-(`…/addons/mpfb/__init__.py`), `register()` is called, and **zero operators appear**.
+The chain that finally worked, in the order the errors appeared:
 
-What is not established: why. Three candidate causes were chased and two were wrong. The
-remaining structural fact is that MPFB2 defines `fake_bl_info`, not `bl_info` — Blender needs
-`bl_info` to recognise a legacy add-on, and the official package has it injected by a build
-outside the repository. The current probe bypasses the add-on loader entirely and calls
-`register()` directly, which needs no `bl_info`, and reports the exception if one is raised.
+1. `addon_utils.enable()` inside `try/except` — cannot fire, so three runs reported PASS.
+2. "It needs asset packs" — wrong; `src/mpfb/data/3dobjs/base.obj` is in the repository.
+3. `fake_bl_info` — real, but the fix I drew from it (install as a legacy add-on) was wrong.
+4. **`ValueError: The "package" does not name an extension`** — MPFB2 ships
+   `src/mpfb/blender_manifest.toml`; it is an extension, and `register()` calls
+   `bpy.utils.extension_path_user()`. Installed with `extension install-file`, it works.
 
+Result: `MPFB2 human export PASS — meshes=1, tris=36972` and
+`Godot load of the MPFB2 human PASS — tris=36972`.
 
-## Modular Tree: I was wrong, and the correction matters
+## Modular Tree: the fix is the release, not the source
 
-For several runs the report said Modular Tree registered zero operators. It does not. The
-extension registers fine; my probe asked for `bpy.ops.m_tree` when the operators live in
-`bpy.ops.mtree`. Two separate mistakes, both mine:
+Four separate mistakes, all mine, each producing a confident wrong answer:
 
-1. `hasattr(bpy.ops, "m_tree")` is always True, because `bpy.ops` resolves names lazily. That
-   produced a **false pass** once.
-2. Looking only at `m_tree` produced a **false failure** afterwards, because the real namespace
-   is `mtree`.
+1. `hasattr(bpy.ops, "m_tree")` is always True — a **false pass**.
+2. Looking only at `bpy.ops.m_tree` when the operators live in `bpy.ops.mtree` — a **false
+   failure**, reported as a rejection of the tool.
+3. `read_factory_settings()` after enabling, which unregistered the extension — 9 operators
+   found, then "could not be found" one line later.
+4. Adding the extension directory to `sys.path`, which turned
+   `No module named 'm_tree'` into `cannot import name 'm_tree' from 'm_tree'`.
 
-The probe now discovers the namespace instead of assuming it, and picks the generator from what
-it finds (`quick_generate` in this build). The rejection is retracted: Modular Tree is available
-for 4.E trees, which restores the node-based branch control the brief wanted.
+Only the fourth got close: `m_tree` is a **compiled pybind11 extension**, and a source clone
+contains a *directory* of C++ under that name. No `sys.path` change can conjure a `.so`. The
+project publishes a prebuilt linux_x64 extension zip, checksum-verified in CI, and that is what
+now gets installed.
 
-**What is still unproven:** that `quick_generate` actually produces a mesh and exports. The
-namespace discovery is measured; tree generation is the next run's job.
+**What is still unproven:** that `quick_generate` produces a mesh. Registration is measured;
+generation is gated (`mtree_generate`, `mtree_export`, `godot_scene_tree`) and will be reported
+from the next run.
 
 ## Quaternius: measured, at last
 
@@ -159,18 +167,62 @@ exist; it has produced no tree, so no GLB, so no Godot import. The report now ga
 `mtree_generate`, `mtree_export` and `godot_scene_tree` precisely so "9 operators registered"
 cannot be read as "trees work".
 
-## Shaders: the probe ran, and found a real bug
+## Shaders: verified
 
-The first shader probe hung for 45 minutes because it called
-`shader.get_instance_shader_parameter_list()`, which is not a Godot method, so the script
-errored before `quit()`. It now uses the documented `get_shader_uniform_list()`, imports the
-project first, and every probe is bounded by `timeout`.
+Both includes now compile in Godot 4.7.2, inside wrapper shaders that call their functions:
 
-On its first real run it failed — and the cause was in my own wrapper: it declared
-`wind_noise` and `gust_flowmap` a second time after including the file that already declares
-them. Duplicate uniform declarations do not compile. The wrapper now declares only a
-`probe_marker` uniform, which exists so the probe can tell "compiled" from "did not throw" even
-for the wetness include, whose own uniforms are all global and may not surface in the list.
+```
+Shader compile: wind     PASS  names=[wind_noise, gust_flowmap, sway_amplitude,
+                                     branch_amplitude, flutter_amplitude, probe_marker]
+Shader compile: wetness  PASS  names=[probe_marker]
+Shader compile summary   PASS  compiled=2, failed=0
+```
+
+The first attempt hung for 45 minutes because it called `get_instance_shader_parameter_list()`,
+which is not a Godot method, so the script errored before `quit()`. The second failed honestly:
+the wrapper redeclared `wind_noise` and `gust_flowmap` after including the file that declares
+them, and duplicate uniforms do not compile. Both fixed, plus a `probe_marker` uniform so the
+wetness include has something observable — its own uniforms are all global and may not appear in
+the uniform list.
+
+## Modular Tree: the fix is the release, not the source
+
+Every earlier attempt cloned the source. That can never work: `m_tree` is a **compiled pybind11
+extension** (`m_tree/pyproject.toml` uses scikit-build-core), and a source clone contains a
+*directory* named `m_tree` holding C++ and no built module. Python resolves it as an empty
+namespace package:
+
+```
+cannot import name 'm_tree' from 'm_tree' (unknown location)
+```
+
+The project's CD workflow compiles the extension and packages it with the addon.
+`modular_tree-5.6.0-linux_x64.zip` (3.78 MB, sha256 `698cf57c…`) is that package, and CI now
+installs it checksum-verified instead of building from source.
+
+## MPFB2: a mesh that reaches Godot
+
+The full chain now runs: MPFB2 builds a human, exports a GLB, and Godot imports and loads it.
+
+```
+MPFB2 human export        PASS  meshes=1, tris=36972, bytes=5132320
+Godot load of the MPFB2 human PASS  meshes=1, surfaces=1, materials=1, tris=36972
+```
+
+Two honest caveats, both measured rather than assumed:
+
+1. **No armature.** `armatures=0, bones=0`. A mesh is not a character; rigging is Phase 5 work
+   and the probe now attempts MPFB2's own rig operators and reports what they produce.
+2. **36,972 triangles** against a 12k–18k budget for a player character. Decimation is
+   mandatory, not optional.
+
+## MPFB2's data probe was itself broken
+
+`mpfb_data` failed on every run by calling `LocationService.get_mpfb_data("3dobjs")`, which
+raised — while the human built and exported perfectly well. A service call failing is not
+evidence that the data is missing. The probe now checks for `data/3dobjs/base.obj` next to the
+module, which is a file a human cannot be built without. The probe is also classified
+informational: its state is reported, but it cannot fail the build.
 
 ## What each state means for the asset list
 

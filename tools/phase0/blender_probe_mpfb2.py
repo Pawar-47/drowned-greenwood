@@ -95,16 +95,29 @@ def body():
     operators = sorted(name for name in dir(bpy.ops.mpfb)) if hasattr(bpy.ops, "mpfb") else []
     report(step="mpfb_operators", ok=len(operators) > 0, count=len(operators), names=operators[:40])
 
+    # Is MPFB's own data present? Check the package directory directly rather than through
+    # LocationService: that service raised on every run while the human built perfectly well,
+    # so its failure was a probe bug reported as a tool defect. A file that must exist for a
+    # human to be built is the honest check.
     data_ok = False
     data_dir = ""
-    try:
-        from mpfb.services.locationservice import LocationService
+    module_dir = os.path.dirname(getattr(module, "__file__", "") or "")
+    base_obj = os.path.join(module_dir, "data", "3dobjs", "base.obj")
+    if os.path.isfile(base_obj):
+        data_ok = True
+        data_dir = base_obj
+    else:
+        # Fall back to the service, but only to locate the directory, not to judge it.
+        try:
+            from mpfb.services.locationservice import LocationService
 
-        resolved = LocationService.get_mpfb_data("3dobjs")
-        data_dir = str(resolved)
-        data_ok = bool(resolved) and os.path.isdir(data_dir)
-    except Exception:  # noqa: BLE001
-        data_dir = short(traceback.format_exc(), 300)
+            resolved = str(LocationService.get_mpfb_data("3dobjs"))
+            data_dir = resolved
+            data_ok = os.path.isdir(resolved) and any(
+                name.endswith(".obj") for name in os.listdir(resolved)
+            )
+        except Exception:  # noqa: BLE001
+            data_dir = short(traceback.format_exc(), 300)
     report(step="mpfb_data", ok=data_ok, data_dir=data_dir)
 
     if not operators:
@@ -126,6 +139,28 @@ def body():
     report(step="mpfb_create_human", ok=created, operator=creator, error=short(create_error, 500))
     if not created:
         return 1
+
+    # A mesh is not a character. The brief needs a rigged one, so try the add-on's own rigging
+    # operators and report what the result actually contains. This is informational, not a gate:
+    # rigging is Phase 5 work, but knowing whether MPFB can rig at all changes the plan.
+    rig_candidates = [name for name in operators if "rig" in name.lower()]
+    rigged = False
+    rig_error = ""
+    rig_operator = ""
+    if rig_candidates:
+        rig_operator = rig_candidates[0]
+        try:
+            getattr(bpy.ops.mpfb, rig_operator)()
+            rigged = any(o.type == "ARMATURE" for o in bpy.data.objects)
+        except Exception:  # noqa: BLE001
+            rig_error = short(traceback.format_exc(), 400)
+    report(
+        step="mpfb_rig",
+        ok=rigged,
+        candidates=rig_candidates[:10],
+        operator=rig_operator,
+        error=rig_error,
+    )
 
     geometry = count_mesh_geometry()
     glb = os.path.join(outdir, "probe_human.glb")

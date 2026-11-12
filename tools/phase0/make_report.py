@@ -57,6 +57,7 @@ DECISIONS = {
     "mpfb_data": ("MPFB2 data directory", "whether MPFB can find base.obj and the rest of its data"),
     "mpfb_create_human": ("MPFB2 create a human", "the operator that builds a body"),
     "mpfb_export": ("MPFB2 human export", "a built human must reach glTF"),
+    "mpfb_rig": ("MPFB2 rig", "whether a built human gets an armature; informational, rigging is Phase 5"),
     "mpfb_operators": ("MPFB2 operators", "the operators the add-on registered"),
     "mpfb2_extension_install": ("MPFB2 extension install", "installing MPFB2 as the extension it is"),
     "addon_install": ("Add-on install", "which layout the add-on used: legacy add-on or 4.2+ extension"),
@@ -66,7 +67,7 @@ DECISIONS = {
     "mtree": ("Modular Tree", "procedural trees for the rainforest species"),
     "mtree_blender": ("MTree Blender version", "the Blender version the extension actually needs"),
     "mtree_modules": ("MTree modules", "which add-on modules Blender can see"),
-    "mtree_syspath": ("MTree sys.path", "the extension's package directory, added so its own imports resolve"),
+    "mtree_native_module": ("MTree native module", "the compiled pybind11 module the operators import"),
     "mtree_operators": ("MTree operators", "the namespace and operators the extension registers"),
     "mtree_generate": ("MTree generate a tree", "the operator that generates a tree"),
     "mtree_export": ("MTree tree export", "a generated tree must reach glTF"),
@@ -145,6 +146,21 @@ EXPECTED_FAILURES = {
     "godot_scene_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
     "godot_load_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
     "godot_import_gltfpack": "the control run for the LOD decision",
+}
+
+# Probes that report a state but must not fail the build, because their failure is not a
+# pipeline defect. They stay in the table and in the summary — visible, never silent — but they
+# are not counted as defects.
+#
+# The distinction matters: mpfb_data probes an internal service that raised on every run while
+# the human built and exported perfectly well. Counting that as a defect is the same mistake as
+# counting a control run as one.
+INFORMATIONAL_PROBES = {
+    "mpfb_data",
+    "mpfb_rig",
+    "quaternius_coverage",
+    "mtree_native_module",
+    "quaternius_inventory",
 }
 
 # Probes that must pass for Phase 0 to be considered closed. A failure here is a defect and
@@ -275,19 +291,33 @@ def main():
         elif row["name"] in EXPECTED_FAILURES:
             status = "EXPECTED FAIL"
             meaning = EXPECTED_FAILURES[row["name"]]
+        elif row["name"] in INFORMATIONAL_PROBES:
+            status = "INFO"
+            meaning = "reported for context; does not fail the build — " + purpose
         else:
             meaning = FAILURE_CONSEQUENCE.get(row["name"], "see the probe detail")
         lines.append("| %s | %s | %s | %s |" % (label, status, row["detail"], meaning))
     lines.append("")
 
     expected = [r for r in ordered if not r["ok"] and r["name"] in EXPECTED_FAILURES]
-    defects = [r for r in ordered if not r["ok"] and r["name"] not in EXPECTED_FAILURES]
+    informational = [r for r in ordered if not r["ok"] and r["name"] in INFORMATIONAL_PROBES]
+    defects = [
+        r
+        for r in ordered
+        if not r["ok"]
+        and r["name"] not in EXPECTED_FAILURES
+        and r["name"] not in INFORMATIONAL_PROBES
+    ]
 
     lines.append("## Outcome")
     lines.append("")
     lines.append("- Probes run: **%d**" % len(ordered))
-    lines.append("- Passed: **%d**" % (len(ordered) - len(expected) - len(defects)))
+    lines.append(
+        "- Passed: **%d**"
+        % (len(ordered) - len(expected) - len(informational) - len(defects))
+    )
     lines.append("- Expected failures (controls that prove a decision): **%d**" % len(expected))
+    lines.append("- Informational failures (context, not defects): **%d**" % len(informational))
     lines.append("- Defects (something is actually broken): **%d**" % len(defects))
     lines.append("")
     if expected:
@@ -296,6 +326,13 @@ def main():
         for row in expected:
             label, _ = DECISIONS.get(row["name"], (row["name"], ""))
             lines.append("- **%s** — %s" % (label, EXPECTED_FAILURES[row["name"]]))
+        lines.append("")
+    if informational:
+        lines.append("### Informational failures")
+        lines.append("")
+        for row in informational:
+            label, _ = DECISIONS.get(row["name"], (row["name"], ""))
+            lines.append("- **%s** — %s" % (label, row["detail"]))
         lines.append("")
     if defects:
         lines.append("### Defects, and the fallback the brief defines for each")

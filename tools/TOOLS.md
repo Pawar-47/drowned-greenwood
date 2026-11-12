@@ -16,7 +16,7 @@ enforces the pin; where it does not yet, it says so rather than implying otherwi
 | Godot | `4.7.2-stable` | URL is version-specific; **archive checksum not yet verified** |
 | gltfpack | `v1.3` | URL is version-specific; **archive checksum not yet verified** |
 | git-filter-repo | `2.45.0` | exact version in `pip install` |
-| Modular Tree | commit `faf77c1` | exact commit fetched in CI (`fetch --depth 1 <sha>`) |
+| Modular Tree | release asset `modular_tree-5.6.0-linux_x64.zip`, sha256 `698cf57c…` | **SHA-256 verified in CI**; prebuilt, because the source ships C++ only |
 | MPFB2 | tag `v2.0.18` | exact tag cloned in CI |
 | Infinigen | commit `53033dd` | exact commit fetched in CI |
 | glTF-Transform | `4.2.1` | exact version in CI (`@gltf-transform/cli@4.2.1`) |
@@ -43,7 +43,7 @@ table exists to prevent.
 | Infinigen | commit `53033dd55c7191cbc436be6ffbb63c026935a509` | exact commit fetched in CI | **working** | rocks, plants, mushrooms, clouds, materials |
 | Poly Haven API | live, asset IDs recorded per download | `api.polyhaven.com` | **working** | CC0 PBR textures, HDRIs, scanned models |
 | Quaternius | release `third-party-quaternius`, sha256 `cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724` | fetched from the release by CI | **measured: 43 clips, 16 of 41 families** | CC0 humanoid animation clips |
-| Modular Tree | commit `faf77c1538ce8af3d70aed036b8a540058521347`, v5.6.0 | exact commit fetched in CI | **installs and registers 9 operators; generation fails** (`cannot import name 'm_tree' from 'm_tree'`) | procedural trees |
+| Modular Tree | release `5.6.0`, asset `modular_tree-5.6.0-linux_x64.zip`, sha256 `698cf57c2fc9e695d241aea7d232493f48027b5930538e6062a6e9e320c9044a` | SHA-256 verified in CI | **prebuilt release only** — see below | procedural trees |
 | MPFB2 | tag `v2.0.18` | exact tag cloned in CI, installed with `extension install-file` | **registers and exports a 36,972-tri human — over the 12k–18k budget, and with no armature** | human bodies, heads, base clothing |
 
 ## Outstanding pins
@@ -64,6 +64,24 @@ satisfies it, and its glTF exporter is the one the rest of the pipeline is writt
 A second Blender version may be added per job later if MTree or Infinigen demand it; each job
 pins exactly one Blender version.
 
+## Modular Tree must come from the release, not the source
+
+MTree's operators do `from m_tree import m_tree`. `m_tree` is a **compiled pybind11 extension**
+built with scikit-build-core (`m_tree/pyproject.toml`, `m_tree/CMakeLists.txt`). A source clone
+contains a *directory* called `m_tree` holding C++ sources and no built module, so Python
+resolves it as an empty namespace package and the import fails with:
+
+```
+cannot import name 'm_tree' from 'm_tree' (unknown location)
+```
+
+That is not a bug in the tool and not something a `sys.path` tweak fixes. The project's CD
+workflow compiles the extension and packages it with the addon; `modular_tree-5.6.0-linux_x64.zip`
+is that package, and it is what CI installs, checksum-verified.
+
+Building it ourselves would mean cmake, a C++20 toolchain and a vcpkg build of Eigen on every
+run. Downloading the 3.8 MB release is faster, pinned and verifiable.
+
 ## Decisions taken on the Phase 0 evidence (owner-approved)
 
 | Question | Decision |
@@ -71,7 +89,7 @@ pins exactly one Blender version.
 | Preview rendering | **Cycles CPU is the official preview renderer.** Low samples with denoise, contact sheets at roughly 640×360. Each report states which engine actually produced the pixels. Workbench and EEVEE under Xvfb + llvmpipe are probed but are not depended on. |
 | Godot visual checks | Not in CI. The Godot headless **import and load** check stays; anything that needs pixels happens on a real device. |
 | Infinigen | Approved as planned: `generate_individual_assets` only, CPU, small shards, never full scenes. |
-| Modular Tree | Approved. If the fork does not load in Blender 4.2, trees come from the Infinigen plant factories plus custom generators, and the quality loss is recorded in `reports/tool_evaluation.md`. A separate Blender version per job is allowed. |
+| Modular Tree | Approved, and it runs under **Blender 4.5.16** (its manifest requires 4.5.0). Installed from the **prebuilt release zip**, because the source ships only C++. If generation still fails, trees come from the Infinigen plant factories plus custom generators and the loss is recorded in `reports/tool_evaluation.md`. |
 | Quaternius animations | The release supplies `UAL1_Standard.glb` and `UAL1_Standard_RM.glb`: whole animation libraries in single containers. **Measured: 43 clips, 16 of 41 families covered.** The 25 unmatched families — every melee weapon, skinning, butchering, the bow among them — are authored with `bpy`. Coverage matching is a name-keyword heuristic and is optimistic: it counts `Pistol_Aim` as a bow aim. |
 | fps | Not measured in CI. Static budgets only (triangles, draw calls, materials, texture memory); `tech_perf_overlay_stub` is P1 so real-device measurement is possible. |
 
