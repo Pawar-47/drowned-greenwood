@@ -21,7 +21,26 @@ Both fall back exactly as the brief prescribes.
 | Poly Haven API | **USE** | asset list, file list, 1k download |
 | **MPFB2** | **REJECT** | 3 attempts, still `ModuleNotFoundError: No module named 'mpfb'` |
 | **Modular Tree** | **REJECT** | 3 attempts, registers 0 operators under Blender 4.5.16 |
-| Quaternius packs | **AVAILABLE** | owner published `Universal.Animation.Library.Standard.zip` (15.9 MB, sha256 `cc73fc4e…`); CI fetches, unzips and inventories it |
+| Quaternius packs | **PARTIAL** | owner published `Universal.Animation.Library.Standard.zip` (15.9 MB, sha256 `cc73fc4e…`); CI fetches it, but the archive yielded only **4 animation files** (2 `.fbx`, 2 `.glb`) — see below |
+
+## Quaternius: the pack is much smaller than expected
+
+The first successful inventory of `Universal.Animation.Library.Standard.zip` found **4 animation
+files** in a 15.9 MB archive (`suffixes={'.fbx': 2, '.glb': 2, '.png': 3, '.txt': 2, '.zip': 1}`).
+Two `.fbx` and two `.glb` is most likely two animations in two formats, not a library.
+
+The brief's expectation for this pack was "120+ animations", with the free Standard download
+covering only part of that. Four files is below even that. Two possibilities, and the next run
+distinguishes them because it now logs `unzip -l` and the clip file names:
+
+1. **The upload is a sample or a teaser**, not the Standard pack. The fix is on the owner: upload
+   the full Standard ZIP from the pack page.
+2. **The pack really is this small.** Then Phase 5 authors nearly every clip with `bpy`, which
+   the brief already permits, and the animation coverage report will say so plainly.
+
+Either way, **no clip count is being claimed**. The inventory reports `coverage unknown` rather
+than "0 of 40 covered", because a pack that yields no clips has not proved anything about the
+clips it might contain.
 
 ## What the rejections mean for the asset list
 
