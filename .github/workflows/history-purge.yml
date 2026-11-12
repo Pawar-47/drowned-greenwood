@@ -105,12 +105,26 @@ jobs:
           echo "validated $count path(s):"
           cat purge_paths.txt
 
-      - name: Mirror clone
+      - name: Mirror clone, then strip the credential from it
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # A token-bearing URL is necessary to clone a private mirror, but `git clone` writes
+          # that URL into `.git/config` — and this repository's backup step tars the whole
+          # working directory, so the token would be archived and uploaded as an artifact that
+          # outlives the job by 90 days. Strip it before anything is copied or archived.
           git clone --mirror "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" purge-work
+          git -C purge-work remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+
+          # Prove the strip worked rather than assuming it. If any token-shaped string survives
+          # anywhere in the config, stop: an unverified backup is worse than none.
+          if grep -rEq 'x-access-token|ghs_|github_pat_|:[A-Za-z0-9_]{30,}@github' purge-work/.git/config; then
+            echo "REFUSING: a credential survived in purge-work/.git/config"
+            grep -rEo 'x-access-token|ghs_|github_pat_' purge-work/.git/config || true
+            exit 1
+          fi
+          echo "credential stripped from purge-work/.git/config"
           cd purge-work
           echo "size before:" && git count-objects -vH
 
@@ -118,9 +132,27 @@ jobs:
         run: |
           set -euo pipefail
           cp -r purge-work purge-backup
+          # Belt and braces: the copy inherits the already-stripped config, but this checks the
+          # copy itself, because that is what gets archived.
+          if grep -rEq 'x-access-token|ghs_|github_pat_|:[A-Za-z0-9_]{30,}@github' purge-backup/.git/config; then
+            echo "REFUSING: a credential is present in purge-backup/.git/config"
+            exit 1
+          fi
           tar -czf purge-backup.tar.gz purge-backup
           sha256sum purge-backup.tar.gz | tee purge-backup.sha256
           echo "backup size: $(du -h purge-backup.tar.gz | cut -f1)"
+
+      - name: Scan the archive for credentials before uploading it
+        run: |
+          set -euo pipefail
+          # The archive is what leaves the runner, so scan the archive, not the directory it
+          # came from. A token found here means the earlier checks missed a path; fail loudly.
+          if tar -xzOf purge-backup.tar.gz ./purge-backup/.git/config 2>/dev/null \
+              | grep -Eq 'x-access-token|ghs_|github_pat_'; then
+            echo "REFUSING: the archive contains a credential in .git/config"
+            exit 1
+          fi
+          echo "archive scanned: no credential patterns found"
 
       - name: Install git-filter-repo (pinned)
         run: |
@@ -166,7 +198,14 @@ jobs:
         run: |
           set -euo pipefail
           cd purge-work
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # `git filter-repo` removes the origin remote as a safety measure, so `set-url` alone
+          # would fail with "No such remote 'origin'" on an apply run. Add it if it is gone.
+          auth_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git remote get-url origin >/dev/null 2>&1; then
+            git remote set-url origin "$auth_url"
+          else
+            git remote add origin "$auth_url"
+          fi
           git push --force --all
           git push --force --tags
 
@@ -174,6 +213,14 @@ jobs:
         if: ${{ inputs.mode == 'dry-run' }}
         run: |
           echo "DRY RUN: history was rewritten in the runner only. Nothing was pushed."
-          echo "The rewritten mirror and the backup are in this run's artifacts."
-          echo "To apply, dispatch again with mode=apply and confirm=FORCE-PUSH, after"
-          echo "downloading and checking the backup."
+          echo ""
+          echo "This run's artifact is purge-backup.tar.gz: a copy of the mirror as it was"
+          echo "BEFORE the rewrite, plus its sha256. That is the rollback material."
+          echo ""
+          echo "The rewritten mirror itself is not uploaded. It would be the same size as the"
+          echo "backup and nothing can be restored from it, so it would double the artifact"
+          echo "cost for no gain."
+          echo ""
+          echo "An apply run makes its OWN fresh backup and pushes from its own mirror. It does"
+          echo "not reuse this artifact. Review this dry run's report, then dispatch"
+          echo "mode=apply with confirm=FORCE-PUSH knowing that apply re-does the work."

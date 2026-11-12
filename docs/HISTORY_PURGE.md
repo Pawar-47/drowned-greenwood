@@ -38,9 +38,22 @@ Safety properties worth knowing:
   force-push steps is a shell-injection hole.
 - Paths are validated against `^[A-Za-z0-9._/-]+$`, must be relative, and must not contain `..`.
   Anything else is rejected rather than escaped.
+- **The access token never reaches the backup.** `git clone` writes the token-bearing URL into
+  `.git/config`, and the backup step tars the whole directory — so the credential would have
+  been archived and uploaded for 90 days. The remote URL is rewritten to a token-free one
+  immediately after cloning, the config is grepped for token patterns, and the finished archive
+  is scanned again before upload. Any hit aborts the run.
 - The backup is uploaded as a 90-day artifact **before** the push step, so it outlives the
-  runner. The old version copied a backup and then threw it away with the container.
+  runner.
 - `git-filter-repo` is pinned to an exact version, so a purge behaves the same next year.
+
+**What a dry run does and does not give you.** It uploads `purge-backup.tar.gz`: the mirror as it
+was *before* the rewrite, plus its checksum. That is the rollback material. The rewritten mirror
+is **not** uploaded — it would double the artifact cost and nothing can be restored from it.
+
+An apply run makes its **own** fresh backup and pushes from its own mirror. It does not reuse the
+dry run's artifact, so approving a dry run is a judgement that the path list is correct, not a
+guarantee that apply operates on identical bytes.
 
 ## Manual steps (what the workflow does, so it can be done by hand)
 

@@ -24,6 +24,10 @@ on:
     paths:
       - "tools/phase0/**"
       - "tools/TOOLS.md"
+      # Shaders are compiled by the Godot job in this workflow. Without this, editing a shader
+      # did not trigger the only job that actually compiles one, so a broken include could reach
+      # main with every workflow green: validate only does a static hint check.
+      - "shaders/**"
       - ".github/workflows/phase0-tool-evaluation.yml"
 
 permissions:

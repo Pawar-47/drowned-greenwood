@@ -84,6 +84,15 @@ FAMILY_KEYWORDS = {
 
 MANIFEST = "assets/manifest.json"
 
+# Assets whose names begin with `anim_` but which are not animation clips.
+#
+# `anim_retarget_report` is a written report that lives in 4.G.rig. Counting it as an animation
+# family inflated the denominator from 41 to 42, which made the coverage figure look worse than
+# it is and added a phantom entry to the missing list. Anything added here must say what it is.
+NON_ANIMATION_ASSETS = {
+    "anim_retarget_report": "a report, not a clip",
+}
+
 
 def load_families(manifest_path=MANIFEST):
     """Read the animation families from the manifest and attach keywords to each.
@@ -103,7 +112,16 @@ def load_families(manifest_path=MANIFEST):
     for group in manifest.get("categories", {}).values():
         for raw in group.get("assets", []):
             name = raw.split("|")[0]
-            if name.startswith("anim_") and name not in declared:
+            if not name.startswith("anim_"):
+                continue
+            # Not every anim_* asset is an animation. `anim_retarget_report` is a report that
+            # lives in 4.G.rig, and counting it as a family inflated the denominator from 41 to
+            # 42 — so a coverage figure of "16 of 42" understated how much was covered and made
+            # the missing list one family longer than it is.
+            if name in NON_ANIMATION_ASSETS:
+                notes.append("%s is not an animation; excluded from the family count" % name)
+                continue
+            if name not in declared:
                 declared.append(name)
 
     if not declared:

@@ -45,6 +45,39 @@ assets:
 - `tools/validate/check_skeletons.py` — bone caps, hierarchy, Godot profile names, LOD counts
   recomputed from the bone list, bilateral optional bones, species coverage, retarget status
 
+## What the manifest validator does NOT check yet
+
+An audit correctly pointed out that `check_manifest.py` validates the *plan*, not the *product*.
+It confirms structure, budget coverage, licence allowlist and that a record claiming `built` has
+a path and a SHA-256 — but it does not open the file and check any of it:
+
+| Not yet checked | Why it cannot be, today |
+|---|---|
+| the referenced file exists | no asset exists yet; every record is `pending` |
+| the recorded SHA-256 matches the file | same |
+| the recorded size matches the file | same |
+| per-asset file-size limits | same |
+| actual per-category storage consumption | same |
+| triangle counts, texture dimensions, material counts | needs the GLB opened; no GLB exists |
+| LOD availability and ratios | same |
+| skeleton and animation compatibility | same |
+
+This is Phase 1 work that becomes possible the moment the first asset is built, and it is the
+reason `assets/manifest.json` is described as a plan rather than an inventory. Writing the checks
+now, against zero files, would produce a validator that passes by finding nothing — the exact
+failure mode in `docs/LESSONS.md` #3.
+
+## Checks that are weaker than they look
+
+- **`check_scripts.py` validates syntax, not meaning.** It proves a file parses; it cannot prove
+  the logic is right.
+- **The shader hint check is a static allowlist.** It catches `hint_black`; it cannot prove a
+  shader compiles. Only the Godot shader probe does that, and only for the two includes it knows.
+- **Quaternius coverage is a name-keyword heuristic.** It counts `Pistol_Aim` as a bow aim, so
+  16 of 41 is an optimistic figure, not a measurement of usable clips.
+- **`check_skeletons.py` validates definitions, not deformation.** It proves the bone lists are
+  consistent and within budget; it cannot prove a skinned mesh deforms correctly.
+
 ## Declared budgets versus the target
 
 The category budgets total **790 MB** against a **700 MB target** and an **800 MB hard cap**.

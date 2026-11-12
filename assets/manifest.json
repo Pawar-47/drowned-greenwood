@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "The Drowned Greenwood",
-  "note": "Source of truth for the asset list. Every named asset from the brief's section 4 is present exactly once, plus the four additions approved in section 4 of the review. `categories` is the authored source; `tools/build_manifest.py` expands it into one record per asset (variants included) and writes `assets/manifest.expanded.json`, which is what the validators and the game consume. Never hand-edit a built record: edit this file, then rebuild.",
+  "note": "Source of truth for the asset list. Every named asset from the brief's section 4 is present exactly once, plus the six approved additions: four from section 4 of the review, and two animal skeleton families found while writing the coverage validator. assets/ADDITIONS.md is the record of what each one is and why. `categories` is the authored source; `tools/build_manifest.py` expands it into one record per asset (variants included) and writes `assets/manifest.expanded.json`, which is what the validators and the game consume. Never hand-edit a built record: edit this file, then rebuild.",
   "entry_format": "name|tier|priority|variants|source_tool  — an empty field inherits from the group",
   "field_defaults": {
     "path": null,
