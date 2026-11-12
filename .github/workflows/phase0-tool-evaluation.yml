@@ -68,16 +68,17 @@ env:
   BLENDER45_SHA256: "23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11"
   GODOT_VERSION: "4.7.2-stable"
   GODOT_URL: "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
-  # Godot publishes no checksum file with its GitHub release assets — there is no
-  # SHA256-SUMS.txt at that tag, it returns 404 — so this cannot be vendor-verified the way
-  # Blender's can. Left empty on purpose: the download step then computes the hash, reports it
-  # as UNPINNED rather than as verified, and writes it into the run summary so it can be pasted
-  # here once. An empty value must never read as "checked and fine"; see `godot_checksum` in
-  # reports/tool_evaluation.md.
-  GODOT_SHA256: ""
+  # Pinned to the digest GitHub records for this release asset (the `digest` field of the
+  # release-asset API), which is computed by GitHub from the uploaded bytes.
+  #
+  # An earlier version of this file claimed Godot published no checksum at all. That was wrong:
+  # it publishes SHA512-SUMS.txt with the release. This uses the SHA-256 because that is what
+  # `sha256sum` produces on the runner without a second tool.
+  GODOT_SHA256: "cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4"
   GLTFPACK_URL: "https://github.com/zeux/meshoptimizer/releases/download/v1.3/gltfpack-ubuntu.zip"
-  # Same situation as Godot: meshoptimizer publishes no checksum for its release assets.
-  GLTFPACK_SHA256: ""
+  # Same source. Independently confirmed: the CI run measured 0666d9dc… for this archive before
+  # it was pinned, and the vendor digest matches character for character.
+  GLTFPACK_SHA256: "0666d9dc40d60fe5b9a45f3fc24f8e6ca87112974bd5de9ca57152aa13d06017"
   # Git dependencies are pinned to an exact commit or tag. A HEAD clone means an upstream
   # commit can change a generated asset without this repository changing.
   MPFB2_TAG: "v2.0.18"

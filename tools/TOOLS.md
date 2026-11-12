@@ -18,8 +18,8 @@ facts is a guarantee that one of them is wrong.
 |---|---|---|---|
 | Blender 4.2 | `4.2.23` LTS, linux-x64, sha256 `bea0eb31…` | **SHA-256 verified on every run**, in both jobs, cache hit or miss | working |
 | Blender 4.5 | `4.5.16` LTS, linux-x64, sha256 `23432b06…` | **SHA-256 verified on every run** | working |
-| Godot | `4.7.2-stable`, linux.x86_64 | `--version` confirmed; **archive hash computed and reported, not pinned** | working, pin outstanding |
-| gltfpack | `v1.3`, `gltfpack-ubuntu.zip` | `-si` verified end to end; **archive hash computed and reported, not pinned** | working — `-noq` mandatory |
+| Godot | `4.7.2-stable`, linux.x86_64, sha256 `cadd3204…` | **SHA-256 verified on every run** against the digest GitHub records for the release asset | working |
+| gltfpack | `v1.3`, `gltfpack-ubuntu.zip`, sha256 `0666d9dc…` | **SHA-256 verified on every run**; confirmed twice — the vendor digest and a CI measurement agree | working — `-noq` mandatory |
 | glTF-Transform | `4.2.1` exact | exact version in CI | working |
 | git-filter-repo | `2.45.0` | exact version in `pip install` | working |
 | Python | `3.11` | `actions/setup-python` | working |
@@ -36,13 +36,16 @@ An unpinned dependency can change a generated asset without the repository chang
 
 | Item | State | Why it is not done |
 |---|---|---|
-| Godot archive checksum | hash computed and **reported as UNPINNED** each run | Godot publishes no checksum file with its GitHub release assets (no `SHA256-SUMS.txt` at that tag — it 404s), so there is no vendor value to check against. The run prints the measured hash in the job summary; pasting it into `GODOT_SHA256` makes the pin real. Until then the probe reports `ok=False reason=unpinned` rather than claiming verification. |
-| gltfpack archive checksum | same mechanism | meshoptimizer publishes no release-asset checksums either. |
 | GitHub Actions | major tags | 14 pins across three workflows; needs each action's commit SHA resolved. No behavioural change, so it is queued behind the asset pipeline. |
 
-**The rule these follow:** an unverified pin must never read as a verified one. That is why the
-Godot and gltfpack probes report `ok=False reason=unpinned` and write a warning into the job
-summary, instead of silently passing as they did before.
+Everything else is pinned and verified. Godot and gltfpack were listed here as unpinned for a
+while; both are now checked against the digest GitHub records for the release asset, and
+gltfpack's value was independently confirmed by a CI measurement that matched the vendor digest
+exactly.
+
+**The rule these follow:** an unverified pin must never read as a verified one. That is why an
+empty `GODOT_SHA256` or `GLTFPACK_SHA256` makes the probe report `ok=False reason=unpinned` and
+write the measured hash into the job summary, instead of silently passing as it did before.
 
 ## Why Blender 4.2 LTS and not a newer major
 

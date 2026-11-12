@@ -18,11 +18,12 @@ happens when it is broken, because a rule with no consequence is a comment.
    past red, which is how the one that matters gets missed.
 5. **Cheap checks run first.** `check_scripts.py` parses every Python, shell, JSON, shader and
    workflow file in seconds and gates the expensive jobs on it.
-6. **A pin that is not verified must not read as verified.** Godot and gltfpack have no vendor
-   checksum to compare against, so their probes report `ok=False reason=unpinned` and print the
-   measured hash, instead of the silent pass they used to report. A cache hit must not skip a
-   checksum either: the Blender cache holds the *archive*, keyed by its expected hash, so the
-   check runs on every job. See `tools/TOOLS.md`.
+6. **A pin that is not verified must not read as verified.** An empty checksum variable makes the
+   probe report `ok=False reason=unpinned` and print the measured hash, instead of passing
+   silently. A cache hit must not skip a checksum either: the Blender cache holds the *archive*,
+   keyed by its expected hash, so the check runs on every job. Godot, gltfpack, Blender, Modular
+   Tree, Quaternius and MPFB2 are all pinned and verified now; GitHub Actions is not. See
+   `tools/TOOLS.md`.
 7. **A probe that reports and then crashes is a failure.** The bare `<name>_exit` row is no
    longer discarded: a non-zero exit after a result means the result may be partial.
 8. **A check that cannot be enforced must say what it does not cover.** The animal skeleton
