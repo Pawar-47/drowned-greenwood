@@ -23,11 +23,24 @@ single offending blob makes the clone permanently heavy even after a later commi
 
 ## The workflow
 
-`.github/workflows/history-purge.yml` is **manual only** (`workflow_dispatch`), installs
-`git-filter-repo` with pip, and force-pushes. It has two inputs: the paths to purge, and a
-confirmation string that must read exactly `FORCE-PUSH`. It refuses to run without it.
+`.github/workflows/history-purge.yml` is **manual only** (`workflow_dispatch`) and has three
+inputs: the paths to purge, a `mode` of `dry-run` or `apply`, and a confirmation string.
 
-**Do not run it without explicit approval from the project owner**, because it force-pushes.
+**It is a dry run by default.** In `dry-run` it validates the paths, clones, rewrites history
+in the runner, uploads the backup and stops without pushing anything. To actually apply, you
+dispatch again with `mode=apply` and `confirm=FORCE-PUSH`, having downloaded and checked the
+backup from the dry run.
+
+Safety properties worth knowing:
+
+- Inputs are passed through `env:`, never interpolated into shell source. An earlier version
+  used `${{ inputs.paths }}` directly inside `run:`, which on a `contents: write` workflow with
+  force-push steps is a shell-injection hole.
+- Paths are validated against `^[A-Za-z0-9._/-]+$`, must be relative, and must not contain `..`.
+  Anything else is rejected rather than escaped.
+- The backup is uploaded as a 90-day artifact **before** the push step, so it outlives the
+  runner. The old version copied a backup and then threw it away with the container.
+- `git-filter-repo` is pinned to an exact version, so a purge behaves the same next year.
 
 ## Manual steps (what the workflow does, so it can be done by hand)
 
@@ -36,11 +49,11 @@ confirmation string that must read exactly `FORCE-PUSH`. It refuses to run witho
 git clone --mirror https://github.com/Pawar-47/drowned-greenwood.git purge-work
 cd purge-work
 
-# 2. Back up first. A copy of the mirror is your only undo.
-cp -r . ../purge-backup
+# 2. Back up first, and keep it off the machine you are about to rewrite.
+cp -r . ../purge-backup && tar -czf ../purge-backup.tar.gz ../purge-backup
 
-# 3. Install the tool.
-pip install git-filter-repo
+# 3. Install the pinned tool.
+pip install git-filter-repo==2.45.0
 
 # 4. Remove the paths. Repeat --path for each one.
 git filter-repo --force --invert-paths \
@@ -51,7 +64,7 @@ git filter-repo --force --invert-paths \
 git count-objects -vH
 git log --oneline -5
 
-# 6. Force-push every ref back.
+# 6. Force-push every ref back. This is the irreversible step.
 git push --force --all
 git push --force --tags
 ```

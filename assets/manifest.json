@@ -31,9 +31,10 @@
     "4.I": 70,
     "4.J+4.K": 55,
     "4.M+4.N": 20,
-    "4.O": 60
+    "4.O": 60,
+    "4.P": 25
   },
-  "budget_notes": "Committed final assets target 700 MB, hard cap 800 MB. A category that overflows its budget moves to a Release pack, one tag per category, and every affected asset records that pack plus its SHA-256.",
+  "budget_notes": "Committed final assets target 700 MB, hard cap 800 MB. 4.P covers animal sign decals, hunting structures and the technical assets (impostor atlases, occluders, HLODs, navmesh hints, ragdoll proxies, cloth chains, scatter presets, test worlds). It was missing from this table until an audit pointed out that the declared total was therefore not the real total. A category that overflows its budget moves to a Release pack, one tag per category, and every affected asset records that pack plus its SHA-256.",
   "categories": {
     "4.A": {
       "label": "Sky, atmosphere, weather, light",

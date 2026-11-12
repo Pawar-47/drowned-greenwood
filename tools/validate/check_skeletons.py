@@ -19,6 +19,7 @@ Checks, in the order the brief states the limits:
 """
 
 import json
+import re
 import sys
 
 SKELETON = "assets/char_skeleton_definition.json"
@@ -86,6 +87,76 @@ def check_hierarchy(bones, problems, label):
                 break
 
 
+def check_lod_counts(skeleton, bones, problems):
+    """Recompute the LOD bone counts from the bone list and compare to what the file claims.
+
+    The LOD policy stated 46 and 36 bones, which matched neither the skeleton nor each other:
+    26 non-finger bones plus one bone per finger for ten fingers is 36, and dropping fingers
+    and merging two toes is 24. Numbers written by hand in a policy note drift; numbers derived
+    from the bone list cannot.
+    """
+    names = [bone["name"] for bone in bones]
+    finger_segments = ("Proximal", "Intermediate", "Distal", "Metacarpal")
+    fingers = [n for n in names if any(seg in n for seg in finger_segments)]
+    toes = [n for n in names if n.endswith("Toes")]
+    non_finger = [n for n in names if n not in fingers]
+
+    # One bone per finger: count distinct fingers. Finger bones are named LeftThumbProximal,
+    # RightIndexDistal and so on with no separator, so the segment word is stripped rather than
+    # splitting on "_" — that returned the whole name and counted 30 "fingers" instead of 10.
+    def finger_root(name):
+        for segment in finger_segments:
+            if name.endswith(segment):
+                return name[: -len(segment)]
+        return name
+
+    finger_roots = sorted({finger_root(n) for n in fingers})
+    expected = {
+        "lod0": len(names),
+        "lod1": len(non_finger) + len(finger_roots),
+        "lod2": len(non_finger) - len(toes),
+    }
+
+    policy = skeleton.get("lod_policy", {})
+    for key, value in expected.items():
+        claim = str(policy.get(key, ""))
+        if not claim:
+            problems.append("char_skeleton_definition: lod_policy has no %s" % key)
+            continue
+        # The claim is prose, so look for the number it asserts.
+        numbers = re.findall(r"\d+", claim)
+        if not numbers:
+            problems.append("char_skeleton_definition: lod_policy %s states no count" % key)
+            continue
+        stated = int(numbers[-1])
+        if stated != value:
+            problems.append(
+                "char_skeleton_definition: lod_policy %s says %d bones but the bone list gives %d"
+                % (key, stated, value)
+            )
+    print(
+        "lod counts: lod0=%d lod1=%d lod2=%d (from the bone list)"
+        % (expected["lod0"], expected["lod1"], expected["lod2"])
+    )
+
+
+def check_bilateral_optional(families, problems):
+    """An optional bone must have its mirror optional too, or one side vanishes asymmetrically."""
+    for family in families:
+        optional = family.get("optional_bones", {})
+        for name in optional:
+            if name.startswith("Left"):
+                mirror = "Right" + name[len("Left"):]
+            elif name.startswith("Right"):
+                mirror = "Left" + name[len("Right"):]
+            else:
+                continue
+            if mirror in family["bones"] and mirror not in optional:
+                problems.append(
+                    "%s: %s is optional but its mirror %s is not" % (family["name"], name, mirror)
+                )
+
+
 def check_humanoid(problems):
     skeleton = load(SKELETON)
     bones = skeleton["bones"]
@@ -102,6 +173,7 @@ def check_humanoid(problems):
         )
 
     check_hierarchy(bones, problems, label)
+    check_lod_counts(skeleton, bones, problems)
 
     for bone in bones:
         if bone["name"] not in GODOT_HUMANOID:
@@ -137,6 +209,7 @@ def check_retarget(problems, skeleton):
     retarget = load(RETARGET)
     target_names = {bone["name"] for bone in skeleton["bones"]}
     mapped = set()
+    verified = 0
     for source in retarget["sources"]:
         for target in source.get("map", {}).values():
             mapped.add(target)
@@ -145,15 +218,31 @@ def check_retarget(problems, skeleton):
                     "char_retarget_map: source %s maps to unknown target bone %r"
                     % (source["source_tool"], target)
                 )
-        if source.get("status") == "blocked" and not source.get("blocked_on"):
+        status = source.get("status", "")
+        # A mapping that has not been exercised must say why. "blocked" and
+        # "pending_verification" are both honest states; a bare "verified" with no evidence is
+        # what this catches.
+        if status in {"blocked", "pending_verification"}:
+            reason = source.get("blocked_on") or source.get("status_note")
+            if not reason:
+                problems.append(
+                    "char_retarget_map: %s is %s but does not say why"
+                    % (source["source_tool"], status)
+                )
+        elif status == "verified":
+            verified += 1
+        elif status:
             problems.append(
-                "char_retarget_map: %s is blocked but does not say why" % source["source_tool"]
+                "char_retarget_map: %s has unknown status %r" % (source["source_tool"], status)
             )
     required = {"Hips", "Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}
     missing = required - mapped
     if missing:
         problems.append("char_retarget_map: no source maps %s" % sorted(missing))
-    print("retarget: %d target bones covered by a source mapping" % len(mapped))
+    print(
+        "retarget: %d target bones covered, %d source(s) verified"
+        % (len(mapped), verified)
+    )
 
 
 def check_animals(problems):
@@ -180,6 +269,8 @@ def check_animals(problems):
             "animal_skeleton_definitions: %d species claimed by more than one family: %s"
             % (len(double_claimed), sorted(double_claimed)[:5])
         )
+
+    check_bilateral_optional(families, problems)
 
     for family in families:
         label = family["name"]

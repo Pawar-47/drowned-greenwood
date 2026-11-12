@@ -1,27 +1,54 @@
-# Tool evaluation (Phase 0) — closing report
+# Tool evaluation (Phase 0) — status report
 
-**Runs recorded:** `fe39869`, `60a1104`, `bd6f622`, `896769e`, `00f8443`. Every entry comes
-from those runs' logs. Anything not measured says so.
+> **This file is a written snapshot, not the live result.** CI regenerates a report from each
+> run's logs and uploads it as the `phase0-report` artifact; that generated copy is the current
+> truth. This file carries the reasoning the generated tables cannot, and is updated by hand
+> when the reasoning changes. If the two disagree, the artifact wins.
+
+**Runs recorded:** `fe39869` through `ecca637`. Every entry comes from those runs' logs.
+Anything not measured says so.
 
 ## Verdict
 
-Phase 0 is **closed with two tools rejected**. The brief allows three improvement attempts per
-class before a fallback; MPFB2 and Modular Tree have each had three, and both are still inert.
-Both fall back exactly as the brief prescribes.
+Phase 0 is **setup complete, verification incomplete**. It is not "closed with zero defects":
+several claims earlier versions of this file made have since been withdrawn, and three checks
+had never been run at all until an audit pointed at them.
 
-| Tool | Verdict | Evidence |
+| Tool | State | Evidence |
 |---|---|---|
-| Blender 4.2.23 | **USE** | SHA-256 verified, headless, glTF export with material intact (2208 tris) |
+| Blender 4.2.23 and 4.5.16 | **USE** | checksums verified, headless startup, glTF export with material intact (2208 tris) |
 | Cycles CPU | **USE — official preview renderer** | 640x360, 32 samples, denoise, clipping 0.0 |
 | Workbench / EEVEE via Xvfb | available, not depended on | both render under llvmpipe |
-| Godot 4.7.2 | **USE — import gate** | imports and loads Blender's GLB: `meshes=1, tris=2208` |
-| gltfpack v1.3 | **USE with `-noq`** | quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50%) |
-| Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd5` |
+| Godot 4.7.2 | **USE — import gate and shader compile gate** | imports and loads Blender's GLB: `meshes=1, tris=2208` |
+| gltfpack v1.3 | **USE with `-noq`** | quantized output loads nothing; `-noq` loads `tris=1104` (exactly 50 %) |
+| Infinigen | **USE** | installs, imports, asset CLI resolves; commit `53033dd` |
 | glTF-Transform | **USE** | installs, runs |
 | Poly Haven API | **USE** | asset list, file list, 1k download |
-| **MPFB2** | **under repair** | Root cause found. Its data ships with the source (`src/mpfb/data/3dobjs/base.obj` alone is 1.7 MB), so "needs asset packs" was wrong. The real cause is that the module defines **`fake_bl_info`, not `bl_info`**, which Blender needs to recognise a legacy add-on, and `addon_utils.enable()` returns `None` on failure instead of raising — so three runs reported "enable PASS" while nothing registered. |
-| **Modular Tree** | **USE — correction** | 3 attempts. Final run: extension installs, **9 operators** register in `bpy.ops.mtree` (`add_leaves`, `generate_leaf`, `quick_generate`, preset appliers). An earlier rejection was a **false negative in my probe**, which looked for `bpy.ops.m_tree` and concluded the extension was inert. See below. |
-| Quaternius packs | **PARTIAL** | the archive contains **4 files, not 4 clips**: `ual1_standard.{fbx,glb}` and `ual1_standard_rm.{fbx,glb}`. Each is a whole animation library in one container, so the clip count cannot be read from file names. See below. |
+| **MPFB2** | **UNDER REPAIR** | imports and registers, but exposes 0 operators. See below |
+| **Modular Tree** | **USE — correction** | 9 operators register in `bpy.ops.mtree`; an earlier rejection was my probe looking in `bpy.ops.m_tree`. Tree generation not yet proven |
+| Quaternius packs | **UNVERIFIED** | 4 files that are whole animation libraries; clip count needs GLB enumeration |
+
+## Withdrawn claims
+
+Two statements in earlier versions of this file were wrong, and are recorded here rather than
+quietly edited out, because a report that hides its own corrections cannot be trusted:
+
+1. **"Modular Tree rejected after 3 attempts."** Wrong. The extension registers 9 operators.
+   My probe looked for `bpy.ops.m_tree`; the real namespace is `bpy.ops.mtree`.
+2. **"MPFB2 needs asset packs this pipeline does not install."** Wrong. Its data ships in the
+   repository: `src/mpfb/data/3dobjs/base.obj` alone is 1.7 MB.
+
+## The MPFB2 failure, precisely
+
+What is established: the module imports from the installed path
+(`…/addons/mpfb/__init__.py`), `register()` is called, and **zero operators appear**.
+
+What is not established: why. Three candidate causes were chased and two were wrong. The
+remaining structural fact is that MPFB2 defines `fake_bl_info`, not `bl_info` — Blender needs
+`bl_info` to recognise a legacy add-on, and the official package has it injected by a build
+outside the repository. The current probe bypasses the add-on loader entirely and calls
+`register()` directly, which needs no `bl_info`, and reports the exception if one is raised.
+
 
 ## Modular Tree: I was wrong, and the correction matters
 
@@ -48,59 +75,40 @@ The archive `Universal.Animation.Library.Standard.zip` contains `ual1_standard.f
 readme. These are **single containers holding a whole animation library**, which is how the
 Quaternius Universal Animation Library is distributed — not one file per clip.
 
-So `families_covered=0` is a limitation of my inventory, not a fact about the pack: counting
-clips by file name cannot work when one file holds 120 of them. The honest next step is to
-**open the GLB and enumerate its animations**, which needs Blender or glTF-Transform in CI. That
-is a Phase 5 task, and until it runs, the animation coverage is **unknown**, not zero.
+So `families_covered=0` was a limitation of the inventory, not a fact about the pack: counting
+clips by file name cannot work when one file holds a hundred of them. The inventory now reads
+the GLB container directly — a GLB is a header plus length-prefixed chunks whose first chunk is
+JSON, so the animation names are readable with the standard library alone, no Blender needed. It
+reports the real clip count, deduplicated across the FBX and GLB copies of the same library, and
+which of the brief's animation families those names cover.
 
-## MPFB2: the cause, and the fix
+## MPFB2: what is established and what is not
 
-Three runs said "MPFB2 needs asset packs it does not install". That was wrong, and the
-repository says so plainly: `src/mpfb/data/3dobjs/base.obj` alone is 1.7 MB, alongside
-`data/rigs`, `data/targets`, `data/poses` and `data/textures`. The data ships with the source.
+What is established: the module imports from the installed path
+(`…/addons/mpfb/__init__.py`), `register()` is called, and **zero operators appear**.
 
-The actual cause is two facts about Blender that combined into a silent failure:
-
-1. **MPFB2 defines `fake_bl_info`, not `bl_info`.** Blender's add-on loader looks for `bl_info`
-   to recognise a legacy add-on. The official MPFB package has the real `bl_info` injected by
-   its build process, which lives outside this repository — the release `v2.0.18` carries no
-   downloadable assets, and there is no `blender_manifest.toml` either. So a raw clone
-   installed into `scripts/addons` is never recognised, however many files are present.
-2. **`addon_utils.enable()` does not raise.** It returns `None` whether the add-on registered or
-   not, and prints the traceback to stderr. A `try/except` around it can never fire, so the
-   probe reported `mpfb_enable PASS` for three runs.
-
-**The fix: do not use `addon_utils` at all.** The module imports perfectly well — the probe's own
-output shows `module_file=…/addons/mpfb/__init__.py`. So the probe now imports `mpfb` and calls
-`mpfb.register()` directly. That is what an add-on loader does internally, it needs no
-`bl_info`, and any exception surfaces with a real traceback instead of vanishing.
-
-The probe now reports, in order: the module import, the `register()` exception if any, the
-operators that appeared, whether MPFB's own `LocationService` can find its data directory, and
-whether a human can be built and exported. Whichever of those fails, the report will name it.
+What is not established: why. Three candidate causes were chased and two were wrong — a missing
+`bl_info` and a `try/except` that could never fire. The probe now bypasses the add-on loader and
+calls `register()` directly, so any exception surfaces with a real traceback, and it reports the
+data directory, the operators that appeared, and whether a human builds and exports.
 
 **This is a repair of the measurement, not a fourth attempt.** The brief's three attempts were
-spent on three wrong diagnoses. If `register()` now succeeds, MPFB2 was never broken and the
-rejection is retracted the same way Modular Tree's was. If it raises, the traceback finally says
-what is actually wrong — which is what every previous run failed to obtain.
+spent on three wrong diagnoses. If `register()` succeeds, MPFB2 was never broken. If it raises,
+the traceback finally says what is wrong.
 
-## What the rejections mean for the asset list
+## What each state means for the asset list
 
-**Humans (4.G).** The brief already expects the lowest fidelity here and says so. Without MPFB2,
-human bodies come from a custom `bpy` generator: a parametric base mesh with the shared skeleton
-from `char_skeleton_definition.json`, no MPFB2 skin/hair/clothing library. Consequence, stated
-plainly: heads and faces will be stylised rather than realistic, and clothing variety depends
-entirely on our own generators. Recorded in `reports/below_target.md` when the assets are built.
+**Humans (4.G).** MPFB2 is under repair, not verified. If `register()` raises, human bodies come
+from a custom `bpy` generator: a parametric base mesh bound to the shared skeleton from
+`char_skeleton_definition.json`, with no MPFB2 skin, hair or clothing library. Consequence,
+stated plainly: heads and faces will be stylised rather than realistic, and clothing variety
+depends entirely on our own generators. Recorded in `reports/below_target.md`.
 
 **Trees (4.E).** Modular Tree is available after the correction above, so trees use it for the
 branch structure the brief wanted, with Infinigen's plant factories and custom `bpy` generators
 for the species MTree cannot express. What remains unproven is that `quick_generate` produces an
-exportable mesh; the next run answers that, and if it fails the fallback is the original plan:
-Infinigen plus custom generators, with the loss recorded.
-
-**MPFB2 does not block humans (4.G).** Its data is in the source, its module imports, and the
-probe now registers it directly. Skeleton definitions, the manifest, workflows and validators
-are independent of it regardless, so Phase 1 proceeds either way.
+exportable mesh; the Godot job now imports the generated tree, so that is measured rather than
+assumed.
 
 ## The import gate
 

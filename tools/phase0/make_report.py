@@ -40,6 +40,12 @@ DECISIONS = {
     "godot_scene_gltfpack_noq": ("Godot load of gltfpack -noq output", "the control run for the LOD decision"),
     "godot_import_gltfpack": ("Godot import of gltfpack output", "same decision, one step earlier"),
     "godot_import_gltfpack_noq": ("Godot import of gltfpack -noq output", "same decision, one step earlier"),
+    "shader_compile": ("Shader compile", "the project's real shader includes build in Godot"),
+    "shader_summary": ("Shader compile summary", "how many includes compiled and how many failed"),
+    "godot_scene_tree": ("Godot load of the MTree tree", "the tree MTree generated must import and load"),
+    "godot_scene_human": ("Godot load of the MPFB2 human", "the human MPFB2 built must import and load"),
+    "godot_import_tree": ("Godot import of the MTree tree", "same check, one step earlier"),
+    "godot_import_human": ("Godot import of the MPFB2 human", "same check, one step earlier"),
     "mpfb2": ("MPFB2 human", "all human bodies, heads and base clothing"),
     "mpfb_enable": ("MPFB2 enable", "whether Blender accepts the add-on at all"),
     "mpfb_import": ("MPFB2 module import", "the module import, which is what actually fails"),
@@ -106,35 +112,48 @@ FAILURE_CONSEQUENCE = {
     "quaternius_inventory": "clip coverage unknown; the animation report stays open",
     "quaternius_coverage": "coverage is unknown, not zero: the packs downloaded but no clips were found inside them, so the extraction or the pack contents need looking at",
     "quaternius_unzip": "a pack did not extract; its clips are unknown",
+    "shader_compile": "the shader includes do not build; every material using them fails at runtime",
+    "shader_summary": "one or more shader includes failed to compile",
+    "godot_scene_tree": "MTree generates a tree that Godot cannot load; the tree pipeline is unverified",
+    "godot_scene_human": "MPFB2 builds a human that Godot cannot load; the human pipeline is unverified",
+    "godot_import_tree": "the tree file does not import; MTree output is unusable",
+    "godot_import_human": "the human file does not import; MPFB2 output is unusable",
 }
 
-# Probes that are SUPPOSED to fail. Two kinds live here, and neither is a defect:
+# Probes that are SUPPOSED to fail, and why.
+#
+# Only two kinds belong here, and both must name the reason:
 #
 #   * control runs that prove a decision. The quantized gltfpack load is meant to fail; that
 #     failure is the evidence for using -noq. Counting it as a defect inverts its meaning.
-#   * tools rejected after the brief's three attempts. Their probes keep running so a later
-#     change is noticed, but a failure there is the expected state, not news.
+#   * a tool currently under repair, whose failure is the known starting state.
+#
+# Modular Tree was removed from this list when its rejection was retracted. Leaving a retained
+# tool here would have hidden a genuine regression as "expected", which is the worst possible
+# failure mode for a report whose job is to notice regressions.
 EXPECTED_FAILURES = {
     "godot_scene_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
     "godot_load_gltfpack": "the control run: quantized gltfpack output is expected not to load, which is why LODs use -noq",
     "godot_import_gltfpack": "the control run for the LOD decision",
-    "mpfb2": "MPFB2 is rejected after 3 attempts; the custom generator is the plan, not a fallback",
-    "mpfb2_exit": "MPFB2 is rejected after 3 attempts",
-    "mpfb_enable": "MPFB2 is rejected after 3 attempts",
-    "mpfb_import": "MPFB2 is rejected after 3 attempts",
-    "mpfb_operators": "MPFB2 is rejected after 3 attempts",
-    "mpfb_create_human": "MPFB2 is rejected after 3 attempts",
-    "mpfb_diagnostics": "MPFB2 is rejected after 3 attempts",
-    "addon_install_mpfb2": "MPFB2 is rejected after 3 attempts",
-    "mtree": "Modular Tree is rejected after 3 attempts; Infinigen plus custom generators is the plan",
-    "mtree_register": "Modular Tree is rejected after 3 attempts",
-    "mtree_enable": "Modular Tree is rejected after 3 attempts",
-    "mtree_operators": "Modular Tree is rejected after 3 attempts",
-    "mtree_add_tree": "Modular Tree is rejected after 3 attempts",
-    "mtree_export": "Modular Tree is rejected after 3 attempts",
-    "mtree_diagnostics": "Modular Tree is rejected after 3 attempts",
-    "addon_install_modular_tree": "Modular Tree is rejected after 3 attempts",
-    "quaternius_packs": "the release was empty until the owner uploaded the packs; now expected to pass",
+}
+
+# Probes that must pass for Phase 0 to be considered closed. A failure here is a defect and
+# must fail the job, not merely appear in a table.
+REQUIRED_PROBES = {
+    "blender_checksum",
+    "blender_env",
+    "gltf_export",
+    "render_cycles",
+    "godot_version",
+    "godot_import",
+    "godot_scene_plain",
+    "shader_compile",
+    "gltfpack_simplify",
+    "gltfpack_noq",
+    "godot_scene_gltfpack_noq",
+    "polyhaven",
+    "gltf_transform_install",
+    "quaternius_download",
 }
 
 
@@ -273,6 +292,26 @@ def main():
     with open(args.out, "w", encoding="utf-8") as handle:
         handle.write(text)
     print(text)
+
+    # Exit non-zero when a REQUIRED probe failed.
+    #
+    # This used to return 0 unconditionally, so with `continue-on-error` on the probe steps the
+    # workflow stayed green while the report listed defects. A report that cannot fail the run
+    # is a diagnostic, not a gate, and Phase 0 was being described as "closed, 0 defects" on
+    # the strength of a green tick it had not earned.
+    required_failures = [
+        row for row in defects if row["name"] in REQUIRED_PROBES
+    ]
+    if required_failures:
+        print(
+            "\nFAILED: %d required probe(s) failed: %s"
+            % (
+                len(required_failures),
+                ", ".join(sorted(row["name"] for row in required_failures)),
+            ),
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

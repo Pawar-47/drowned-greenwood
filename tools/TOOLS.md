@@ -5,11 +5,24 @@ never copied in; it is fetched at a pinned version and recorded here.
 
 ## Pin policy
 
-**Resolve, then pin.** A version that cannot be verified from the vendor's own index is not
-written here from memory. On the first successful Phase 0 run, the workflow records the
-resolved version / commit of each tool in `phase0_log.txt` (lines starting with `RESULT` or
-`*_commit=`); those values are then written into the table below as the pin, and the workflow
-is switched from "resolve" to "verify".
+A build must not change because upstream changed. Every entry below states how the workflow
+enforces the pin; where it does not yet, it says so rather than implying otherwise.
+
+| Tool | Pin | Enforced how |
+|---|---|---|
+| Blender 4.2 | `4.2.23` LTS | SHA-256 verified against Blender's published checksum |
+| Blender 4.5 | `4.5.16` LTS | SHA-256 verified against Blender's published checksum |
+| Godot | `4.7.2-stable` | URL is version-specific; **archive checksum not yet verified** |
+| gltfpack | `v1.3` | URL is version-specific; **archive checksum not yet verified** |
+| git-filter-repo | `2.45.0` | exact version in `pip install` |
+| Modular Tree | commit `faf77c1` | exact commit fetched in CI (`fetch --depth 1 <sha>`) |
+| MPFB2 | tag `v2.0.18` | exact tag cloned in CI |
+| Infinigen | commit `53033dd` | exact commit fetched in CI |
+| glTF-Transform | `4.2.1` | exact version in CI (`@gltf-transform/cli@4.2.1`) |
+| GitHub Actions | `@v4` / `@v5` | **major tags, not commit SHAs**; pinning outstanding |
+
+The outstanding pins are listed honestly: an unpinned dependency can change a generated asset
+without the repository changing. They are Phase 1 work, not forgotten.
 
 ## Verified pins
 

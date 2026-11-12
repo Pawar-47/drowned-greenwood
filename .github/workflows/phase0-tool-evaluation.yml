@@ -47,6 +47,12 @@ env:
   GODOT_VERSION: "4.7.2-stable"
   GODOT_URL: "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
   GLTFPACK_URL: "https://github.com/zeux/meshoptimizer/releases/download/v1.3/gltfpack-ubuntu.zip"
+  # Git dependencies are pinned to an exact commit or tag. A HEAD clone means an upstream
+  # commit can change a generated asset without this repository changing.
+  MPFB2_TAG: "v2.0.18"
+  MTREE_COMMIT: "faf77c1538ce8af3d70aed036b8a540058521347"
+  INFINIGEN_COMMIT: "53033dd55c7191cbc436be6ffbb63c026935a509"
+  GLTF_TRANSFORM_VERSION: "4.2.1"
 
 jobs:
   # Seconds, not minutes. Catches what would otherwise cost a full run.
@@ -200,12 +206,12 @@ jobs:
           if-no-files-found: warn
 
   godot:
-    name: Godot headless import gate
+    name: Godot import gate and shader compile
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [static, blender]
-    # A late probe failing in the Blender job must not hide the import gate: the GLB it needs
-    # is produced by an earlier step.
+    needs: [static, blender, tools]
+    # A late probe failing in the Blender or tools job must not hide the import gate: the GLBs
+    # it needs are produced by earlier steps.
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@v4
@@ -215,6 +221,20 @@ jobs:
         with:
           name: phase0-blender
           path: artifacts/phase0
+
+      - name: Download tool probe outputs (MPFB2 and MTree GLBs)
+        uses: actions/download-artifact@v4
+        with:
+          name: phase0-tools
+          path: artifacts/tools
+
+      - name: Copy the shader includes into the probe project
+        run: |
+          set -euo pipefail
+          # The probe project needs the real includes at res://includes/, so it compiles what
+          # the game will compile rather than a copy that has drifted.
+          mkdir -p tools/phase0/godot_probe/includes
+          cp shaders/*.gdshaderinc tools/phase0/godot_probe/includes/
 
       - name: Fetch Godot ${{ env.GODOT_VERSION }}
         run: |
@@ -230,7 +250,14 @@ jobs:
           echo "RESULT godot_version version=${GODOT_VERSION}" | tee -a "$LOG"
           tools/vendor/godot/godot --version >>"$LOG" 2>&1 || true
 
-      - name: Import and load the generated GLB
+      - name: Compile the project's shader includes
+        run: |
+          source tools/phase0/lib.sh
+          GODOT="$PWD/tools/vendor/godot/godot"
+          run_capture shader_compile "$GODOT" --headless \
+            --path tools/phase0/godot_probe shader_probe.tscn
+
+      - name: Import and load the generated GLBs
         run: |
           source tools/phase0/lib.sh
           GODOT="$PWD/tools/vendor/godot/godot"
@@ -243,6 +270,28 @@ jobs:
           # --headless uses a dummy renderer: no pixels, but a real import and load.
           run_capture godot_import "$GODOT" --headless --path tools/phase0/godot_probe --import
           run_capture godot_load "$GODOT" --headless --path tools/phase0/godot_probe -- label=plain
+
+      - name: Import the generated tree and human
+        run: |
+          source tools/phase0/lib.sh
+          GODOT="$PWD/tools/vendor/godot/godot"
+          # The tree is the one asset this phase claims to have produced. If it does not import
+          # and load, MTree is not verified, whatever its operators reported.
+          for pair in "tree:artifacts/tools/probe_tree.glb" "human:artifacts/tools/probe_human.glb"; do
+            label="${pair%%:*}"
+            src="${pair#*:}"
+            if [ ! -f "$src" ]; then
+              echo "RESULT godot_scene_${label} ok=False reason=glb_missing" | tee -a "$LOG"
+              continue
+            fi
+            dir="tools/phase0/godot_probe_${label}"
+            rm -rf "$dir"
+            cp -r tools/phase0/godot_probe "$dir"
+            rm -rf "$dir/.godot"
+            cp "$src" "$dir/probe_sphere.glb"
+            run_capture "godot_import_${label}" "$GODOT" --headless --path "$dir" --import
+            run_capture "godot_load_${label}" "$GODOT" --headless --path "$dir" -- "label=${label}"
+          done
 
       - name: Import and load the gltfpack-simplified GLBs
         run: |
@@ -345,14 +394,20 @@ jobs:
           source tools/phase0/lib.sh
           BLENDER_ROOT="$(cat tools/vendor/.blender_path)"
           BLENDER="${BLENDER_ROOT}/blender"
+          # Pinned to the release tag. A HEAD clone means an upstream commit can change a
+          # generated asset without this repository changing.
           if [ ! -d tools/vendor/mpfb2 ]; then
-            git clone --depth 1 https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
+            git clone --depth 1 --branch "${MPFB2_TAG}" https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
           fi
           echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
           # Install under the add-on's own package name: MPFB2's package is src/mpfb, and
           # Blender imports an add-on by that name, not by the repository's name.
           bash tools/phase0/install_blender_addon.sh tools/vendor/mpfb2 mpfb2 "$BLENDER_ROOT" 2>&1 | tee -a "$LOG"
-          run_capture mpfb2 "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
+          # PROBE_OUT must point into the directory the workflow uploads, or the generated GLB
+          # is written to /tmp and silently lost. The earlier version defaulted to /tmp/phase0.
+          run_capture mpfb2 env PROBE_OUT=artifacts/phase0 \
+            "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_mpfb2.py
+          ls -l artifacts/phase0/probe_human.glb >>"$LOG" 2>&1 || true
 
       - name: MTree clone, install as extension, and generate a tree
         continue-on-error: true
@@ -360,8 +415,14 @@ jobs:
           set -uo pipefail
           source tools/phase0/lib.sh
           BLENDER45="$(pwd)/tools/vendor/${BLENDER45_DIR}/blender"
+          # Pinned to an exact commit. --depth 1 cannot check out an arbitrary SHA, so fetch
+          # just that commit instead of the whole history.
           if [ ! -d tools/vendor/modular_tree ]; then
-            git clone --depth 1 https://github.com/GoodPie/modular_tree tools/vendor/modular_tree
+            mkdir -p tools/vendor/modular_tree
+            git -C tools/vendor/modular_tree init --quiet
+            git -C tools/vendor/modular_tree remote add origin https://github.com/GoodPie/modular_tree
+            git -C tools/vendor/modular_tree fetch --depth 1 origin "${MTREE_COMMIT}"
+            git -C tools/vendor/modular_tree checkout --quiet FETCH_HEAD
           fi
           echo "mtree_commit=$(git -C tools/vendor/modular_tree rev-parse HEAD)" | tee -a "$LOG"
           # install-file takes a zip whose single top-level folder holds the manifest. python3
@@ -390,14 +451,18 @@ jobs:
           rm -f "$LOG.tmp"
           echo "RESULT mtree_extension_install exit=${ext_code}" | tee -a "$LOG"
           set -e
-          run_capture mtree "$BLENDER45" -b --factory-startup -P tools/phase0/blender_probe_mtree.py
+          # PROBE_OUT into the uploaded directory, so the generated tree survives the run and
+          # the Godot job can import it. Defaulting to /tmp lost every tree ever generated.
+          run_capture mtree env PROBE_OUT=artifacts/phase0 \
+            "$BLENDER45" -b --factory-startup -P tools/phase0/blender_probe_mtree.py
+          ls -l artifacts/phase0/probe_tree.glb >>"$LOG" 2>&1 || true
 
       - name: glTF-Transform CLI
         continue-on-error: true
         run: |
           set -uo pipefail
           source tools/phase0/lib.sh
-          npm install --no-audit --no-fund --prefix tools/vendor/gltf-transform @gltf-transform/cli@4 >>"$LOG" 2>&1
+          npm install --no-audit --no-fund --prefix tools/vendor/gltf-transform "@gltf-transform/cli@${GLTF_TRANSFORM_VERSION}" >>"$LOG" 2>&1
           echo "RESULT gltf_transform_install exit=$?" | tee -a "$LOG"
           npx --prefix tools/vendor/gltf-transform gltf-transform --version >>"$LOG" 2>&1
           echo "RESULT gltf_transform_version exit=$?" | tee -a "$LOG"
@@ -444,7 +509,11 @@ jobs:
           set -uo pipefail
           source tools/phase0/lib.sh
           if [ ! -d tools/vendor/infinigen ]; then
-            git clone --depth 1 https://github.com/princeton-vl/infinigen tools/vendor/infinigen
+            mkdir -p tools/vendor/infinigen
+            git -C tools/vendor/infinigen init --quiet
+            git -C tools/vendor/infinigen remote add origin https://github.com/princeton-vl/infinigen
+            git -C tools/vendor/infinigen fetch --depth 1 origin "${INFINIGEN_COMMIT}"
+            git -C tools/vendor/infinigen checkout --quiet FETCH_HEAD
           fi
           echo "infinigen_commit=$(git -C tools/vendor/infinigen rev-parse HEAD)" | tee -a "$LOG"
           python -m venv tools/vendor/infinigen_venv

@@ -1,34 +1,39 @@
 #!/usr/bin/env python3
-"""Inventory the Quaternius animation packs.
+"""Inventory the Quaternius animation packs by reading the animations inside them.
 
 Run:
     python3 tools/phase0/quaternius_inventory.py --dir artifacts/phase0/quaternius
 
-The owner uploads the free Standard ZIPs to the release `third-party-quaternius`; CI fetches
-them from there, outside git. This unzips them and reports what is really inside, so the
-manifest can state a measured clip count instead of a promised one.
+Why this reads GLB internals instead of counting files:
 
-An earlier version of this file reported `animation_files=4` and `families_covered=0` at the
-same time, which is self-contradictory: if any clip exists, at least one family should match.
-It also counted the downloaded ZIP itself as a file and walked the archive alongside its own
-extracted copy. Both are fixed here: archives are excluded from the inventory, the extraction
-directory is skipped while walking, and every animation file's name is reported so a zero
-coverage result can be explained rather than guessed at.
+An earlier version counted files ending in .fbx/.glb/.gltf as "clips". That was wrong in both
+directions. The Quaternius archive holds `ual1_standard.glb` and `ual1_standard_rm.glb` — whole
+animation libraries in single containers — so a file count reports 4 for a pack containing
+hundreds of clips, and the FBX and GLB copies of the same library are counted twice.
+
+A GLB is a binary container: a 12-byte header, then length-prefixed chunks whose first is JSON.
+So the animation list is readable with the standard library alone, no Blender and no glTF
+dependency. This reports:
+
+  * the actual animation names in every GLB, deduplicated across format variants
+  * which of the brief's animation families those names cover
+  * the clip count, which is the number the project actually needs
+
+FBX is not parsed: its binary layout is not worth hand-decoding, and the GLB in the same pack
+carries the same clips. FBX is reported as present-but-unread, never as a clip count.
 """
 
 import argparse
 import collections
 import json
 import os
+import struct
 import sys
 import zipfile
 
-ANIMATION_SUFFIXES = {".fbx", ".glb", ".gltf", ".bvh", ".blend"}
-
-# The brief's animation families, in the words the manifest uses. A clip counts as covering a
-# family when its file name contains one of the family's keywords, case-insensitively. This is
-# a heuristic to steer Phase 5, not a validator: a clip called "Climb" matches both the ladder
-# and the rope family.
+# The brief's animation families, keyed as the manifest names them. A clip covers a family when
+# its name contains one of the keywords, case-insensitively. This is a heuristic to steer
+# Phase 5, and it says which families found no match rather than pretending they are covered.
 FAMILIES = {
     "anim_idle": ["idle"],
     "anim_walk": ["walk"],
@@ -55,6 +60,7 @@ FAMILIES = {
     "anim_hit_react": ["hit", "react", "flinch"],
     "anim_stagger": ["stagger"],
     "anim_death": ["death", "die"],
+    "anim_ragdoll_pose": ["ragdoll"],
     "anim_interact_open_pickup_loot": ["open", "pick", "pickup", "loot"],
     "anim_skin_animal": ["skin", "skinning"],
     "anim_butcher": ["butcher"],
@@ -64,7 +70,7 @@ FAMILIES = {
     "anim_set_trap": ["trap", "snare"],
     "anim_build_repair": ["build", "repair"],
     "anim_fish": ["fish"],
-    "anim_chop_tree": ["chop", "axe"],
+    "anim_chop_tree": ["chop"],
     "anim_mine": ["mine", "pickaxe"],
     "anim_mount_ride": ["mount", "ride", "horse"],
     "anim_sit_sleep": ["sit", "sleep"],
@@ -72,21 +78,46 @@ FAMILIES = {
     "anim_emotes": ["wave", "cheer", "taunt", "kneel", "salute", "point", "pray", "dance"],
 }
 
+GLB_MAGIC = b"glTF"
+CHUNK_JSON = 0x4E4F534A
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dir", required=True)
-    parser.add_argument("--out", default="")
-    args = parser.parse_args()
 
-    if not os.path.isdir(args.dir):
-        print("RESULT " + json.dumps({"step": "quaternius_inventory", "ok": False, "reason": "directory_missing"}))
-        return 1
+def glb_animation_names(path):
+    """Return the animation names in a GLB, or None if it cannot be parsed.
 
-    root_dir = os.path.abspath(args.dir)
-    extract_dir = os.path.join(root_dir, "extracted")
+    GLB layout: 12-byte header (magic, version, total length), then chunks of
+    (uint32 length, uint32 type, data). The first chunk is the glTF JSON.
+    """
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(12)
+            if len(header) < 12:
+                return None
+            magic, _version, _total = struct.unpack("<4sII", header)
+            if magic != GLB_MAGIC:
+                return None
 
-    # Unzip anything still packed, so the inventory sees files rather than archives.
+            chunk_header = handle.read(8)
+            if len(chunk_header) < 8:
+                return None
+            chunk_length, chunk_type = struct.unpack("<II", chunk_header)
+            if chunk_type != CHUNK_JSON:
+                return None
+
+            payload = handle.read(chunk_length)
+            document = json.loads(payload.decode("utf-8").rstrip("\x00 "))
+    except (OSError, ValueError, struct.error):
+        return None
+
+    animations = document.get("animations") or []
+    names = []
+    for index, animation in enumerate(animations):
+        names.append(animation.get("name") or "unnamed_%d" % index)
+    return names
+
+
+def extract_archives(root_dir, extract_dir):
+    """Unzip anything still packed. Returns the archives found."""
     archives = []
     for root, _dirs, files in os.walk(root_dir):
         for name in files:
@@ -100,50 +131,74 @@ def main():
             print("unzipped %s -> %s" % (os.path.basename(archive), target))
         except zipfile.BadZipFile:
             print("RESULT " + json.dumps({"step": "quaternius_unzip", "ok": False, "archive": archive}))
+    return archives
 
-    # Inventory the extracted content only. Walking the root would count the downloaded ZIP
-    # as a file and see every clip twice, once packed and once extracted.
-    by_suffix = collections.Counter()
-    animation_files = []
-    total = 0
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dir", required=True)
+    parser.add_argument("--out", default="")
+    args = parser.parse_args()
+
+    if not os.path.isdir(args.dir):
+        print("RESULT " + json.dumps(
+            {"step": "quaternius_inventory", "ok": False, "reason": "directory_missing"}))
+        return 1
+
+    root_dir = os.path.abspath(args.dir)
+    extract_dir = os.path.join(root_dir, "extracted")
+    archives = extract_archives(root_dir, extract_dir)
+
+    # Read the animations out of every GLB. GLB only: FBX is not parsed, and reporting an FBX
+    # file as "one clip" is the mistake this script exists to stop making.
+    clips_by_source = {}
+    fbx_files = []
     for root, _dirs, files in os.walk(extract_dir):
         for name in files:
-            suffix = os.path.splitext(name)[1].lower()
-            by_suffix[suffix] += 1
-            total += 1
-            if suffix in ANIMATION_SUFFIXES:
-                animation_files.append(name.lower())
+            path = os.path.join(root, name)
+            lower = name.lower()
+            if lower.endswith(".glb") or lower.endswith(".gltf"):
+                names = glb_animation_names(path)
+                if names is None:
+                    print("could not parse %s; not counted" % name)
+                    continue
+                clips_by_source[name] = names
+            elif lower.endswith(".fbx"):
+                fbx_files.append(name)
 
-    clips = len(animation_files)
+    # A pack ships the same library as .glb and as _rm.glb; the animation sets are identical.
+    # Deduplicate by name so the clip count is a count of clips, not of containers.
+    all_clips = set()
+    for names in clips_by_source.values():
+        all_clips.update(names)
+    clip_list = sorted(all_clips)
+
     print("RESULT " + json.dumps({
         "step": "quaternius_packs",
-        "ok": clips > 0,
+        "ok": len(clip_list) > 0,
         "archives": len(archives),
-        "extracted_files": total,
-        "animation_files": clips,
-        "suffixes": dict(sorted(by_suffix.items())),
-        # Named so a zero-coverage result can be explained instead of guessed at.
-        "sample_clips": sorted(animation_files)[:15],
+        "glb_containers": len(clips_by_source),
+        "fbx_files_unread": len(fbx_files),
+        "clips": len(clip_list),
+        "per_container": {k: len(v) for k, v in sorted(clips_by_source.items())},
+        "sample_clips": clip_list[:20],
     }))
 
     covered = {}
     for family, keywords in FAMILIES.items():
-        covered[family] = sum(1 for name in animation_files if any(k in name for k in keywords))
+        covered[family] = sum(1 for name in clip_list if any(k in name.lower() for k in keywords))
     present = sorted(f for f, n in covered.items() if n > 0)
     missing = sorted(f for f, n in covered.items() if n == 0)
 
-    # Coverage is only meaningful once clips exist. With none, the honest answer is "unknown",
-    # not "0 of 40 covered": a pack that failed to extract has not proved anything about the
-    # clips inside it.
-    ok = clips > 0
+    ok = len(clip_list) > 0
     print("RESULT " + json.dumps({
         "step": "quaternius_coverage",
         "ok": ok,
-        "reason": "" if ok else "no_animation_files_found_after_extraction",
+        "reason": "" if ok else "no_clips_found_in_any_glb",
         "families_total": len(FAMILIES),
         "families_covered": len(present),
         "families_missing": len(missing),
-        "missing_sample": missing[:12],
+        "missing": missing,
     }))
 
     if args.out:
@@ -152,11 +207,13 @@ def main():
             json.dump(
                 {
                     "archives": [os.path.basename(a) for a in archives],
-                    "clips": clips,
+                    "clips": len(clip_list),
+                    "clip_names": clip_list,
+                    "per_container": {k: len(v) for k, v in sorted(clips_by_source.items())},
+                    "fbx_unread": fbx_files,
                     "coverage": covered,
                     "present": present,
                     "missing": missing,
-                    "sample_clips": sorted(animation_files)[:50],
                 },
                 handle,
                 indent=2,
@@ -164,7 +221,7 @@ def main():
             )
         print("wrote %s" % args.out)
 
-    print("clips found: %d across %d archives" % (clips, len(archives)))
+    print("clips found: %d across %d GLB containers" % (len(clip_list), len(clips_by_source)))
     print("families covered %d of %d" % (len(present), len(FAMILIES)))
     if missing:
         print("missing families: " + ", ".join(missing))

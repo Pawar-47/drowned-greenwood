@@ -101,9 +101,11 @@
   },
   "lod_policy": {
     "note": "Finger bones are the first thing to go on distant characters. The budget for skinned characters at full animation rate is 8 LOW / 16 MEDIUM / 24 HIGH, so distant NPCs use a reduced skeleton.",
+    "bone_math": "56 bones = 26 non-finger (Root, Hips, Spine, Chest, UpperChest, Neck, Head, 2 eyes, Jaw, 2 shoulders, 6 arm bones, 8 leg bones, 2 toes) + 30 finger bones (5 fingers x 3 segments x 2 hands).",
     "lod0": "all 56 bones",
-    "lod1": "fingers collapsed to one bone per finger (46 bones)",
-    "lod2": "no finger bones, toes merged (36 bones)",
-    "collapsed_bones_are_never_renamed": true
+    "lod1": "one bone per finger: 26 non-finger + 10 finger = 36 bones",
+    "lod2": "no finger bones and toes merged: 26 - 2 toes = 24 bones",
+    "collapsed_bones_are_never_renamed": true,
+    "counts_are_checked": "tools/validate/check_skeletons.py recomputes these from the bone list; an earlier version of this file said 46 and 36, which did not match its own rules."
   }
 }

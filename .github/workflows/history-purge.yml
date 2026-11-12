@@ -2,12 +2,26 @@ name: history-purge
 
 # MANUAL ONLY. Rewrites git history and force-pushes every ref.
 #
-# Read docs/HISTORY_PURGE.md first. Do not run this without explicit approval from the
-# project owner: it invalidates every clone and fork, and it cannot be undone from here.
+# Read docs/HISTORY_PURGE.md first. Do not run this without explicit approval from the project
+# owner: it invalidates every clone and fork, and it cannot be undone from here.
 #
-# Prevention is the normal answer: binaries reach main only by merging the staging branch
-# after the gates pass, and a file that would exceed 20 MB becomes a Release asset instead of
-# a commit.
+# SAFETY DESIGN
+#
+# An earlier version interpolated `${{ inputs.paths }}` and `${{ inputs.confirm }}` directly
+# into shell source. On a workflow with `contents: write` and force-push steps, that is a shell
+# injection: an input containing a quote or a `$(...)` becomes executable code on a runner that
+# holds a token able to rewrite the repository.
+#
+# This version:
+#   * passes inputs through `env:`, never into shell source, so they arrive as data
+#   * validates every path against a strict allowlist pattern, one line at a time, with no
+#     word splitting and no `xargs`
+#   * runs a DRY RUN by default, which changes nothing and uploads the backup
+#   * requires `apply` to be typed exactly, on a second dispatch, to force-push
+#   * keeps the backup as a downloadable artifact, so it outlives the runner
+#
+# Prevention is still the normal answer: binaries reach main only by merging the staging branch
+# after the gates pass, and a file over 20 MB becomes a Release asset instead of a commit.
 
 on:
   workflow_dispatch:
@@ -16,50 +30,80 @@ on:
         description: "Comma-separated paths to remove from history, e.g. assets/a.glb,assets/b.glb"
         required: true
         type: string
-      confirm:
-        description: "Type FORCE-PUSH to confirm. Anything else aborts."
+      mode:
+        description: "dry-run (safe, changes nothing) or apply (force-pushes; needs a second run)"
         required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - apply
+      confirm:
+        description: "For apply only: type FORCE-PUSH. Ignored by dry-run."
+        required: false
         type: string
 
 permissions:
   contents: write
 
-# One CI run at a time, repository-wide. A run that arrives while another is executing waits
-# for it instead of starting alongside it. See "CI rules" in README.md.
 concurrency:
   group: ci-serial
   cancel-in-progress: false
 
 jobs:
   purge:
-    name: Remove paths from history and force-push
+    name: Purge history (dry run by default)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Refuse unless confirmed
+      # Inputs arrive as environment variables, so nothing a user types is ever parsed as
+      # shell source. `${{ }}` interpolation inside `run:` is what created the injection.
+      - name: Validate inputs
+        env:
+          INPUT_PATHS: ${{ inputs.paths }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
         run: |
-          if [ "${{ inputs.confirm }}" != "FORCE-PUSH" ]; then
-            echo "Confirmation string was not FORCE-PUSH. Aborting without touching anything."
+          set -euo pipefail
+
+          if [ "$INPUT_MODE" != "dry-run" ] && [ "$INPUT_MODE" != "apply" ]; then
+            echo "mode must be dry-run or apply, got: $INPUT_MODE"
             exit 1
           fi
 
-      - name: Validate the path list
-        run: |
-          set -euo pipefail
-          IFS=',' read -ra entries <<< "${{ inputs.paths }}"
-          if [ "${#entries[@]}" -eq 0 ]; then
-            echo "No paths given."
+          if [ "$INPUT_MODE" = "apply" ] && [ "$INPUT_CONFIRM" != "FORCE-PUSH" ]; then
+            echo "apply requires confirm to be exactly FORCE-PUSH. Aborting without touching anything."
             exit 1
           fi
-          for entry in "${entries[@]}"; do
-            trimmed="$(echo "$entry" | xargs)"
-            if [ -z "$trimmed" ]; then
-              echo "Empty entry in the path list."
+
+          # A purge path is a repository-relative path: no leading slash, no `..`, no shell
+          # metacharacters, no whitespace. Anything else is rejected rather than escaped,
+          # because the allowlist is easier to reason about than quoting.
+          : > purge_paths.txt
+          count=0
+          while IFS= read -r entry; do
+            trimmed="$(printf '%s' "$entry" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+            [ -z "$trimmed" ] && continue
+            if ! printf '%s' "$trimmed" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+              echo "rejected: contains characters outside [A-Za-z0-9._/-]: $trimmed"
               exit 1
             fi
-            echo "will purge: $trimmed"
-            echo "$trimmed" >> "$GITHUB_WORKSPACE/purge_paths.txt"
-          done
+            case "$trimmed" in
+              /*|*..*)
+                echo "rejected: must be relative and must not contain '..': $trimmed"
+                exit 1
+                ;;
+            esac
+            printf '%s\n' "$trimmed" >> purge_paths.txt
+            count=$((count + 1))
+          done < <(printf '%s' "$INPUT_PATHS" | tr ',' '\n')
+
+          if [ "$count" -eq 0 ]; then
+            echo "no usable paths given"
+            exit 1
+          fi
+          echo "validated $count path(s):"
+          cat purge_paths.txt
 
       - name: Mirror clone
         env:
@@ -70,16 +114,19 @@ jobs:
           cd purge-work
           echo "size before:" && git count-objects -vH
 
-      - name: Back up the mirror
+      - name: Back up the mirror and keep it as an artifact
         run: |
           set -euo pipefail
           cp -r purge-work purge-backup
-          echo "Backup written to purge-backup. It is discarded when the job ends; download it if you need it."
+          tar -czf purge-backup.tar.gz purge-backup
+          sha256sum purge-backup.tar.gz | tee purge-backup.sha256
+          echo "backup size: $(du -h purge-backup.tar.gz | cut -f1)"
 
-      - name: Install git-filter-repo
+      - name: Install git-filter-repo (pinned)
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet git-filter-repo
+          # Pinned: an unpinned pip install changes behaviour without the repository changing.
+          python3 -m pip install --quiet "git-filter-repo==2.45.0"
           git filter-repo --version
 
       - name: Rewrite history
@@ -90,6 +137,7 @@ jobs:
           while IFS= read -r path; do
             args+=(--path "$path")
           done < ../purge_paths.txt
+          echo "running: git filter-repo --force --invert-paths ${args[*]}"
           git filter-repo --force --invert-paths "${args[@]}"
 
       - name: Report the result
@@ -99,7 +147,20 @@ jobs:
           echo "size after:" && git count-objects -vH
           git log --oneline -10
 
+      - name: Upload the backup before anything is pushed
+        uses: actions/upload-artifact@v4
+        with:
+          name: purge-backup
+          path: |
+            purge-backup.tar.gz
+            purge-backup.sha256
+          retention-days: 90
+          if-no-files-found: error
+
       - name: Force-push every ref
+        # Only on an explicit apply run. A dry run stops here, having changed nothing remote
+        # and having left a downloadable backup.
+        if: ${{ inputs.mode == 'apply' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -108,3 +169,11 @@ jobs:
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force --all
           git push --force --tags
+
+      - name: Dry-run summary
+        if: ${{ inputs.mode == 'dry-run' }}
+        run: |
+          echo "DRY RUN: history was rewritten in the runner only. Nothing was pushed."
+          echo "The rewritten mirror and the backup are in this run's artifacts."
+          echo "To apply, dispatch again with mode=apply and confirm=FORCE-PUSH, after"
+          echo "downloading and checking the backup."

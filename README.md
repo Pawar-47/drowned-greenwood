@@ -14,10 +14,11 @@ gates pass.
 ## Layout
 
 ```
-assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, and the built asset tree
+assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skeleton definitions
 tools/           generators/ config/ validate/ phase0/ build_manifest.py TOOLS.md
-docs/            HISTORY_PURGE.md
-reports/         tool_evaluation.md, quality_report.md, below_target.md, scene_tests/, previews/
+shaders/         shared shader includes and SHADER_GLOBALS.md
+docs/            HISTORY_PURGE.md, LESSONS.md
+reports/         tool_evaluation.md, quality_report.md, below_target.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
 
@@ -30,14 +31,21 @@ entries, where an empty field inherits from the group. `tools/build_manifest.py`
 `source_tool`, `tool_version`, `source_license`, `input_hash`, `sha256`, `pack`, `size_kb`,
 `status`, `gate_results`) — and refuses to write if the list is inconsistent.
 
+**Those fields are placeholders until an asset exists.** The expander sets `status: pending`
+and leaves paths, sizes, hashes and gate results empty; they are filled by the build that
+produces the file, not by the list that plans it. A record claiming `built` without a path and
+a SHA-256 now fails `check_manifest.py`.
+
 ```bash
-python tools/build_manifest.py          # expand
-python tools/validate/check_manifest.py # structural checks
+python tools/build_manifest.py            # expand
+python tools/validate/check_scripts.py    # every script, shader and workflow parses
+python tools/validate/check_manifest.py   # structure, budgets, licences
+python tools/validate/check_skeletons.py  # bone caps, hierarchy, LOD counts
 ```
 
-`assets/ADDITIONS.md` records the four approved additions, all P1 and scheduled: weather
-environment presets, hydrology data, the surface-ID map, and the shared skeleton / retarget
-artifacts.
+`assets/ADDITIONS.md` records the five approved additions, all P1 and scheduled: weather
+environment presets, hydrology data, the surface-ID map, and two animal skeleton families found
+while writing the validator.
 
 ## Size and history
 
@@ -45,14 +53,15 @@ artifacts.
 the staging branch after the gates pass. A category that overflows its budget moves to a
 GitHub Release, one tag per category, and every affected asset records its `pack` and
 `sha256`. Prevention first: if history ever has to be rewritten, `docs/HISTORY_PURGE.md` has
-the manual steps, and `.github/workflows/history-purge.yml` is the manual-only equivalent that
-force-pushes and must not be run without explicit approval.
+the manual steps, and `.github/workflows/history-purge.yml` is the manual-only equivalent —
+dry-run by default, inputs never interpolated into shell, backup uploaded before anything is
+pushed.
 
 ## Phases (stop and report after each)
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests | **CLOSED — 0 defects.** Verified: Blender 4.2.23, all three renderers, Godot import gate (real geometry), gltfpack `-noq`, Infinigen, glTF-Transform, Poly Haven, and **Modular Tree** (9 operators register; an earlier rejection was my probe looking in the wrong namespace, now corrected). **MPFB2 rejected**: imports but registers 0 operators. Quaternius: 4 files that are whole animation libraries, clip counts pending a GLB enumeration. See `reports/tool_evaluation.md` |
+| 0 | Tool smoke tests | **Setup complete; verification incomplete.** Verified in CI: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import and load of a real GLB (2208 tris), gltfpack `-noq` (1104 tris), Infinigen, glTF-Transform, Poly Haven, Modular Tree's 9 operators. **Unresolved:** MPFB2 registers no operators; MTree's tree has not been imported into Godot; the shader includes had never been compiled until now; Quaternius clip count needs GLB enumeration. See `reports/tool_evaluation.md` |
 | 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | in progress |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |

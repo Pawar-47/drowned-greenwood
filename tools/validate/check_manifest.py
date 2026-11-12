@@ -79,6 +79,64 @@ def main():
             "category budgets total %d MB, over the %d MB hard cap" % (total, HARD_CAP_MB)
         )
 
+    # A category needs a budget. An earlier table omitted 4.P entirely, so its declared total
+    # was not the real total and nobody would notice until the repository was over its cap with
+    # nowhere to point.
+    #
+    # Categories are named with sub-groups ("4.A.env", "4.G.rig", "4.N.icons") while budgets use
+    # section keys ("4.A", "4.G"), so this matches on the section prefix. Exact matching would
+    # report every sub-group as unbudgeted, which is a false failure.
+    budget_sections = set()
+    for key in budgets:
+        for part in key.split("+"):
+            budget_sections.add(part.strip())
+
+    def covered(category):
+        # "4.A.env" -> check "4.A.env", then "4.A".
+        candidate = category
+        while candidate:
+            if candidate in budget_sections:
+                return True
+            if "." not in candidate:
+                return False
+            candidate = candidate.rsplit(".", 1)[0]
+        return False
+
+    asset_categories = {record["category"] for record in assets}
+    unbudgeted = sorted(category for category in asset_categories if not covered(category))
+    if unbudgeted:
+        problems.append("no budget covers %d categories: %s" % (len(unbudgeted), unbudgeted))
+
+    # Licences must be on the allowlist. The builder defaults to CC0, so a wrong or missing
+    # licence would otherwise pass silently and only surface as a legal problem later.
+    allowed_licences = {
+        "CC0",
+        "CC0-1.0",
+        "MIT",
+        "BSD-3-Clause",
+        "BSD-2-Clause",
+        "Apache-2.0",
+        "OFL-1.1",
+        "CC-BY-4.0",
+        "CC-BY-3.0",
+    }
+    bad_licences = sorted(
+        {record.get("source_license") for record in assets} - allowed_licences
+    )
+    if bad_licences:
+        problems.append(
+            "source_license values outside the allowlist: %s" % bad_licences
+        )
+
+    # A record that claims to be built must have a path and a hash; otherwise "built" is an
+    # assertion with nothing behind it.
+    for record in assets:
+        if record.get("status") in {"built", "PASSED", "BELOW_TARGET"}:
+            if not record.get("path"):
+                problems.append("%s: status %s but no path" % (record["name"], record["status"]))
+            if not record.get("sha256"):
+                problems.append("%s: status %s but no sha256" % (record["name"], record["status"]))
+
     p1_by_phase = {}
     for record in assets:
         if record.get("priority") == "P1":

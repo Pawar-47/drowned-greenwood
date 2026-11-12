@@ -36,6 +36,36 @@ SKIP_DIRS = {
     "downloaded",
 }
 WORKFLOW_DIR = os.path.join(".github", "workflows")
+SHADER_DIR = "shaders"
+
+# Sampler hints Godot 4 actually accepts, from its shading-language reference. `hint_black`
+# looks plausible and is not a hint at all; it fails to compile. A static check catches that in
+# seconds instead of waiting for a Godot run.
+VALID_SAMPLER_HINTS = {
+    "source_color",
+    "hint_normal",
+    "hint_default_white",
+    "hint_default_black",
+    "hint_default_transparent",
+    "hint_anisotropy",
+    "hint_screen_texture",
+    "hint_depth_texture",
+    "hint_normal_roughness_texture",
+    "hint_roughness",
+    "hint_roughness_r",
+    "hint_roughness_g",
+    "hint_roughness_b",
+    "hint_roughness_a",
+    "hint_roughness_normal",
+    "hint_roughness_gray",
+}
+
+# Hints known to be wrong, kept explicit so the error message can say what to use instead.
+WRONG_SAMPLER_HINTS = {
+    "hint_black": "hint_default_black",
+    "hint_white": "hint_default_white",
+    "hint_transparent": "hint_default_transparent",
+}
 
 
 def walk(extension):
@@ -126,9 +156,39 @@ def check_workflow(path):
     return None
 
 
+def check_shader(path):
+    """Catch the shader mistakes that are checkable without a compiler.
+
+    Only hints are checked here. Everything else about a shader needs Godot to compile it,
+    which is what the Godot shader probe is for; this is the cheap first pass.
+    """
+    import re
+
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            source = handle.read()
+    except OSError as exc:
+        return "%s: cannot read (%s)" % (path, exc)
+
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        if "uniform sampler" not in line or ":" not in line:
+            continue
+        hint = line.split(":", 1)[1].strip().split()[0].rstrip(";")
+        if hint in WRONG_SAMPLER_HINTS:
+            return "%s:%s: %r is not a Godot hint; use %r" % (
+                path,
+                line_number,
+                hint,
+                WRONG_SAMPLER_HINTS[hint],
+            )
+        if hint.startswith("hint_") and hint not in VALID_SAMPLER_HINTS:
+            return "%s:%s: unknown sampler hint %r" % (path, line_number, hint)
+    return None
+
+
 def main():
     problems = []
-    counts = {"python": 0, "shell": 0, "json": 0, "yaml": 0}
+    counts = {"python": 0, "shell": 0, "json": 0, "yaml": 0, "shader": 0}
 
     for path in walk(".py"):
         counts["python"] += 1
@@ -148,6 +208,14 @@ def main():
         if error:
             problems.append(error)
 
+    # Shader includes: the wind and wetness files, and anything else in shaders/.
+    for extension in (".gdshaderinc", ".gdshader"):
+        for path in walk(extension):
+            counts["shader"] += 1
+            error = check_shader(path)
+            if error:
+                problems.append(error)
+
     # Workflows only, not every YAML in the tree.
     workflows_dir = os.path.abspath(WORKFLOW_DIR)
     for path in walk(".yml"):
@@ -159,8 +227,14 @@ def main():
             problems.append(error)
 
     print(
-        "scripts checked: %d python, %d shell, %d json, %d workflow yaml"
-        % (counts["python"], counts["shell"], counts["json"], counts["yaml"])
+        "checked: %d python, %d shell, %d json, %d shader, %d workflow yaml"
+        % (
+            counts["python"],
+            counts["shell"],
+            counts["json"],
+            counts["shader"],
+            counts["yaml"],
+        )
     )
 
     # A checker that finds nothing to check is the bug from docs/LESSONS.md #3: it would pass
@@ -173,6 +247,8 @@ def main():
         )
     if counts["yaml"] == 0:
         problems.append("the walker found no workflow YAML; the workflow filter is wrong")
+    if counts["shader"] == 0:
+        problems.append("the walker found no shaders; the shader filter is wrong")
 
     if problems:
         print("static checks failed:", file=sys.stderr)

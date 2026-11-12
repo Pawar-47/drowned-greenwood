@@ -6,8 +6,8 @@
   "sources": [
     {
       "source_tool": "quaternius",
-      "status": "blocked",
-      "blocked_on": "The free Standard ZIPs are downloaded manually by the owner and uploaded to the release 'third-party-quaternius'. Until that release exists, no clip count can be stated and no mapping can be verified against real files.",
+      "status": "pending_verification",
+      "status_note": "The release 'third-party-quaternius' now exists and CI downloads it. It is NOT verified: the archive holds whole animation libraries in single containers (ual1_standard.glb and its _rm variant), so the mapping below has never been exercised against real clips. Verification means enumerating a GLB's animations and retargeting one of them onto this skeleton.",
       "known_naming": "Quaternius packs use a Mixamo-style naming scheme. The mapping below is written from that convention and MUST be verified against the actual files once the release exists; it is a plan, not a measurement.",
       "rest_pose": "T-pose, matching the target rest pose, so no rest-pose correction is needed.",
       "scale": "Quaternius characters are authored around 1.8 m. Reject any clip whose root height differs by more than 5 % from the target skeleton before retargeting.",

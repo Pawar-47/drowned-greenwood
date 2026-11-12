@@ -1,4 +1,5 @@
-; Phase 0 probe project: proves a generated GLB imports and loads in headless Godot.
+; Phase 0 probe project: proves a generated GLB imports and loads in headless Godot, and that
+; the project's shader includes actually compile.
 ; Kept deliberately minimal - it is a gate, not a game.
 
 config_version=5
@@ -12,3 +13,36 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
+
+; Shader globals, matching shaders/SHADER_GLOBALS.md.
+;
+; Godot requires every `global uniform` to be registered here before a shader using it will
+; compile; a default written in the shader is ignored. Without these the wind and wetness
+; includes cannot be compiled at all, which is why the shader compile probe needs them.
+[shader_globals]
+
+global_wetness={
+"type": "float",
+"value": 0.0
+}
+wetness_darken={
+"type": "float",
+"value": 0.45
+}
+puddle_amount={
+"type": "float",
+"value": 0.0
+}
+wind_time={
+"type": "float",
+"value": 0.0
+}
+wind_strength={
+"type": "float",
+"value": 0.6
+}
+wind_gust={
+"type": "float",
+"value": 0.0
+}
+

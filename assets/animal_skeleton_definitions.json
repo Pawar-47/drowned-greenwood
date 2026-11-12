@@ -35,7 +35,9 @@
       ],
       "optional_bones": {
         "LeftHorn": "antlered and horned species only; dropped for horses and cattle",
+        "RightHorn": "always dropped or kept with LeftHorn; a one-sided horn is a rigging error",
         "LeftMane": "maned species only; dropped for bear and aurochs",
+        "RightMane": "always dropped or kept with LeftMane",
         "Withers": "shoulder-height marker used to seat saddles and loads"
       }
     },
@@ -64,6 +66,7 @@
       ],
       "optional_bones": {
         "LeftAntler": "deer and ibex only",
+        "RightAntler": "always dropped or kept with LeftAntler; a one-sided antler is a rigging error",
         "Muzzle": "drives the sniff and graze clips"
       }
     },
@@ -186,6 +189,10 @@
         "LeftEye", "RightEye",
         "LeftLeg", "RightLeg"
       ],
+      "optional_bones": {
+        "LeftLeg": "lizard only; dropped for snakes and the slow worm",
+        "RightLeg": "always dropped or kept with LeftLeg; a one-legged serpent is a rigging error"
+      },
       "note": "Legs are optional: present for the lizard, dropped for the snakes and the slow worm. Dropping a bone must never rename the others."
     }
   ]
