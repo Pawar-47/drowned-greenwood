@@ -316,7 +316,7 @@ jobs:
           # The probe project needs the real includes at res://includes/, so it compiles what
           # the game will compile rather than a copy that has drifted.
           mkdir -p tools/phase0/godot_probe/includes
-          cp shaders/*.gdshaderinc tools/phase0/godot_probe/includes/
+          cp shaders/*.gdshaderinc shaders/*.gdshader tools/phase0/godot_probe/includes/
 
       - name: Fetch Godot ${{ env.GODOT_VERSION }}
         run: |

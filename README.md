@@ -17,18 +17,20 @@ What exists now, and what is planned. Anything marked *planned* does not exist y
 listed so the intended shape is visible without being mistaken for present.
 
 ```
-assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skeleton definitions
-tools/           build_manifest.py, TOOLS.md, phase0/ (probes), validate/ (checks)
-shaders/         shared shader includes and SHADER_GLOBALS.md
+assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skeleton definitions,
+                 surface_ids.json, surface_fx_table.json
+tools/           build_manifest.py, TOOLS.md, config/materials.json, phase0/ (probes),
+                 validate/ (checks)
+shaders/         surface_base.gdshader, foliage_base.gdshader, shared includes, SHADER_GLOBALS.md
 docs/            HISTORY_PURGE.md, LESSONS.md, POLICY.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
 
-Planned, not present: `tools/generators/` and `tools/config/` (Phase 2 onward), an APK build
-workflow (Phase 9), and a `staging` branch. The staging branch is the intended path for binaries
-to reach `main`; until it exists, nothing binary is committed at all, which is why the repository
-is currently about 0.4 MB of tooling and definitions.
+Planned, not present: `tools/generators/` (Phase 2 onward), an APK build workflow (Phase 9), and a
+`staging` branch. The staging branch is the intended path for binaries to reach `main`; until it
+exists, nothing binary is committed at all, which is why the repository is currently about 0.5 MB
+of tooling and definitions.
 
 ## The asset list
 
@@ -51,11 +53,34 @@ python tools/validate/check_scripts.py    # every script, shader, workflow and r
 python tools/validate/test_tools.py       # unit tests for the manifest builder and report parser
 python tools/validate/check_manifest.py   # structure, budgets, licences
 python tools/validate/check_skeletons.py  # bone caps, humanoid hierarchy, LOD and cloth budgets, animal coverage
+python tools/validate/check_materials.py  # materials, surface ids, FX table, duplicate shader uniforms
 ```
 
 `assets/ADDITIONS.md` records the six approved additions, all P1 and scheduled: weather
 environment presets, hydrology data, the surface-ID map, the shared skeleton and retarget
 artifacts, and two animal skeleton families found while writing the validator.
+
+## The shared material system
+
+Every opaque surface and every plant in the game is one of **two shaders** with different
+parameters, not its own shader. `shaders/surface_base.gdshader` covers ground, rock, wood and
+buildings; `shaders/foliage_base.gdshader` covers leaves, ferns, grass and ivy. Both include the
+wetness pass, so no material can be forgotten and left bone dry next to a soaked one.
+
+A material is a row in `tools/config/materials.json`: a texture set, a tiling in metres, a
+`wetness_darken`, and — for foliage — its wind amplitudes. `tools/validate/check_materials.py`
+checks it, and the Phase 0 workflow **compiles both shaders** in Godot, so a material system
+nothing compiles cannot ship.
+
+The three inputs that make it coherent:
+
+- `assets/surface_ids.json` — the closed set of surface types and their numbers. Every consumer
+  agrees on these: the surface-ID map's texels, a prop's `surface:<id>` tag in its GLB extras, and
+  the FX table. An id is a contract, so ids are never reused or renumbered.
+- `assets/surface_fx_table.json` — what happens when something touches a surface: footstep audio
+  and VFX, impact VFX, decal, ambient loop. One row per live surface id.
+- `shaders/SHADER_GLOBALS.md` — the five globals the weather system drives. Everything else is
+  deliberately per material.
 
 ## Size and history
 

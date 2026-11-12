@@ -9,9 +9,6 @@ on:
     paths:
       - "assets/**"
       - "shaders/**"
-      # check_scripts.py parses every Python and shell file in the repository, and
-      # tools/phase0/ holds most of them. Without this, a probe could be committed syntactically
-      # broken and the checker that exists to catch it would not run.
       - "tools/**"
       - ".github/workflows/**"
   pull_request:
@@ -84,6 +81,13 @@ jobs:
 
       - name: Skeleton and retarget checks
         run: python tools/validate/check_skeletons.py
+
+      - name: Material system checks
+        # Materials, surface ids and their FX table. Catches the class of mistake that compiles
+        # and renders wrongly — a retired surface id, a tiling value that visibly repeats, a
+        # foliage material with no wind amplitude, a shader redeclaring a uniform its include
+        # already declares (which is a compile error nothing else catches before Godot does).
+        run: python tools/validate/check_materials.py
 
       - name: P1 set per phase
         run: |

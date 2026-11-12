@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "name": "surface_ids",
+  "description": "The closed set of surface types in the world, and the number each one is known by. Every consumer of a surface agrees on these numbers: the surface-ID map's R8 texels, a prop's `surface:<id>` tag in its GLB extras, and surface_fx_table.json. An id is a contract, so ids are never reused and never renumbered — a retired surface keeps its number and gains `retired: true`.",
+  "encoding": {
+    "map": "terrain_surface_id_map, lossless R8, 1024x1024 over the 1 km terrain (about 1 m per texel)",
+    "glb_extra": "surface:<id>, an integer in the GLB extras of a prop or building",
+    "lookup": "surface_fx_table.json, keyed by the same ids",
+    "why_r8_and_not_a_palette": "An 8-bit index is lossless and exactly representable; a colour palette would be lossy after sRGB conversion and would need its own lookup anyway. 255 usable ids is more than this world will ever have surfaces."
+  },
+  "reserved": {
+    "0": "unknown — a texel no generator has claimed. Treated as `dirt_path` for audio and VFX so a gap is quiet rather than silent, but it is a defect and the validator reports how many texels use it.",
+    "255": "out of bounds — outside the terrain. Never audible, never stepped on."
+  },
+  "surfaces": [
+    { "id": 1, "name": "mud", "wetness": "soaks", "footstep": "soft", "note": "the bog basin floor; boots sink and the step is heavy" },
+    { "id": 2, "name": "wet_leaves", "wetness": "soaks", "footstep": "rustle" },
+    { "id": 3, "name": "moss", "wetness": "beads", "footstep": "soft" },
+    { "id": 4, "name": "wet_stone", "wetness": "beads", "footstep": "hard" },
+    { "id": 5, "name": "gravel", "wetness": "drains", "footstep": "gritty" },
+    { "id": 6, "name": "sand", "wetness": "drains", "footstep": "soft" },
+    { "id": 7, "name": "wood", "wetness": "beads", "footstep": "hollow" },
+    { "id": 8, "name": "water_shallow", "wetness": "always_wet", "footstep": "splash", "shader_system": "water", "note": "drawn by the water shader, not by the opaque material system, so it has no material row" },
+    { "id": 9, "name": "water_deep", "wetness": "always_wet", "footstep": "swim", "shader_system": "water" },
+    { "id": 10, "name": "snow", "wetness": "soaks", "footstep": "crunch" },
+    { "id": 11, "name": "dirt_path", "wetness": "drains", "footstep": "soft" },
+    { "id": 12, "name": "grass", "wetness": "soaks", "footstep": "rustle" },
+    { "id": 13, "name": "clay", "wetness": "soaks", "footstep": "soft" },
+    { "id": 14, "name": "cobble", "wetness": "beads", "footstep": "hard" },
+    { "id": 15, "name": "ash", "wetness": "drains", "footstep": "soft", "note": "burned settlement ground; deliberately not snow" }
+  ],
+  "wetness_kinds": {
+    "soaks": "darkens strongly and stays dark: wetness_darken at the high end of its range",
+    "beads": "darkens little and gains a specular sheen: low wetness_darken, roughness driven down hard",
+    "drains": "darkens moderately and dries fast",
+    "always_wet": "ignores global_wetness; the surface is water"
+  },
+  "rules": [
+    "An id is assigned once. Removing a surface sets retired: true and keeps the number.",
+    "A new surface takes the next unused id; ids are not chosen for their order in this file.",
+    "The map, the GLB extras and surface_fx_table.json must all cover every non-retired id, and tools/validate/check_surfaces.py enforces that."
+  ]
+}

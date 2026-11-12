@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "name": "surface_fx_table",
+  "description": "What the game does when something touches a surface. One entry per non-retired id in surface_ids.json, keyed by the same number. The assets named here are planned, not built — this table is the contract between the surface-ID map and the VFX/audio work in Phases 4 and 8, so that work has something to read instead of inventing its own naming.",
+  "consumers": [
+    "footstep audio: the player, NPCs and animals pick a clip by surface id and step type",
+    "footstep VFX: dust, splash, leaf kick, snow puff",
+    "impact VFX: a weapon, arrow or falling prop hitting the surface",
+    "decals: a scuff, a blood pool, a footprint that only marks some surfaces",
+    "surface audio: ambient loop variation per surface under the player"
+  ],
+  "step_types": ["walk", "run", "crouch", "land", "jump"],
+  "table": {
+    "1": { "surface": "mud", "footstep_audio": "audio_step_mud", "footstep_vfx": "vfx_step_mud", "impact_vfx": "vfx_impact_mud", "decal": "decal_footprint_mud", "ambient": "audio_amb_mud" },
+    "2": { "surface": "wet_leaves", "footstep_audio": "audio_step_leaves", "footstep_vfx": "vfx_step_leaves", "impact_vfx": "vfx_impact_soft", "decal": "decal_scuff", "ambient": "audio_amb_forest_floor" },
+    "3": { "surface": "moss", "footstep_audio": "audio_step_moss", "footstep_vfx": "vfx_step_soft", "impact_vfx": "vfx_impact_soft", "decal": "decal_scuff", "ambient": "audio_amb_forest_floor" },
+    "4": { "surface": "wet_stone", "footstep_audio": "audio_step_stone", "footstep_vfx": "vfx_step_water_small", "impact_vfx": "vfx_impact_stone", "decal": "decal_scuff", "ambient": "audio_amb_stone" },
+    "5": { "surface": "gravel", "footstep_audio": "audio_step_gravel", "footstep_vfx": "vfx_step_gravel", "impact_vfx": "vfx_impact_soft", "decal": "decal_scuff", "ambient": "audio_amb_gravel" },
+    "6": { "surface": "sand", "footstep_audio": "audio_step_sand", "footstep_vfx": "vfx_step_dust", "impact_vfx": "vfx_impact_soft", "decal": "decal_footprint_sand", "ambient": "audio_amb_shore" },
+    "7": { "surface": "wood", "footstep_audio": "audio_step_wood", "footstep_vfx": "vfx_step_soft", "impact_vfx": "vfx_impact_wood", "decal": "decal_scuff", "ambient": "audio_amb_wood" },
+    "8": { "surface": "water_shallow", "footstep_audio": "audio_step_water", "footstep_vfx": "vfx_step_water_small", "impact_vfx": "vfx_impact_water_small", "decal": null, "ambient": "audio_amb_water_shallow", "note": "no decal: a footprint in water is nonsense" },
+    "9": { "surface": "water_deep", "footstep_audio": "audio_swim", "footstep_vfx": "vfx_swim_splash", "impact_vfx": "vfx_impact_water_big", "decal": null, "ambient": "audio_amb_water_deep" },
+    "10": { "surface": "snow", "footstep_audio": "audio_step_snow", "footstep_vfx": "vfx_step_snow", "impact_vfx": "vfx_impact_snow", "decal": "decal_footprint_snow", "ambient": "audio_amb_snow" },
+    "11": { "surface": "dirt_path", "footstep_audio": "audio_step_dirt", "footstep_vfx": "vfx_step_dust", "impact_vfx": "vfx_impact_soft", "decal": "decal_footprint_dirt", "ambient": "audio_amb_open_ground" },
+    "12": { "surface": "grass", "footstep_audio": "audio_step_grass", "footstep_vfx": "vfx_step_grass", "impact_vfx": "vfx_impact_soft", "decal": "decal_scuff", "ambient": "audio_amb_grass" },
+    "13": { "surface": "clay", "footstep_audio": "audio_step_clay", "footstep_vfx": "vfx_step_soft", "impact_vfx": "vfx_impact_soft", "decal": "decal_footprint_dirt", "ambient": "audio_amb_open_ground" },
+    "14": { "surface": "cobble", "footstep_audio": "audio_step_cobble", "footstep_vfx": "vfx_step_soft", "impact_vfx": "vfx_impact_stone", "decal": "decal_scuff", "ambient": "audio_amb_settlement" },
+    "15": { "surface": "ash", "footstep_audio": "audio_step_ash", "footstep_vfx": "vfx_step_ash", "impact_vfx": "vfx_impact_soft", "decal": "decal_footprint_ash", "ambient": "audio_amb_burned" }
+  },
+  "fallback": {
+    "unknown_id_0": "treated as dirt_path, and counted as a defect by the validator",
+    "out_of_bounds_255": "no audio, no VFX, no decal"
+  },
+  "rules": [
+    "Every non-retired surface id has exactly one row here.",
+    "A row may set a field to null, which means deliberately nothing — never leave a field absent.",
+    "Asset names are the manifest's naming convention, so a missing one is a manifest entry that has not been built, not an unknown string."
+  ]
+}

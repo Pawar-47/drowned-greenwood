@@ -22,6 +22,12 @@ extends Node
 const INCLUDES := [
 	"res://includes/tech_wind_include.gdshaderinc",
 	"res://includes/tech_wetness_include.gdshaderinc",
+	# The two material shaders are complete shaders, not includes, so they are compiled as-is
+	# rather than wrapped. They are here because they are the ones every opaque surface and every
+	# plant in the game will actually use — a material system nothing compiles is a material
+	# system whose first real test is on a device.
+	"res://includes/surface_base.gdshader",
+	"res://includes/foliage_base.gdshader",
 ]
 
 # Each wrapper exercises its include the way the game will: the wind include from vertex(),
@@ -65,6 +71,10 @@ void fragment() {
 const EXPECTED_UNIFORMS := {
 	"tech_wind_include.gdshaderinc": ["probe_marker", "wind_noise", "gust_flowmap"],
 	"tech_wetness_include.gdshaderinc": ["probe_marker"],
+	# For the full shaders the expectation is the material's own controls. If an include stops
+	# being resolved, these disappear and the probe fails, which is the point.
+	"surface_base.gdshader": ["albedo_tex", "normal_tex", "orm_tex", "moss_mask_tex", "puddle_mask_tex", "wetness_darken"],
+	"foliage_base.gdshader": ["albedo_tex", "normal_tex", "alpha_cutoff", "translucency", "wind_noise", "wetness_darken"],
 }
 
 var _failures := 0
@@ -105,9 +115,14 @@ func _run() -> String:
 
 		var source: String = WRAPPERS.get(file_name, "")
 		if source.is_empty():
-			_report({"step": step, "ok": false, "shader": file_name, "reason": "no_wrapper_defined"})
-			_failures += 1
-			continue
+			# A complete shader compiles on its own; only an include needs a wrapper to give it
+			# a shader_type and a function to be used from.
+			if file_name.ends_with(".gdshader"):
+				source = FileAccess.get_file_as_string(include_path)
+			if source.is_empty():
+				_report({"step": step, "ok": false, "shader": file_name, "reason": "no_wrapper_defined"})
+				_failures += 1
+				continue
 
 		var shader := Shader.new()
 		shader.code = source
