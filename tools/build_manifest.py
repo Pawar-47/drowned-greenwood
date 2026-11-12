@@ -88,49 +88,83 @@ def variant_name(name, index, count):
 def build(manifest):
     problems = []
     defaults = manifest.get("field_defaults", {})
+    categories = manifest.get("categories", {})
     records = []
     seen = {}
+    base_names = {}
 
-    for group_key, group in manifest.get("categories", {}).items():
+    def emit(entry, group_key, group):
+        if entry["tier"] not in VALID_TIERS:
+            fail("%s: bad tier %r" % (entry["name"], entry["tier"]), problems)
+        if entry["priority"] not in VALID_PRIORITIES:
+            fail("%s: bad priority %r" % (entry["name"], entry["priority"]), problems)
+        if not NAME_PATTERN.match(entry["name"]):
+            fail("%s: breaks the naming convention" % entry["name"], problems)
+        prefix = entry["name"].split("_", 1)[0]
+        if prefix not in KNOWN_PREFIXES:
+            fail("%s: unknown prefix %r" % (entry["name"], prefix), problems)
+        if entry["name"] in seen:
+            fail(
+                "%s: duplicate, already in %s" % (entry["name"], seen[entry["name"]]),
+                problems,
+            )
+        seen[entry["name"]] = group_key
+        base_names.setdefault(entry["name"], group_key)
+
+        for index in range(entry["variants"]):
+            record = dict(defaults)
+            record.update(
+                {
+                    "name": variant_name(entry["name"], index, entry["variants"]),
+                    "base_name": entry["name"],
+                    "category": group_key,
+                    "category_label": group.get("label", group_key),
+                    "phase": group.get("phase", 0),
+                    "tier": entry["tier"],
+                    "priority": entry["priority"],
+                    "variants": entry["variants"],
+                    "source_tool": entry["source_tool"],
+                    "status": "pending",
+                }
+            )
+            records.append(record)
+
+    # Authored entries first, so a derived group never shadows a hand-written one.
+    for group_key, group in categories.items():
         for raw in group.get("assets", []):
             entry, error = parse_entry(raw, group)
             if error:
                 fail("%s: %s" % (group_key, error), problems)
                 continue
+            emit(entry, group_key, group)
 
-            if entry["tier"] not in VALID_TIERS:
-                fail("%s: bad tier %r" % (entry["name"], entry["tier"]), problems)
-            if entry["priority"] not in VALID_PRIORITIES:
-                fail("%s: bad priority %r" % (entry["name"], entry["priority"]), problems)
-            if not NAME_PATTERN.match(entry["name"]):
-                fail("%s: breaks the naming convention" % entry["name"], problems)
-            prefix = entry["name"].split("_", 1)[0]
-            if prefix not in KNOWN_PREFIXES:
-                fail("%s: unknown prefix %r" % (entry["name"], prefix), problems)
-            if entry["name"] in seen:
-                fail(
-                    "%s: duplicate, already in %s" % (entry["name"], seen[entry["name"]]),
-                    problems,
-                )
-            seen[entry["name"]] = group_key
-
-            for index in range(entry["variants"]):
-                record = dict(defaults)
-                record.update(
-                    {
-                        "name": variant_name(entry["name"], index, entry["variants"]),
-                        "base_name": entry["name"],
-                        "category": group_key,
-                        "category_label": group.get("label", group_key),
-                        "phase": group.get("phase", 0),
-                        "tier": entry["tier"],
-                        "priority": entry["priority"],
-                        "variants": entry["variants"],
-                        "source_tool": entry["source_tool"],
-                        "status": "pending",
-                    }
-                )
-                records.append(record)
+    # Derived groups: one entry per matching asset in the named source categories.
+    for group_key, group in categories.items():
+        sources = group.get("derive_from")
+        if not sources:
+            continue
+        prefix = group.get("derive_prefix")
+        filters = group.get("derive_filter", [])
+        if not prefix or not filters:
+            fail("%s: derive_from needs derive_prefix and derive_filter" % group_key, problems)
+            continue
+        for source_key in sources:
+            if source_key not in categories:
+                fail("%s: derive_from names unknown category %r" % (group_key, source_key), problems)
+                continue
+            for base, owner in base_names.items():
+                if owner != source_key:
+                    continue
+                if not any(base.startswith(f) for f in filters):
+                    continue
+                entry = {
+                    "name": prefix + base,
+                    "tier": group.get("tier", "C"),
+                    "priority": group.get("priority", "P2"),
+                    "variants": 1,
+                    "source_tool": group.get("source_tool", "custom"),
+                }
+                emit(entry, group_key, group)
 
     order = {"P1": 0, "P2": 1, "P3": 2}
     records.sort(key=lambda r: (r["phase"], order.get(r["priority"], 9), r["category"], r["name"]))

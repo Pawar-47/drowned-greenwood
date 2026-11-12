@@ -1271,6 +1271,21 @@
         "ui_status_effect_icons||P2"
       ]
     },
+    "4.N.icons": {
+      "label": "Per-item icons: one icon for every loot, weapon, tool, trap, siege, gear and item asset",
+      "phase": 8,
+      "tier": "C",
+      "priority": "P2",
+      "source_tool": "custom",
+      "note": "The brief asks for one icon per item in 4.F loot, 4.H and 4.J. Rather than hand-write those rows (which drift), they are derived: one ui_icon_<asset> per matching asset in the source categories. ui_icon_set above stays as the atlas that packs them.",
+      "derive_from": ["4.F", "4.H", "4.J"],
+      "derive_prefix": "ui_icon_",
+      "derive_filter": [
+        "loot_", "item_", "wpn_", "ammo_", "shield_", "trap_",
+        "tool_", "siege_", "gear_", "bait_", "prop_chest_loot"
+      ],
+      "assets": []
+    },
     "4.O": {
       "label": "Audio (last phase, optional)",
       "phase": 9,

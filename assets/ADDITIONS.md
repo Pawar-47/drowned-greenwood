@@ -12,7 +12,20 @@ built: all four are **P1** and all four are scheduled into the phases shown. The
 | `terrain_surface_id_map`, `surface_ids`, `surface_fx_table` | 4.B.surface | C | P1 | 2 | Footsteps, impact VFX, decals and surface audio all need to know the surface at a point. Lossless R8 1024² (about 1 m per texel), IDs for mud, wet leaves, moss, wet stone, gravel, sand, wood, shallow and deep water, snow, dirt path, grass, clay, cobble and ash. Props and buildings carry a `surface:<id>` tag in the GLB extras; `surface_fx_table.json` links each ID to its footstep VFX, impact VFX, decal and audio ID. |
 | `char_skeleton_definition`, `char_retarget_map`, `animal_skeleton_<family>`, `anim_retarget_report` | 4.G.rig | C | P1 | 1 | The brief mandates one shared humanoid skeleton (≤ 65 bones) and per-family animal skeletons (≤ 50), but no artifact defined them. Written in Phase 1, before any human or animation work: bones, hierarchy, rest pose, naming, the mapping to Godot `SkeletonProfileHumanoid`, the Quaternius → MPFB2/Rigify → shared-skeleton retarget map, per-family animal definitions, and root-speed metadata recorded in the retarget report. |
 
+## Naming decisions (not new assets)
+
+Three parts of the brief's list are written as prose rather than names. They are built as
+written, and only given names so the manifest can address them. Nothing is added, renamed in
+substance or skipped:
+
+| Brief wording | How it is named | Note |
+|---|---|---|
+| Clan identity kits (×4 clans): banner, tabard, shield face, face-paint set, camp flag, fort emblem, totem pole, war standard | `kit_<clan>_<item>` — 32 entries | The brief names the eight items and the four clans, not the 32 names. |
+| Icon set: one icon per item in 4.F loot, 4.H, 4.J | `ui_icon_<asset>` | Derived by `tools/build_manifest.py` from the matching assets rather than hand-written, so the icon set cannot drift from the item list. `ui_icon_set` remains the atlas that packs them. |
+| Common building kit, damage states, HUD/menu/audio groups | `bld_kit_*`, `bld_damagestate_*`, `ui_*`, `audio_*` | The brief lists these as groups; each member of every group is a separate manifest entry. |
+
 ## Deliberately not added
 
 Nothing else. If the built world turns out to need more, it is recorded here first with the
 reason, then reported.
+
