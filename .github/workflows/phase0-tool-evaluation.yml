@@ -62,7 +62,10 @@ env:
   BLENDER45_DIR: "blender-4.5.16-linux-x64"
   BLENDER45_URL: "https://download.blender.org/release/Blender4.5/blender-4.5.16-linux-x64.tar.xz"
   # Source: https://download.blender.org/release/Blender4.5/blender-4.5.16.sha256
-  BLENDER45_SHA256: "23432b064977908beb1ab4b7b32f024e7331105c875c187dce002aff84b10c11"
+  # The first value written here was a transcription slip (b32f024e for f32f024e) and the
+  # strict check caught it on its first run, which is the check doing exactly its job: a
+  # checksum that is merely plausible is worse than none, because it looks verified.
+  BLENDER45_SHA256: "23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11"
   GODOT_VERSION: "4.7.2-stable"
   GODOT_URL: "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
   # Godot publishes no checksum file with its GitHub release assets — there is no
@@ -78,6 +81,9 @@ env:
   # Git dependencies are pinned to an exact commit or tag. A HEAD clone means an upstream
   # commit can change a generated asset without this repository changing.
   MPFB2_TAG: "v2.0.18"
+  # What refs/tags/v2.0.18 resolved to when it was pinned. The tag is kept only so the log says
+  # which release this is; the fetch and the verification both use the commit.
+  MPFB2_COMMIT: "d0a32e57a7f915cb2f2b95410e2117648c7bbb7e"
   INFINIGEN_COMMIT: "53033dd55c7191cbc436be6ffbb63c026935a509"
   GLTF_TRANSFORM_VERSION: "4.2.1"
   # The Quaternius release is fetched with `gh release download`. Its archive hash was measured
@@ -497,12 +503,26 @@ jobs:
           source tools/phase0/lib.sh
           BLENDER_ROOT="$(cat tools/vendor/.blender_path)"
           BLENDER="${BLENDER_ROOT}/blender"
-          # Pinned to the release tag. A HEAD clone means an upstream commit can change a
-          # generated asset without this repository changing.
-          if [ ! -d tools/vendor/mpfb2 ]; then
-            git clone --depth 1 --branch "${MPFB2_TAG}" https://github.com/makehumancommunity/mpfb2 tools/vendor/mpfb2
+          # Pinned to an exact COMMIT, not the release tag. A tag is movable: its owner can
+          # repoint v2.0.18 at different code, and this repository would then build a different
+          # human without changing a single file here. The commit below is what `refs/tags/v2.0.18`
+          # resolved to (via the GitHub API, object type "commit"), and the checkout is verified
+          # against it rather than assumed.
+          if [ ! -d tools/vendor/mpfb2/.git ]; then
+            rm -rf tools/vendor/mpfb2
+            mkdir -p tools/vendor/mpfb2
+            git -C tools/vendor/mpfb2 init --quiet
+            git -C tools/vendor/mpfb2 remote add origin https://github.com/makehumancommunity/mpfb2
+            git -C tools/vendor/mpfb2 fetch --depth 1 origin "${MPFB2_COMMIT}"
+            git -C tools/vendor/mpfb2 checkout --quiet FETCH_HEAD
           fi
-          echo "mpfb2_commit=$(git -C tools/vendor/mpfb2 rev-parse HEAD)" | tee -a "$LOG"
+          mpfb_actual="$(git -C tools/vendor/mpfb2 rev-parse HEAD)"
+          echo "mpfb2 expected=${MPFB2_COMMIT} actual=${mpfb_actual}" | tee -a "$LOG"
+          if [ "$mpfb_actual" != "${MPFB2_COMMIT}" ]; then
+            echo "RESULT mpfb2_pin ok=False reason=commit_mismatch expected=${MPFB2_COMMIT} actual=${mpfb_actual}" | tee -a "$LOG"
+            exit 1
+          fi
+          echo "RESULT mpfb2_pin ok=True commit=${mpfb_actual} tag=${MPFB2_TAG}" | tee -a "$LOG"
           # MPFB2 is an EXTENSION: src/mpfb/blender_manifest.toml exists, and its register()
           # calls bpy.utils.extension_path_user(__package__), which raises
           #   ValueError: The "package" does not name an extension

@@ -27,7 +27,7 @@ facts is a guarantee that one of them is wrong.
 | Poly Haven API | live, asset IDs recorded per download | `api.polyhaven.com` | working |
 | Quaternius | release `third-party-quaternius`, sha256 `cc73fc4e…` | **SHA-256 verified in CI** on every downloaded archive | measured: 43 clips |
 | Modular Tree | release `5.6.0`, `modular_tree-5.6.0-linux_x64.zip`, sha256 `698cf57c…` | **SHA-256 verified in CI**; the release zip carries the compiled `m_tree` module | working — generates a tree Godot loads (1,840,066 tris, needs decimation) |
-| MPFB2 | tag `v2.0.18` | tag cloned, **resolved commit printed each run**; a movable tag is not a pin | working — 36,972 tris / 137 bones, both over budget |
+| MPFB2 | commit `d0a32e57a7f915cb2f2b95410e2117648c7bbb7e` (tag `v2.0.18`) | **commit fetched and verified in CI**; a tag is movable, so the commit is the pin | working — 36,972 tris / 137 bones, both over budget |
 | GitHub Actions | `@v4` / `@v5` | **major tags, not commit SHAs** | pin outstanding |
 
 ## Outstanding pins
@@ -38,7 +38,6 @@ An unpinned dependency can change a generated asset without the repository chang
 |---|---|---|
 | Godot archive checksum | hash computed and **reported as UNPINNED** each run | Godot publishes no checksum file with its GitHub release assets (no `SHA256-SUMS.txt` at that tag — it 404s), so there is no vendor value to check against. The run prints the measured hash in the job summary; pasting it into `GODOT_SHA256` makes the pin real. Until then the probe reports `ok=False reason=unpinned` rather than claiming verification. |
 | gltfpack archive checksum | same mechanism | meshoptimizer publishes no release-asset checksums either. |
-| MPFB2 | **movable tag** | A tag can be moved by its owner. The resolved commit is printed on every run; pinning it means copying that value into a workflow variable, which is the same one-line change as Godot's and needs a real run's output. |
 | GitHub Actions | major tags | 14 pins across three workflows; needs each action's commit SHA resolved. No behavioural change, so it is queued behind the asset pipeline. |
 
 **The rule these follow:** an unverified pin must never read as a verified one. That is why the

@@ -190,7 +190,13 @@ def test_json_without_an_ok_field_is_a_failure():
 
 
 def test_crash_after_result_is_kept_and_named():
-    """Dropping the `_exit` row made a probe that crashed after reporting look like a clean pass."""
+    """Dropping the `_exit` row made a probe that crashed after reporting look like a clean pass.
+
+    The row is named after the label run_capture was called with, not after the probe's own
+    `step`. run_capture is called with `mtree` while the probe inside reports `mtree_generate`,
+    so the crash row is `mtree_crash_after_result`. The first version of this test expected
+    `mtree_generate_crash_after_result` and failed against correct code.
+    """
     rows = [
         {"name": "mtree_generate", "ok": True, "detail": "tris=1840066"},
         {"name": "mtree_exit", "ok": False, "detail": "exit=139"},
@@ -198,7 +204,7 @@ def test_crash_after_result_is_kept_and_named():
     converted = make_report.collapse_exit_rows(rows)
     names = [row["name"] for row in converted]
     assert "mtree_exit" not in names, names
-    assert "mtree_generate_crash_after_result" in names, names
+    assert "mtree_crash_after_result" in names, names
     crash = [row for row in converted if row["name"].endswith("_crash_after_result")][0]
     assert crash["ok"] is False, crash
 
@@ -216,6 +222,23 @@ def test_retarget_probe_is_required():
     """The retarget map was written from a naming convention and never diffed against the pack."""
     assert "retarget_bones" in make_report.REQUIRED_PROBES, (
         "retarget_bones is not required, so a retarget map that names no real bone stays green"
+    )
+
+
+def test_crash_rows_are_listed_among_defects():
+    """A crash row must survive as a defect even when its label is not a required probe name."""
+    rows = make_report.collapse_exit_rows(
+        [
+            {"name": "mtree_generate", "ok": True, "detail": ""},
+            {"name": "mtree_exit", "ok": False, "detail": "exit=139"},
+        ]
+    )
+    crash = [row for row in rows if row["name"].endswith("_crash_after_result")]
+    assert crash, "the crash row was dropped"
+    # `mtree` is not in REQUIRED_PROBES — only mtree_generate and friends are — so this is the
+    # case that a name-matching rule would have silently let through.
+    assert "mtree" not in make_report.REQUIRED_PROBES, (
+        "this test only proves something if the label is not a required probe name"
     )
 
 
@@ -237,6 +260,7 @@ TESTS = [
     ("make_report: crash after result", test_crash_after_result_is_kept_and_named),
     ("make_report: exit=0 row dropped", test_exit_zero_row_is_still_dropped),
     ("make_report: retarget probe required", test_retarget_probe_is_required),
+    ("make_report: crash rows survive as defects", test_crash_rows_are_listed_among_defects),
 ]
 
 

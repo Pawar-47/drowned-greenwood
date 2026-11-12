@@ -40,6 +40,7 @@ DECISIONS = {
     "godot_checksum": ("Godot archive checksum", "whether the Godot download is pinned to known bytes"),
     "gltfpack_checksum": ("gltfpack archive checksum", "whether the gltfpack download is pinned to known bytes"),
     "quaternius_checksum": ("Quaternius archive checksum", "whether the release asset matches the recorded hash"),
+    "mpfb2_pin": ("MPFB2 pin", "whether the checkout is the exact commit, not a movable tag"),
     "godot_import": ("Godot headless import", "proves Godot accepts Blender's GLB output"),
     "godot_load": ("Godot headless load", "proves the imported mesh survives to a scene node"),
     "godot_scene_plain": ("Godot load of the Blender GLB", "the import gate itself: meshes and triangles that arrive"),
@@ -139,6 +140,7 @@ FAILURE_CONSEQUENCE = {
     "godot_checksum": "the Godot archive is not pinned to known bytes; a replaced download would run unchecked",
     "gltfpack_checksum": "the gltfpack archive is not pinned to known bytes; a replaced download would run unchecked",
     "quaternius_checksum": "the Quaternius release asset does not match the recorded hash; do not trust the clip inventory until it does",
+    "mpfb2_pin": "the MPFB2 checkout is not the pinned commit; a moved tag would silently change the human it builds",
     "godot_scene_tree": "MTree generates a tree that Godot cannot load; the tree pipeline is unverified",
     "godot_scene_human": "MPFB2 builds a human that Godot cannot load; the human pipeline is unverified",
     "godot_import_tree": "the tree file does not import; MTree output is unusable",
@@ -226,6 +228,9 @@ REQUIRED_PROBES = {
     # If this fails, the fix is to rewrite assets/char_retarget_map.json from the joint names the
     # same probe prints.
     "retarget_bones",
+    # MPFB2 is pinned to a commit now, and a pin nothing verifies is a comment. This fails if a
+    # moved tag or a changed fetch produced different code than the commit the pipeline pinned.
+    "mpfb2_pin",
 }
 
 
@@ -521,15 +526,20 @@ def main():
     missing_required = sorted(REQUIRED_PROBES - seen)
 
     def is_required(name):
-        """A probe is required if it is listed, or if its crash-after-reporting row is.
+        """Whether this failed row must fail the build.
 
         A required probe that prints a result and then crashes has reported, so it is not
-        "missing" — but the result may be partial, so it must still fail the build.
+        "missing" — but the result may be partial, so it must still fail.
+
+        A `_crash_after_result` row always fails, whatever its label. The label comes from
+        run_capture (`mtree`), not from the probe's own `step` (`mtree_generate`), so matching it
+        against REQUIRED_PROBES would miss the case it was written for: the crash row is named
+        after a label that is not itself a probe name. A command that died after emitting results
+        means those results cannot be trusted, which is a defect however the row is named.
         """
-        if name in REQUIRED_PROBES:
+        if name.endswith("_crash_after_result"):
             return True
-        suffix = "_crash_after_result"
-        return name.endswith(suffix) and name[: -len(suffix)] in REQUIRED_PROBES
+        return name in REQUIRED_PROBES
 
     required_failures = [row for row in defects if is_required(row["name"])]
 
