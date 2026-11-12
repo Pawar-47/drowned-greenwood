@@ -1,0 +1,66 @@
+# Purging a bad binary from git history
+
+**Read this before running anything here.** Rewriting history force-pushes and invalidates
+every clone, fork and open pull request. It is the last resort, not the first.
+
+## Prevention (this is what normally applies)
+
+1. Binaries never reach `main` by direct push. They are built on `staging`, pass the gates,
+   and arrive on `main` only by merging the staging branch.
+2. Every binary is committed **once**. It is re-committed only when its generator script,
+   config or seed changes — which is what the `input_hash` field in the manifest records.
+3. A file that would exceed 20 MB is not committed at all. It becomes a Release asset, and
+   the manifest records its `pack` and `sha256` instead.
+4. `git count-objects -vH` and `du -sh assets/*` are reported after every phase, against the
+   budget table, so growth is visible while it is still cheap to fix.
+
+If those four hold, this document is never needed.
+
+## When it is needed
+
+A binary over the limit, a `.blend`, a 4K texture, a ZIP or an HDR has been committed. A
+single offending blob makes the clone permanently heavy even after a later commit deletes it.
+
+## The workflow
+
+`.github/workflows/history-purge.yml` is **manual only** (`workflow_dispatch`), installs
+`git-filter-repo` with pip, and force-pushes. It has two inputs: the paths to purge, and a
+confirmation string that must read exactly `FORCE-PUSH`. It refuses to run without it.
+
+**Do not run it without explicit approval from the project owner**, because it force-pushes.
+
+## Manual steps (what the workflow does, so it can be done by hand)
+
+```bash
+# 1. Fresh mirror clone. Never work in a clone you care about.
+git clone --mirror https://github.com/Pawar-47/drowned-greenwood.git purge-work
+cd purge-work
+
+# 2. Back up first. A copy of the mirror is your only undo.
+cp -r . ../purge-backup
+
+# 3. Install the tool.
+pip install git-filter-repo
+
+# 4. Remove the paths. Repeat --path for each one.
+git filter-repo --force --invert-paths \
+  --path assets/flora/tree_greatfir_ancient_lod0.glb \
+  --path some/other/blob
+
+# 5. Check the damage before pushing.
+git count-objects -vH
+git log --oneline -5
+
+# 6. Force-push every ref back.
+git push --force --all
+git push --force --tags
+```
+
+## After a purge
+
+- Every collaborator must re-clone. Their old clones will try to re-push the purged blobs.
+- Open pull requests from forks may be unmergeable; recreate them.
+- GitHub may keep unreferenced objects reachable for a while. Ask GitHub Support to run
+  garbage collection on the repository if the size does not drop.
+- Record what was purged and why in `reports/quality_report.md` under the phase it happened
+  in, so the cause gets fixed in the generator rather than recurring.

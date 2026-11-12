@@ -1,0 +1,104 @@
+name: history-purge
+
+# MANUAL ONLY. Rewrites git history and force-pushes every ref.
+#
+# Read docs/HISTORY_PURGE.md first. Do not run this without explicit approval from the
+# project owner: it invalidates every clone and fork, and it cannot be undone from here.
+#
+# Prevention is the normal answer: binaries reach main only by merging the staging branch
+# after the gates pass, and a file that would exceed 20 MB becomes a Release asset instead of
+# a commit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      paths:
+        description: "Comma-separated paths to remove from history, e.g. assets/a.glb,assets/b.glb"
+        required: true
+        type: string
+      confirm:
+        description: "Type FORCE-PUSH to confirm. Anything else aborts."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  purge:
+    name: Remove paths from history and force-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Refuse unless confirmed
+        run: |
+          if [ "${{ inputs.confirm }}" != "FORCE-PUSH" ]; then
+            echo "Confirmation string was not FORCE-PUSH. Aborting without touching anything."
+            exit 1
+          fi
+
+      - name: Validate the path list
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra entries <<< "${{ inputs.paths }}"
+          if [ "${#entries[@]}" -eq 0 ]; then
+            echo "No paths given."
+            exit 1
+          fi
+          for entry in "${entries[@]}"; do
+            trimmed="$(echo "$entry" | xargs)"
+            if [ -z "$trimmed" ]; then
+              echo "Empty entry in the path list."
+              exit 1
+            fi
+            echo "will purge: $trimmed"
+            echo "$trimmed" >> "$GITHUB_WORKSPACE/purge_paths.txt"
+          done
+
+      - name: Mirror clone
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone --mirror "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" purge-work
+          cd purge-work
+          echo "size before:" && git count-objects -vH
+
+      - name: Back up the mirror
+        run: |
+          set -euo pipefail
+          cp -r purge-work purge-backup
+          echo "Backup written to purge-backup. It is discarded when the job ends; download it if you need it."
+
+      - name: Install git-filter-repo
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet git-filter-repo
+          git filter-repo --version
+
+      - name: Rewrite history
+        run: |
+          set -euo pipefail
+          cd purge-work
+          args=()
+          while IFS= read -r path; do
+            args+=(--path "$path")
+          done < ../purge_paths.txt
+          git filter-repo --force --invert-paths "${args[@]}"
+
+      - name: Report the result
+        run: |
+          set -euo pipefail
+          cd purge-work
+          echo "size after:" && git count-objects -vH
+          git log --oneline -10
+
+      - name: Force-push every ref
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd purge-work
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force --all
+          git push --force --tags

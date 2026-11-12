@@ -15,6 +15,9 @@ export_presets.cfg.bak
 *.apk
 *.aab
 
+# Generated from assets/manifest.json by tools/build_manifest.py
+assets/manifest.expanded.json
+
 # Downloaded tools and archives (fetched fresh in CI, cached by actions/cache)
 tools/vendor/
 *.tar.xz

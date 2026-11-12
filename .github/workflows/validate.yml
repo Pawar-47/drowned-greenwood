@@ -1,0 +1,53 @@
+name: validate
+
+# The manifest is the contract the whole pipeline builds against, so it is checked on every
+# change to it. Later phases add the asset validators from the brief's section 5 here.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "assets/manifest.json"
+      - "tools/build_manifest.py"
+      - "tools/validate/**"
+      - ".github/workflows/validate.yml"
+  pull_request:
+    paths:
+      - "assets/manifest.json"
+      - "tools/build_manifest.py"
+      - "tools/validate/**"
+
+permissions:
+  contents: read
+
+jobs:
+  manifest:
+    name: Manifest integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Expand the authored manifest
+        run: python tools/build_manifest.py
+
+      - name: Structural checks
+        run: python tools/validate/check_manifest.py
+
+      - name: P1 set per phase
+        run: |
+          python - <<'PY'
+          import json
+          with open("assets/manifest.expanded.json", encoding="utf-8") as handle:
+              manifest = json.load(handle)
+          p1 = [a for a in manifest["assets"] if a["priority"] == "P1"]
+          print("P1 assets: %d" % len(p1))
+          for asset in p1[:20]:
+              print("  phase %d  %-40s %s" % (asset["phase"], asset["name"], asset["category"]))
+          if len(p1) > 20:
+              print("  ... and %d more" % (len(p1) - 20))
+          PY

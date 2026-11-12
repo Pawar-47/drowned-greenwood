@@ -83,13 +83,17 @@ def build_scene():
 def main():
     engine = os.environ.get("PROBE_ENGINE", "CYCLES")
     out = os.environ.get("PROBE_OUT", "/tmp/phase0/render.png")
-    samples = int(os.environ.get("PROBE_SAMPLES", "8"))
+    samples = int(os.environ.get("PROBE_SAMPLES", "32"))
+    denoise = os.environ.get("PROBE_DENOISE", "1") == "1"
+    # Official preview settings: contact sheets are assembled at about 640x360 per view.
+    width = int(os.environ.get("PROBE_WIDTH", "640"))
+    height = int(os.environ.get("PROBE_HEIGHT", "360"))
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
 
     scene = build_scene()
     scene.render.engine = engine
-    scene.render.resolution_x = 256
-    scene.render.resolution_y = 256
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
     scene.render.filepath = out
@@ -97,7 +101,7 @@ def main():
     if engine == "CYCLES":
         scene.cycles.device = "CPU"
         scene.cycles.samples = samples
-        scene.cycles.use_denoising = False
+        scene.cycles.use_denoising = denoise
 
     bpy.ops.render.render(write_still=True)
 
@@ -120,6 +124,9 @@ def main():
         ok=exists,
         path=out,
         bytes=os.path.getsize(out) if exists else 0,
+        samples=samples,
+        denoise=denoise,
+        resolution="%dx%d" % (width, height),
         **stats,
     )
     return 0 if exists else 1

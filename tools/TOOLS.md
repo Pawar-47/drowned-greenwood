@@ -33,12 +33,29 @@ satisfies it, and its glTF exporter is the one the rest of the pipeline is writt
 A second Blender version may be added per job later if MTree or Infinigen demand it; each job
 pins exactly one Blender version.
 
-## Rules that apply to every tool
+## Decisions taken on the Phase 0 evidence (owner-approved)
 
-1. Licenses are recorded in `assets/LICENSES.md`. GPL tools (Blender add-ons) are used only
-   as external tools; their code is never copied into this repository.
-2. Free GitHub runners are CPU-only with no display. Renders use Cycles CPU, or
-   xvfb + Mesa `llvmpipe`. The Mobile (Vulkan) renderer cannot be assumed to software-render;
-   if it cannot, previews use the Compatibility renderer and the report says so.
-3. Every download is cached with `actions/cache`; every build step is resumable and keyed by
-   input hash, so a re-run does not redo finished work.
+| Question | Decision |
+|---|---|
+| Preview rendering | **Cycles CPU is the official preview renderer.** Low samples with denoise, contact sheets at roughly 640×360. Each report states which engine actually produced the pixels. Workbench and EEVEE under Xvfb + llvmpipe are probed but are not depended on. |
+| Godot visual checks | Not in CI. The Godot headless **import and load** check stays; anything that needs pixels happens on a real device. |
+| Infinigen | Approved as planned: `generate_individual_assets` only, CPU, small shards, never full scenes. |
+| Modular Tree | Approved. If the fork does not load in Blender 4.2, trees come from the Infinigen plant factories plus custom generators, and the quality loss is recorded in `reports/tool_evaluation.md`. A separate Blender version per job is allowed. |
+| Quaternius animations | Whatever clips can be fetched legally by script. The free Standard ZIPs are downloaded manually by the owner and uploaded to the Release `third-party-quaternius`, outside git; CI fetches them from there. Every missing clip is authored with `bpy`. **No clip count is promised**: `reports/tool_evaluation.md` records the real number once the pack is present. |
+| fps | Not measured in CI. Static budgets only (triangles, draw calls, materials, texture memory); `tech_perf_overlay_stub` is P1 so real-device measurement is possible. |
+
+## Release packs
+
+A category that overflows its size budget moves to a GitHub Release, **one tag per
+category** (`pack-4e-flora`, and so on). Every asset in a pack records `pack` and its
+`sha256` in the manifest, so the build can verify what it downloads. The APK workflow fetches
+packs with `GITHUB_TOKEN` and `contents: write`.
+
+## History
+
+`main` stays at roughly 700 MB; 800 MB is the absolute cap. Binaries reach `main` only by
+merging the staging branch after the gates pass, never by direct push. Purging is
+prevention-first; if it is ever needed, `docs/HISTORY_PURGE.md` has the manual steps and
+`.github/workflows/history-purge.yml` is the manual-only, force-pushing equivalent that must
+not be run without the owner's explicit approval.
+

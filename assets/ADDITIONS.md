@@ -1,9 +1,18 @@
 # Assets added beyond the final list
 
-The asset list in the brief is final and named. Nothing is added here until the P1 and P2
-sets are built and validated, and every addition is recorded with the reason the world needs
-it, then reported to the project owner.
+The brief's asset list is final and named. The four entries below are **approved additions**
+(review section 4) and are exceptions to the rule that additions wait for P1 and P2 to be
+built: all four are **P1** and all four are scheduled into the phases shown. They are in
+`assets/manifest.json` like any other asset.
 
-| Asset | Category | Tier | Priority | Why it is needed |
-|---|---|---|---|---|
-| _(none yet)_ | | | | |
+| Asset | Category | Tier | Priority | Phase | Why it is needed |
+|---|---|---|---|---|---|
+| `env_weather_<state>` — drizzle, steady_rain, heavy_rain, storm, fog, clearing, dusk, night, ridge_snow (9 `.tres`) | 4.A.env | C | P1 | 2 | The brief has sky panoramas but nothing that makes a weather state actually run. Each preset sets fog depth and height, ambient light, tonemap, sun colour and energy, sky reference, rain intensity, wetness target and wind strength, with LOW/MEDIUM/HIGH flags (glow off on LOW) and `env_transition_curves.json`. |
+| `terrain_hydrology_mask`, `terrain_water_level_table`, `terrain_river_splines`, `terrain_shore_mask` | 4.B.hydro | C | P1 | 2 | Nothing tied the 1 km terrain to where water sits. The mask is 1025² with R = water depth and G = flow direction, derived from the heightmap by a flow-accumulation script. Waterfall steps and the bog basin must match the heightmap. |
+| `terrain_surface_id_map`, `surface_ids`, `surface_fx_table` | 4.B.surface | C | P1 | 2 | Footsteps, impact VFX, decals and surface audio all need to know the surface at a point. Lossless R8 1024² (about 1 m per texel), IDs for mud, wet leaves, moss, wet stone, gravel, sand, wood, shallow and deep water, snow, dirt path, grass, clay, cobble and ash. Props and buildings carry a `surface:<id>` tag in the GLB extras; `surface_fx_table.json` links each ID to its footstep VFX, impact VFX, decal and audio ID. |
+| `char_skeleton_definition`, `char_retarget_map`, `animal_skeleton_<family>`, `anim_retarget_report` | 4.G.rig | C | P1 | 1 | The brief mandates one shared humanoid skeleton (≤ 65 bones) and per-family animal skeletons (≤ 50), but no artifact defined them. Written in Phase 1, before any human or animation work: bones, hierarchy, rest pose, naming, the mapping to Godot `SkeletonProfileHumanoid`, the Quaternius → MPFB2/Rigify → shared-skeleton retarget map, per-family animal definitions, and root-speed metadata recorded in the retarget report. |
+
+## Deliberately not added
+
+Nothing else. If the built world turns out to need more, it is recorded here first with the
+reason, then reported.

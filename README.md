@@ -14,19 +14,47 @@ gates pass.
 ## Layout
 
 ```
-assets/          manifest.json, LICENSES.md, ADDITIONS.md, and the built asset tree
-tools/           generators/ config/ validate/ phase0/ TOOLS.md
+assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, and the built asset tree
+tools/           generators/ config/ validate/ phase0/ build_manifest.py TOOLS.md
+docs/            HISTORY_PURGE.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md, scene_tests/, previews/
-.github/workflows/  Phase 0 tool evaluation (more workflows arrive in Phase 1)
+.github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
+
+## The asset list
+
+`assets/manifest.json` is the authored source: categories of `name|tier|priority|variants|source_tool`
+entries, where an empty field inherits from the group. `tools/build_manifest.py` expands it into
+`assets/manifest.expanded.json` — one record per asset, carrying every field the brief requires
+(`tier`, `priority`, `path`, `tris`, `lod_tris`, texture sizes, `bones`, `anims`, `tags`,
+`source_tool`, `tool_version`, `source_license`, `input_hash`, `sha256`, `pack`, `size_kb`,
+`status`, `gate_results`) — and refuses to write if the list is inconsistent.
+
+```bash
+python tools/build_manifest.py          # expand
+python tools/validate/check_manifest.py # structural checks
+```
+
+`assets/ADDITIONS.md` records the four approved additions, all P1 and scheduled: weather
+environment presets, hydrology data, the surface-ID map, and the shared skeleton / retarget
+artifacts.
+
+## Size and history
+
+`main` stays around 700 MB; 800 MB is the absolute cap. Binaries reach `main` only by merging
+the staging branch after the gates pass. A category that overflows its budget moves to a
+GitHub Release, one tag per category, and every affected asset records its `pack` and
+`sha256`. Prevention first: if history ever has to be rewritten, `docs/HISTORY_PURGE.md` has
+the manual steps, and `.github/workflows/history-purge.yml` is the manual-only equivalent that
+force-pushes and must not be run without explicit approval.
 
 ## Phases (stop and report after each)
 
 | Phase | Content | Status |
 |---|---|---|
-| 0 | Tool smoke tests: Blender headless render, glTF export, Godot import, gltfpack, glTF-Transform, MPFB2, MTree, Infinigen, Poly Haven API | in progress |
-| 1 | Repo structure, `assets/manifest.json` for every asset in the brief, workflows, validators, shared PBR material system | pending |
-| 2 | Ground/terrain, rocks, water, sky/atmosphere/weather | pending |
+| 0 | Tool smoke tests: Blender headless render, glTF export, Godot import, gltfpack, glTF-Transform, MPFB2, MTree, Infinigen, Poly Haven API, Quaternius packs | in progress |
+| 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | pending |
+| 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |
 | 4 | Fauna, hunting loot, animal sign | pending |
 | 5 | Humans, clothing, armor, clan kits, animations | pending |
@@ -38,7 +66,11 @@ reports/         tool_evaluation.md, quality_report.md, below_target.md, scene_t
 ## CI
 
 All building happens on GitHub-hosted runners (CPU only, no GPU, no display). Nothing is
-generated on a workstation. Pinned versions and the resolve-then-pin policy: `tools/TOOLS.md`.
+generated on a workstation. Pinned versions and the owner's decisions on the toolchain:
+`tools/TOOLS.md`.
 
-Phase 0 workflow: `.github/workflows/phase0-tool-evaluation.yml` — runs on push to
-`tools/phase0/**` or manually from the Actions tab.
+- **Previews** are Cycles CPU renders: low samples, denoise, contact sheets at roughly 640×360.
+- **Godot** runs a headless import-and-load gate in CI. Anything that needs pixels happens on a
+  real device.
+- **fps** is not measured in CI. Static budgets only; `tech_perf_overlay_stub` is P1 so real
+  measurement is possible later.

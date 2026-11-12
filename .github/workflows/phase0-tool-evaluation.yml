@@ -58,11 +58,13 @@ jobs:
           run_capture blender_env "$BLENDER" -b --factory-startup \
             -P tools/phase0/blender_probe_env.py -- --out artifacts/phase0
 
-      - name: Preview render with Cycles CPU
+      - name: Preview render with Cycles CPU (official preview renderer)
         run: |
           source tools/phase0/lib.sh
           BLENDER="$(cat tools/vendor/.blender_path)/blender"
-          run_capture render_cycles env PROBE_ENGINE=CYCLES PROBE_OUT=artifacts/phase0/render_cycles.png \
+          # Official preview settings: low samples, denoise on, 640x360 per view.
+          run_capture render_cycles env PROBE_ENGINE=CYCLES PROBE_SAMPLES=32 PROBE_DENOISE=1 \
+            PROBE_WIDTH=640 PROBE_HEIGHT=360 PROBE_OUT=artifacts/phase0/render_cycles.png \
             "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_render.py
 
       - name: Install Mesa and Xvfb for software OpenGL
@@ -73,21 +75,23 @@ jobs:
             xvfb libgl1 libglx-mesa0 libgl1-mesa-dri libegl1 libgles2 \
             libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libice6
 
-      - name: Preview render with Workbench under Xvfb + llvmpipe
+      - name: Preview render with Workbench under Xvfb + llvmpipe (informational)
+        continue-on-error: true
         run: |
           source tools/phase0/lib.sh
           BLENDER="$(cat tools/vendor/.blender_path)/blender"
           run_capture render_workbench env LIBGL_ALWAYS_SOFTWARE=1 PROBE_ENGINE=BLENDER_WORKBENCH \
-            PROBE_OUT=artifacts/phase0/render_workbench.png \
+            PROBE_WIDTH=640 PROBE_HEIGHT=360 PROBE_OUT=artifacts/phase0/render_workbench.png \
             xvfb-run -a --server-args="-screen 0 1280x720x24" \
             "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_render.py
 
-      - name: Preview render with EEVEE Next under Xvfb + llvmpipe
+      - name: Preview render with EEVEE Next under Xvfb + llvmpipe (informational)
+        continue-on-error: true
         run: |
           source tools/phase0/lib.sh
           BLENDER="$(cat tools/vendor/.blender_path)/blender"
           run_capture render_eevee env LIBGL_ALWAYS_SOFTWARE=1 PROBE_ENGINE=BLENDER_EEVEE_NEXT \
-            PROBE_OUT=artifacts/phase0/render_eevee.png \
+            PROBE_WIDTH=640 PROBE_HEIGHT=360 PROBE_OUT=artifacts/phase0/render_eevee.png \
             xvfb-run -a --server-args="-screen 0 1280x720x24" \
             "$BLENDER" -b --factory-startup -P tools/phase0/blender_probe_render.py
 
@@ -253,6 +257,28 @@ jobs:
         run: |
           source tools/phase0/lib.sh
           run_capture polyhaven python3 tools/phase0/polyhaven_probe.py --out artifacts/phase0
+
+      - name: Quaternius animation packs from the third-party release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          # The free Standard ZIPs are downloaded manually by the owner and uploaded to the
+          # Release "third-party-quaternius", outside git. Until that release exists this step
+          # reports the gap rather than failing: the pack is an open task on the owner.
+          if ! gh release view third-party-quaternius >/dev/null 2>&1; then
+            echo "RESULT quaternius_packs exit=1 reason=release third-party-quaternius not found" | tee -a "$LOG"
+            exit 0
+          fi
+          mkdir -p artifacts/phase0/quaternius
+          gh release download third-party-quaternius --dir artifacts/phase0/quaternius --clobber >>"$LOG" 2>&1
+          found=$(find artifacts/phase0/quaternius -type f | wc -l)
+          echo "RESULT quaternius_packs exit=0 files=${found}" | tee -a "$LOG"
+          # Report what is actually in the packs. No clip count is promised until this runs.
+          find artifacts/phase0/quaternius -type f -printf '%f %s\n' | sort >>"$LOG" 2>&1
+          python3 tools/phase0/quaternius_inventory.py --dir artifacts/phase0/quaternius | tee -a "$LOG"
 
       - name: Infinigen clone and install
         continue-on-error: true

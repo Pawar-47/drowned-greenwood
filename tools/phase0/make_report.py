@@ -39,6 +39,8 @@ DECISIONS = {
     "gltf_transform_install": ("glTF-Transform CLI", "dedup, prune, animation resample, texture resize"),
     "gltf_transform_version": ("glTF-Transform version", "pin recorded for tools/TOOLS.md"),
     "polyhaven": ("Poly Haven API", "CC0 PBR textures, HDRIs and scanned models"),
+    "quaternius_packs": ("Quaternius animation packs", "CC0 humanoid clips; every missing clip is authored with bpy"),
+    "quaternius_inventory": ("Quaternius inventory", "the real clip count, measured rather than promised"),
     "infinigen_install": ("Infinigen install", "rocks, plants, fungi, clouds, materials"),
     "infinigen_import": ("Infinigen import", "same decision, checked after install"),
     "infinigen_cli": ("Infinigen asset generator CLI", "individual-asset generation on CPU"),
@@ -54,6 +56,8 @@ FAILURE_CONSEQUENCE = {
     "mtree_register": "trees fall back to custom generators plus Infinigen bush/plant factories",
     "infinigen_install": "rocks and plants fall back to custom generators plus Poly Haven scans",
     "polyhaven": "no CC0 texture source; materials fall back to procedural baking only",
+    "quaternius_packs": "no CC0 clip source yet; the release is an open task on the owner and clips are authored instead",
+    "quaternius_inventory": "clip coverage unknown; the animation report stays open",
 }
 
 
