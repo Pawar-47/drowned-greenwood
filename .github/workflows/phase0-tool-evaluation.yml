@@ -132,9 +132,11 @@ jobs:
           du -ab artifacts/phase0 | sort -k1 -n | tail -20 >>"$LOG" 2>&1
 
       - name: Collect the log alongside the probe outputs
+        if: always()
         run: cp -f phase0_log.txt artifacts/phase0/phase0_log.txt
 
       - name: Upload Phase 0 probe outputs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phase0-blender
@@ -210,15 +212,20 @@ jobs:
           run_capture godot_load_gltfpack "$GODOT" --headless \
             --path tools/phase0/godot_probe_simplified
 
-      - name: Collect the log alongside the probe outputs
+      - name: Collect the log
+        if: always()
         run: cp -f phase0_log.txt artifacts/phase0/phase0_log.txt
 
       - name: Upload Phase 0 Godot log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phase0-godot
-          path: artifacts/phase0/
+          # A single file path does not re-nest, so only the log travels: the GLBs and PNGs
+          # are already in the phase0-blender artifact and the shared pool is small.
+          path: artifacts/phase0/phase0_log.txt
           retention-days: 3
+          if-no-files-found: warn
 
   tools:
     name: MPFB2, MTree, Infinigen, glTF-Transform, Poly Haven
