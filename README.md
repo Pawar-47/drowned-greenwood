@@ -71,13 +71,6 @@ pushed.
 |---|---|---|
 | 0 | Tool smoke tests | **CLOSED — 0 defects.** Verified end to end: Blender 4.2.23 and 4.5.16 (checksums), all three renderers, Godot import/load, both shader includes compile, **MTree generates a tree that Godot loads**, **MPFB2 builds and rigs a human that Godot loads**, gltfpack `-noq`, Infinigen, glTF-Transform, Poly Haven, and the report gate (it fails the job on a defect). **Carried into later phases, all measured and all over budget:** MTree's raw tree is hundreds of thousands of triangles and tens of MB against a 10k–16k tri hero budget and a 1.5 MB per-species cap (the exact count varies per generated seed, so the current figure lives in `reports/tool_evaluation.md` rather than here); MPFB2's human is **36,972 tris / 137 bones** against 12k–18k and 65. Decimation and bone reduction are Phase 3 and Phase 5 work. Quaternius supplies 43 clips covering **16 of 41** families. See `reports/tool_evaluation.md` |
 | 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | in progress |
-
-**Phase 0 closing means the tooling works, not that the game has assets.** The distinction
-matters and is easy to blur: a tool that runs is not an asset, an asset that exists is not one
-that meets the brief, and one that meets the brief is not one that runs on a phone. Phase 0
-established the first of those for every tool and the second for two of them (a tree and a
-human, both over budget). Everything else — decimation, LODs, rig remapping, retargeting, the
-1,954 planned assets — is Phases 1–9.
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | pending |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |
 | 4 | Fauna, hunting loot, animal sign | pending |
@@ -86,6 +79,13 @@ human, both over budget). Everything else — decimation, LODs, rig remapping, r
 | 7 | Settlements, forts, props, vehicles | pending |
 | 8 | VFX, shaders, UI | pending |
 | 9 | Biome scatter, audio, final 1 km test world, debug APK | pending |
+
+**Phase 0 closing means the tooling works, not that the game has assets.** The distinction
+matters and is easy to blur: a tool that runs is not an asset, an asset that exists is not one
+that meets the brief, and one that meets the brief is not one that runs on a phone. Phase 0
+established the first of those for every tool and the second for two of them (a tree and a
+human, both over budget). Everything else — decimation, LODs, rig remapping, retargeting, the
+1,954 planned assets — is Phases 1–9.
 
 ## CI rules
 

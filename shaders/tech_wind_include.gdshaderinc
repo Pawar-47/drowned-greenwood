@@ -35,8 +35,14 @@ global uniform float wind_gust : hint_range(0.0, 1.0) = 0.0;
 //
 // `hint_default_black` is the Godot 4 sampler hint; `hint_black` is not a hint at all and fails
 // to compile. See Godot's shading-language reference, "Uniform hints".
-uniform sampler2D wind_noise : hint_default_black;
-uniform sampler2D gust_flowmap : hint_default_black;
+//
+// `repeat_enable` and `filter_linear_mipmap` are not optional here. The UV is
+// `world_xz * 0.01 + wind_time * frequency`, which leaves the 0..1 range almost immediately:
+// flutter (2.1 Hz) crosses it in under a second, and anything more than 100 m from the origin
+// starts outside it. Without repeating, the sample clamps to an edge texel and the foliage
+// freezes in place — the shader still parses, so no compile gate would ever catch it.
+uniform sampler2D wind_noise : hint_default_black, repeat_enable, filter_linear_mipmap;
+uniform sampler2D gust_flowmap : hint_default_black, repeat_enable, filter_linear_mipmap;
 
 // Amplitude per channel in metres at wind_strength 1.0. A 60 m fir sways further than a fern,
 // so these are tuned per material rather than globally.
@@ -55,18 +61,24 @@ float wind_phase(vec2 world_xz, float frequency) {
 	return texture(wind_noise, uv).r * 2.0 - 1.0;
 }
 
-// The displacement applied to a vertex. COLOR is the mesh's vertex colour; a mesh without one
-// arrives as opaque white, which would move everything, so guard on the green channel.
+// The displacement applied to a vertex.
+//
+// The "does this mesh carry wind data" flag is the ALPHA channel, not the colour. An earlier
+// version treated a vertex colour of (1,1,1) as "not authored", which is wrong: a crown leaf at
+// full sway/flutter legitimately sits at (1,1,1), and those vertices would have been frozen —
+// the treetops, the part most worth animating. Alpha is free for this because nothing in the
+// foliage pipeline uses it, and a mesh with no vertex colours at all arrives as (1,1,1,1), so
+// alpha 1 still means "unauthored".
+//
+// Authoring rule: set alpha to 0 on every vertex that should move.
 vec3 wind_offset(vec3 vertex, vec4 vertex_color, mat4 model) {
+	if (vertex_color.a > 0.99) {
+		return vec3(0.0);
+	}
+
 	float trunk = vertex_color.r;
 	float branch = vertex_color.g;
 	float leaf = vertex_color.b;
-
-	// A mesh with no wind channels at all: COLOR is (1,1,1,1) by default in Godot, so treat
-	// a fully white vertex colour as "not authored" and leave it alone.
-	if (trunk > 0.99 && branch > 0.99 && leaf > 0.99) {
-		return vec3(0.0);
-	}
 
 	vec2 world_xz = (model * vec4(vertex, 1.0)).xz;
 

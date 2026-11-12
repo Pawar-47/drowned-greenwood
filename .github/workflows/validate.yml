@@ -9,15 +9,17 @@ on:
     paths:
       - "assets/**"
       - "shaders/**"
-      - "tools/build_manifest.py"
-      - "tools/validate/**"
-      - ".github/workflows/validate.yml"
+      # check_scripts.py parses every Python and shell file in the repository, and
+      # tools/phase0/ holds most of them. Without this, a probe could be committed syntactically
+      # broken and the checker that exists to catch it would not run.
+      - "tools/**"
+      - ".github/workflows/**"
   pull_request:
     paths:
       - "assets/**"
       - "shaders/**"
-      - "tools/build_manifest.py"
-      - "tools/validate/**"
+      - "tools/**"
+      - ".github/workflows/**"
 
 permissions:
   contents: read

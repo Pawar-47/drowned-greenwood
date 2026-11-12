@@ -10,11 +10,22 @@ This file is the single list. The probe project registers these in
 | Name | Type | Default | Set by |
 |---|---|---|---|
 | `global_wetness` | float | 0.0 | weather system, from `env_weather_*` presets |
-| `wetness_darken` | float | 0.45 | material class (soil and bark darken more than stone) |
 | `puddle_amount` | float | 0.0 | weather system, heavy rain only |
 | `wind_time` | float | 0.0 | advanced every frame by the world script |
 | `wind_strength` | float | 0.6 | weather system |
 | `wind_gust` | float | 0.0 | weather system, smoothed |
+
+## Deliberately per-material, not global
+
+| Uniform | Why it cannot be a global |
+|---|---|
+| `wetness_darken` | soil and bark darken far more than stone. A global would force one value on every surface in the world. |
+| `sway_amplitude`, `branch_amplitude`, `flutter_amplitude` | a 60 m fir moves differently from a fern; these are tuned per material. |
+| `wind_noise`, `gust_flowmap` | different foliage classes may use different noise atlases, and Godot does not support texture globals. |
+
+`wetness_darken` was declared `global uniform` for a while while this file described it as set by
+material class — a contradiction that would have compiled fine and then behaved wrongly. It is a
+per-material uniform now.
 
 ## Adding a global
 

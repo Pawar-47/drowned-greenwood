@@ -148,9 +148,11 @@ def load_families(manifest_path=MANIFEST):
 GLB_MAGIC = b"glTF"
 CHUNK_JSON = 0x4E4F534A
 
+RETARGET_MAP = "assets/char_retarget_map.json"
 
-def glb_animation_names(path):
-    """Return the animation names in a GLB, or None if it cannot be parsed.
+
+def glb_document(path):
+    """Parse a GLB's glTF JSON chunk, or return None.
 
     GLB layout: 12-byte header (magic, version, total length), then chunks of
     (uint32 length, uint32 type, data). The first chunk is the glTF JSON.
@@ -172,15 +174,42 @@ def glb_animation_names(path):
                 return None
 
             payload = handle.read(chunk_length)
-            document = json.loads(payload.decode("utf-8").rstrip("\x00 "))
+            return json.loads(payload.decode("utf-8").rstrip("\x00 "))
     except (OSError, ValueError, struct.error):
         return None
 
-    animations = document.get("animations") or []
-    names = []
-    for index, animation in enumerate(animations):
-        names.append(animation.get("name") or "unnamed_%d" % index)
-    return names
+
+def glb_joint_names(document):
+    """Every joint name used by any skin in a glTF document, deduplicated and sorted.
+
+    This answers the question that actually matters for retargeting: what are the bones
+    called? A retarget map written from a naming convention is a guess until it is diffed
+    against the real skin.
+    """
+    nodes = document.get("nodes") or []
+    names = set()
+    for skin in document.get("skins") or []:
+        for index in skin.get("joints") or []:
+            if 0 <= index < len(nodes):
+                name = nodes[index].get("name")
+                if name:
+                    names.add(name)
+    return sorted(names)
+
+
+def load_retarget_sources():
+    """The source-bone names the retarget map expects, per source tool."""
+    try:
+        with open(RETARGET_MAP, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out = {}
+    for source in data.get("sources", []):
+        mapping = source.get("map") or {}
+        if mapping:
+            out[source.get("source_tool", "?")] = set(mapping)
+    return out
 
 
 def extract_archives(root_dir, extract_dir):
@@ -226,16 +255,23 @@ def main():
     # file as "one clip" is the mistake this script exists to stop making.
     clips_by_source = {}
     fbx_files = []
+    joints_by_source = {}
     for root, _dirs, files in os.walk(extract_dir):
         for name in files:
             path = os.path.join(root, name)
             lower = name.lower()
             if lower.endswith(".glb") or lower.endswith(".gltf"):
-                names = glb_animation_names(path)
-                if names is None:
+                document = glb_document(path)
+                if document is None:
                     print("could not parse %s; not counted" % name)
                     continue
-                clips_by_source[name] = names
+                clips_by_source[name] = [
+                    a.get("name") or "unnamed_%d" % i
+                    for i, a in enumerate(document.get("animations") or [])
+                ]
+                joints = glb_joint_names(document)
+                if joints:
+                    joints_by_source[name] = joints
             elif lower.endswith(".fbx"):
                 fbx_files.append(name)
 
@@ -256,6 +292,48 @@ def main():
         "per_container": {k: len(v) for k, v in sorted(clips_by_source.items())},
         "sample_clips": clip_list[:20],
     }))
+
+    # Diff the real skin joints against the names the retarget map expects.
+    #
+    # This is the check that decides whether the map is usable. It was written from a naming
+    # convention — Mixamo-style `LeftUpLeg`, `Spine1`, `LeftArm` — and if Quaternius's UAL rig
+    # actually uses Unreal-mannequin or plain names, every one of those mappings is wrong and
+    # retargeting would silently do nothing. Opening the GLB settles it in one run.
+    all_joints = set()
+    for joints in joints_by_source.values():
+        all_joints.update(joints)
+    joint_list = sorted(all_joints)
+
+    if joint_list:
+        expected = load_retarget_sources().get("quaternius", set())
+        matched = sorted(expected & all_joints)
+        unmatched = sorted(expected - all_joints)
+        # Joints the map does not mention. Fingers are expected here and are deliberately
+        # collapsed, so they are reported but are not a failure.
+        unmapped = sorted(all_joints - expected)
+        print("RESULT " + json.dumps({
+            "step": "retarget_bones",
+            "ok": len(unmatched) == 0,
+            "joints_in_glb": len(joint_list),
+            "mapped_names": len(expected),
+            "matched": len(matched),
+            "unmatched_map_entries": unmatched[:25],
+            "sample_joints": joint_list[:25],
+            "note": "matched = map entries that exist as real joints in the GLB",
+        }))
+        if unmatched:
+            print(
+                "WARNING: %d retarget map entries name bones that do not exist in the pack; "
+                "the map was written from a naming convention, not from this file. "
+                "First few: %s" % (len(unmatched), unmatched[:10])
+            )
+    else:
+        print("RESULT " + json.dumps({
+            "step": "retarget_bones",
+            "ok": False,
+            "reason": "no_skinned_meshes_in_the_pack",
+            "note": "the animation library ships clips without a skin, so joints cannot be read",
+        }))
 
     # Families come from the manifest, not from a hardcoded list, so adding an animation to
     # the manifest is enough for it to be measured here. `family_notes` reports anything that

@@ -22,7 +22,12 @@
 global uniform float global_wetness : hint_range(0.0, 1.0) = 0.0;
 
 // How much darker this material goes when fully wet. Soil and bark darken hard; stone less so.
-global uniform float wetness_darken : hint_range(0.0, 0.8) = 0.45;
+//
+// This is a PER-MATERIAL uniform, not a global. It was declared `global uniform` while
+// SHADER_GLOBALS.md described it as "set by material class", which cannot work: a global is one
+// value for the whole scene, so every surface in the world would have had to darken by the same
+// amount. Each material sets its own.
+uniform float wetness_darken : hint_range(0.0, 0.8) = 0.45;
 
 // Puddle coverage, driven separately from wetness so a heavy storm can pool water without
 // every surface needing its own puddle texture.

@@ -27,6 +27,36 @@ VALID_TIERS = {"S", "A", "B", "C"}
 VALID_PRIORITIES = {"P1", "P2", "P3"}
 VALID_STATUS = {"pending", "built", "PASSED", "BELOW_TARGET", "PLACEHOLDER"}
 
+# Licence per source tool.
+#
+# This used to be a blanket `source_license: CC0` in field_defaults, which meant an asset whose
+# provenance had never been checked was indistinguishable from one whose licence had been
+# verified. The default is now null and the licence is derived from the tool that makes the
+# asset, so an unrecognised tool produces null and the validator rejects it rather than quietly
+# calling it CC0.
+LICENCE_BY_TOOL = {
+    # Our own generators: the scripts are ours and so is what they emit.
+    "custom": "project-original",
+    # Poly Haven publishes everything on its API under CC0.
+    "polyhaven": "CC0",
+    # MPFB2's bundled assets (base meshes, skins, clothes) are CC0 per its LICENSE.ASSETS.md,
+    # even though the add-on code itself is GPL-3.0.
+    "mpfb2": "CC0",
+    # The Quaternius Universal Animation Library is CC0.
+    "quaternius": "CC0",
+    # Infinigen is BSD-3-Clause, which permits this use and does not reach its output.
+    "infinigen": "BSD-3-Clause",
+    # Modular Tree is GPL-3.0. Whether its *output* inherits that is a legal question this
+    # pipeline must not answer silently, so tree assets are marked for review. They may be
+    # planned; check_manifest.py refuses to let them be marked built until it is settled.
+    "mtree": "NEEDS-REVIEW",
+}
+
+
+def licence_for(source_tool):
+    """The licence for an asset from this tool, or None when the tool is unrecognised."""
+    return LICENCE_BY_TOOL.get(source_tool)
+
 # Licence per source tool. This is a fact about the tool, not an assumption about the asset,
 # and each entry says where the fact comes from. An unknown tool gets None, which
 # check_manifest.py rejects — an unverified provenance must never read as CC0.
@@ -57,7 +87,8 @@ def licence_for(source_tool):
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)+$")
 
 # Prefixes used by the brief's asset list. A name outside this set means either a typo or an
-# addition that has not been through assets/ADDITIONS.md.KNOWN_PREFIXES = {
+# addition that has not been through assets/ADDITIONS.md.
+KNOWN_PREFIXES = {
     "sky", "cloud", "fog", "godray", "light", "haze", "rain", "snow", "hail", "lightning",
     "thunder", "fx", "screen", "lut", "env", "ground", "terrain", "decal", "rock", "ore",
     "water", "aqua", "tree", "log", "stump", "branch", "root", "deadfall", "bark", "wood",

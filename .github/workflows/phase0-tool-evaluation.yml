@@ -583,6 +583,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [static, blender, godot, tools]
     if: always()
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -595,6 +596,10 @@ jobs:
           python-version: "3.11"
 
       - name: Build reports/tool_evaluation.md
+        # Writes the report, then exits 1 if a required probe failed. The two steps below must
+        # still run in that case — the report is the explanation of the failure, and skipping it
+        # is the same mistake as the earlier Gate bug: the reason existed but never reached the
+        # reader. They are `if: always()` for exactly that reason.
         run: |
           set -uo pipefail
           python tools/phase0/make_report.py \
@@ -602,11 +607,21 @@ jobs:
             --out reports/tool_evaluation.md
 
       - name: Job summary
-        run: cat reports/tool_evaluation.md >> "$GITHUB_STEP_SUMMARY"
+        if: always()
+        run: |
+          if [ -f reports/tool_evaluation.md ]; then
+            cat reports/tool_evaluation.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Tool evaluation" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "The report was not produced. See this job's log." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload the report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phase0-report
           path: reports/tool_evaluation.md
           retention-days: 14
+          if-no-files-found: warn

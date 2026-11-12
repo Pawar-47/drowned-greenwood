@@ -207,6 +207,54 @@ def check_shader(path):
     return None
 
 
+def check_repo_hygiene():
+    """Guard the two limits git itself enforces, before a push discovers them.
+
+    GitHub blocks a file over 100 MB outright and warns at 50 MB, and the brief sets 20 MB as
+    this project's own ceiling. A binary that slips in is also permanent: it stays in history
+    after a later commit deletes it. Catching it here costs a second; catching it after the push
+    costs a history rewrite.
+
+    The source-artifact extensions are here because they must never be committed at all: a
+    `.blend` is the authoring file, and `.hdr`/`.exr` are the pre-bake sources. The pipeline
+    bakes them down; committing them would multiply the repository size for no shipped benefit.
+    """
+    problems = []
+    max_file = 20 * 1024 * 1024
+    forbidden = (".blend", ".blend1", ".blend2", ".hdr", ".exr")
+    largest = (0, "")
+    total = 0
+    count = 0
+
+    for root, dirs, files in os.walk("."):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in files:
+            path = os.path.join(root, name)
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                continue
+            count += 1
+            total += size
+            if size > largest[0]:
+                largest = (size, path)
+            if size > max_file:
+                problems.append(
+                    "%s is %.1f MB, over the 20 MB per-file limit; move it to a Release pack"
+                    % (path, size / (1024 * 1024))
+                )
+            if name.lower().endswith(forbidden):
+                problems.append(
+                    "%s is a source artifact that must never be committed" % path
+                )
+
+    print(
+        "repository: %d files, %.1f MB total, largest %.1f MB (%s)"
+        % (count, total / (1024 * 1024), largest[0] / (1024 * 1024), largest[1] or "none")
+    )
+    return problems
+
+
 def main():
     problems = []
     counts = {"python": 0, "shell": 0, "json": 0, "yaml": 0, "shader": 0}
@@ -270,6 +318,8 @@ def main():
         problems.append("the walker found no workflow YAML; the workflow filter is wrong")
     if counts["shader"] == 0:
         problems.append("the walker found no shaders; the shader filter is wrong")
+
+    problems.extend(check_repo_hygiene())
 
     if problems:
         print("static checks failed:", file=sys.stderr)

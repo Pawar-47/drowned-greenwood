@@ -2,10 +2,16 @@
 *.blend
 *.blend1
 *.blend2
-staging/
-build/
-out/
-tmp/
+# Source HDRIs and high-bit-depth texture sources are never committed: they are large, and the
+# pipeline bakes them down to 1K-2K tiles before anything ships.
+*.hdr
+*.exr
+# Anchored to the repository root. Without the leading slash these also matched a directory
+# named "build" or "out" anywhere in the tree, including inside tools/.
+/staging/
+/build/
+/out/
+/tmp/
 artifacts/
 phase0_log.txt
 

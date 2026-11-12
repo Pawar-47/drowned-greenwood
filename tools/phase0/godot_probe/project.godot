@@ -25,10 +25,6 @@ global_wetness={
 "type": "float",
 "value": 0.0
 }
-wetness_darken={
-"type": "float",
-"value": 0.45
-}
 puddle_amount={
 "type": "float",
 "value": 0.0
