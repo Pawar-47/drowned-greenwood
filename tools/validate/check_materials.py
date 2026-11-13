@@ -49,9 +49,16 @@ RANGES = {
     "flutter_amplitude": (0.0, 0.1),
 }
 
+# The band wetness_darken must sit in, per wetness kind in surface_ids.json. "always_wet" is absent
+# on purpose: water is drawn by another shader system and has no material row.
+WETNESS_BANDS = {
+    "soaks": (0.5, 0.8),
+    "beads": (0.0, 0.35),
+    "drains": (0.25, 0.55),
+}
+
 MATERIAL_REQUIRED = {
-    "name": str,
-    "shader": str,
+    "name": str,    "shader": str,
     "surface_id": int,
     "texture_set": str,
     "tiling_m": (int, float),
@@ -354,6 +361,32 @@ def check_materials(doc, by_id, surfaces_doc, problems):
                     "%s: %s tiling_m is %s m, outside the %s..%s m clamp"
                     % (MATERIALS, name, tiling_value, low, high)
                 )
+
+        # wetness_darken has to sit in the band its surface's wetness kind declares.
+        #
+        # surface_ids.json says "soaks: darkens strongly ... high end of its range" and
+        # "beads: darkens little ... low wetness_darken". Eight materials were outside those
+        # bands — leaves and bark most visibly — so two contract files disagreed and neither was
+        # wrong on its own. A material whose visual behaviour genuinely differs from the ground it
+        # is named after says so with wetness_kind_override and a note: an explicit decision
+        # instead of a silent contradiction.
+        if isinstance(sid, int) and not isinstance(sid, bool) and sid in by_id:
+            override = row.get("wetness_kind_override")
+            kind = override or by_id[sid].get("wetness")
+            if override and not row.get("note"):
+                problems.append(
+                    "%s: %s overrides its surface's wetness kind without a note saying why"
+                    % (MATERIALS, name)
+                )
+            band = WETNESS_BANDS.get(kind)
+            value = row.get("wetness_darken")
+            if band and isinstance(value, (int, float)) and not isinstance(value, bool):
+                low_bound, high_bound = band
+                if not low_bound <= value <= high_bound:
+                    problems.append(
+                        "%s: %s has wetness_darken %s, but its surface is %r, which requires "
+                        "%s..%s" % (MATERIALS, name, value, kind, low_bound, high_bound)
+                    )
 
         for field, (low_bound, high_bound) in RANGES.items():
             if field not in row:
