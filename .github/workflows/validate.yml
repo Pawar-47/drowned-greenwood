@@ -13,14 +13,20 @@ on:
   push:
     paths:
       - "assets/**"
+      - "docs/**"
+      - "reports/**"
       - "shaders/**"
       - "tools/**"
+      - "README.md"
       - ".github/workflows/**"
   pull_request:
     paths:
       - "assets/**"
+      - "docs/**"
+      - "reports/**"
       - "shaders/**"
       - "tools/**"
+      - "README.md"
       - ".github/workflows/**"
 
 permissions:
