@@ -14,13 +14,14 @@ Checks, in the order the brief states the limits:
   * no duplicate bone names
   * no cycles in the hierarchy
   * the manifest's declared bone_count matches the actual list
-  * humanoid bone names match Godot's SkeletonProfileHumanoid, since the definition claims they do
+  * humanoid bone names match Godot's SkeletonProfileHumanoid, in both directions:
+    every bone is a profile name and every profile name is a bone
+  * Left/Right bone pairs are mirror images about x=0 (head and tail)
   * the cloth chains a character may wear fit in the spare bones, computed from the bone list
-  * animal families do not exceed the cap, and every species in the asset list is covered
-
-What it does not check: animal bone *hierarchy*. Those families are flat lists of bone names with
-no parent links, so there is nothing to walk; it says so out loud rather than letting "skeleton
-checks passed" imply the animal rigs were validated as deeply as the humanoid one.
+  * the retarget map's source names all exist in its own recorded joint list, and no
+    recorded joint vanishes: it is mapped, a documented finger chain, or a *_leaf helper
+  * animal families do not exceed the cap, carry a parent map with one root, no orphans
+    and no cycles, and every species in the asset list is covered
 """
 
 import json
@@ -55,6 +56,14 @@ GODOT_HUMANOID = {
     "RightRingProximal", "RightRingIntermediate", "RightRingDistal",
     "RightLittleProximal", "RightLittleIntermediate", "RightLittleDistal",
 }
+
+
+# The pack's finger chains and `*_leaf` helpers are documented in the retarget map as
+# deliberately dropped (fingers.policy = "collapse"). Writing the pattern here makes the
+# exception explicit and testable: a recorded joint that matches neither is reported as
+# silently dropped instead of vanishing.
+FINGER_JOINT = re.compile(r"^(thumb|index|middle|ring|pinky)_\d{2}(_leaf)?_(l|r)$")
+LEAF_HELPER = re.compile(r"^[a-z0-9]+_leaf_(l|r)$")
 
 
 def load(path):
@@ -205,6 +214,43 @@ def check_bilateral_optional(families, problems):
                 )
 
 
+def check_mirror_symmetry(bones, problems, label):
+    """A humanoid rig is left/right symmetric: Right must mirror Left about x=0.
+
+    Every pair is symmetric today, so this exists for the next edit: a hand-tuned offset
+    applied to one side only would read as a subtle limp in-game and nothing structural
+    would catch it.
+    """
+    by_name = {bone["name"]: bone for bone in bones}
+    for bone in bones:
+        name = bone["name"]
+        if not name.startswith("Left"):
+            continue
+        mirror_name = "Right" + name[len("Left"):]
+        mirror = by_name.get(mirror_name)
+        if mirror is None:
+            problems.append("%s: %s has no mirror %s" % (label, name, mirror_name))
+            continue
+        for point in ("head", "tail"):
+            left = bone.get(point) or []
+            right = mirror.get(point) or []
+            if len(left) != 3 or len(right) != 3:
+                problems.append(
+                    "%s: %s.%s or %s.%s is not a 3-vector"
+                    % (label, name, point, mirror_name, point)
+                )
+                continue
+            if (
+                abs(left[0] + right[0]) > 1e-6
+                or abs(left[1] - right[1]) > 1e-6
+                or abs(left[2] - right[2]) > 1e-6
+            ):
+                problems.append(
+                    "%s: %s.%s %s and %s.%s %s are not mirror images (x must negate)"
+                    % (label, name, point, left, mirror_name, point, right)
+                )
+
+
 def check_humanoid(problems):
     skeleton = load(SKELETON)
     bones = skeleton["bones"]
@@ -221,6 +267,7 @@ def check_humanoid(problems):
         )
 
     check_hierarchy(bones, problems, label)
+    check_mirror_symmetry(bones, problems, label)
     check_lod_counts(skeleton, bones, problems)
     check_cloth_budget(skeleton, bones, problems)
 
@@ -239,8 +286,19 @@ def check_humanoid(problems):
     if deform == 0:
         problems.append("%s: no deform bones" % label)
 
-    sockets = skeleton.get("attachments", {}).get("sockets", [])
+    # The claim runs both ways: not only must every bone be a profile name, every profile
+    # name must be present. A definition that dropped one (UpperChest, say) would fail no
+    # per-bone check and retargeting would silently have one bone fewer than Godot's own
+    # tooling expects.
     names = {bone["name"] for bone in bones}
+    missing_profile = sorted(GODOT_HUMANOID - names)
+    if missing_profile:
+        problems.append(
+            "%s: SkeletonProfileHumanoid bones absent from the definition: %s"
+            % (label, missing_profile[:5])
+        )
+
+    sockets = skeleton.get("attachments", {}).get("sockets", [])
     for socket in sockets:
         if socket["parent_bone"] not in names:
             problems.append(
@@ -288,6 +346,46 @@ def check_retarget(problems, skeleton):
     missing = required - mapped
     if missing:
         problems.append("char_retarget_map: no source maps %s" % sorted(missing))
+
+    # The map's evidence block records the joint list the map was rewritten from. Checking
+    # the source names against that list here costs nothing and catches the failure mode
+    # that actually happened — a hand-edited map key stops naming a real joint, retargeting
+    # silently does nothing, and the next Phase 0 run is the first thing to notice. It also
+    # refuses to let a joint vanish: every recorded joint must be mapped, a documented
+    # finger chain, or a *_leaf helper, or the map has to say what happened to it.
+    for source in retarget["sources"]:
+        evidence = source.get("evidence") or {}
+        joints = evidence.get("full_joint_list") or []
+        mapping = source.get("map") or {}
+        if not joints:
+            continue
+        label = source.get("source_tool", "?")
+        joint_set = set(joints)
+        unknown = sorted(set(mapping) - joint_set)
+        if unknown:
+            problems.append(
+                "char_retarget_map: %s maps %s, which its recorded joint list does not contain"
+                % (label, unknown[:5])
+            )
+        declared = evidence.get("joints_in_glb")
+        if isinstance(declared, int) and not isinstance(declared, bool) and declared != len(joints):
+            problems.append(
+                "char_retarget_map: %s records joints_in_glb=%s but lists %d joints"
+                % (label, declared, len(joints))
+            )
+        dropped = [
+            joint for joint in joints
+            if joint not in mapping
+            and not FINGER_JOINT.match(joint)
+            and not LEAF_HELPER.match(joint)
+        ]
+        if dropped:
+            problems.append(
+                "char_retarget_map: %s silently drops %d joints that are neither mapped, "
+                "a finger chain nor a *_leaf helper: %s"
+                % (label, len(dropped), dropped[:5])
+            )
+
     print(
         "retarget: %d target bones covered, %d source(s) verified"
         % (len(mapped), verified)

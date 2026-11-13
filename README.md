@@ -57,7 +57,7 @@ python tools/build_manifest.py            # expand
 python tools/validate/check_scripts.py    # every script, shader, workflow and run block parses
 python tools/validate/test_tools.py       # unit tests for the manifest builder and report parser
 python tools/validate/check_manifest.py   # structure, budgets, licences
-python tools/validate/check_skeletons.py  # bone caps, humanoid hierarchy, LOD and cloth budgets, animal coverage
+python tools/validate/check_skeletons.py  # bone caps, humanoid hierarchy and left/right symmetry, retarget-map evidence, LOD and cloth budgets, animal hierarchies and coverage
 python tools/validate/check_materials.py  # materials, surface ids, FX table, duplicate shader uniforms
 python tools/validate/check_action_pins.py  # every pinned action SHA resolves through the GitHub API (needs network)
 python tools/validate/check_docs.py        # numbers quoted in the docs, and markdown table shapes

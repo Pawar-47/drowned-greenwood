@@ -26,6 +26,7 @@ carries the same clips. FBX is reported as present-but-unread, never as a clip c
 import argparse
 import collections
 import json
+import math
 import os
 import re
 import struct
@@ -245,6 +246,120 @@ def load_retarget_sources():
     return out
 
 
+def quat_to_mat3(quaternion):
+    """A rotation quaternion [x, y, z, w] as a 3x3 row-major matrix."""
+    x, y, z, w = quaternion
+    return [
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ]
+
+
+def node_local_matrix(node):
+    """A node's local transform as a 4x4 column-major matrix (glTF's layout)."""
+    if "matrix" in node:
+        return node["matrix"]
+    t = node.get("translation") or [0.0, 0.0, 0.0]
+    q = node.get("rotation") or [0.0, 0.0, 0.0, 1.0]
+    s = node.get("scale") or [1.0, 1.0, 1.0]
+    r = quat_to_mat3(q)
+    return [
+        r[0][0] * s[0], r[1][0] * s[0], r[2][0] * s[0], 0.0,
+        r[0][1] * s[1], r[1][1] * s[1], r[2][1] * s[1], 0.0,
+        r[0][2] * s[2], r[1][2] * s[2], r[2][2] * s[2], 0.0,
+        t[0], t[1], t[2], 1.0,
+    ]
+
+
+def mat4_multiply(a, b):
+    """Column-major 4x4 multiply: a @ b."""
+    out = [0.0] * 16
+    for col in range(4):
+        for row in range(4):
+            out[col * 4 + row] = sum(
+                a[k * 4 + row] * b[col * 4 + k] for k in range(4)
+            )
+    return out
+
+
+def node_world_matrices(document):
+    """Every node's rest (bind-time) world transform, from the node hierarchy alone.
+
+    Walks from the scene roots, then covers any node the scene does not reach — skins
+    sometimes carry joints the scene graph drops. Cycles are guarded with a visited set.
+    """
+    nodes = document.get("nodes") or []
+    local = [node_local_matrix(node) for node in nodes]
+    children_of = [[] for _ in nodes]
+    has_parent = [False] * len(nodes)
+    for i, node in enumerate(nodes):
+        for child in node.get("children") or []:
+            if 0 <= child < len(nodes):  # tolerate a bad index rather than crash
+                children_of[i].append(child)
+                has_parent[child] = True
+
+    world = [None] * len(nodes)
+    visited = set()
+
+    def walk(i, parent_m):
+        if i in visited:
+            return
+        visited.add(i)
+        world[i] = local[i] if parent_m is None else mat4_multiply(parent_m, local[i])
+        for child in children_of[i]:
+            walk(child, world[i])
+
+    for i in range(len(nodes)):
+        if not has_parent[i]:
+            walk(i, None)
+    for i in range(len(nodes)):
+        if world[i] is None:
+            walk(i, None)
+    return world
+
+
+def measure_rest_pose(document):
+    """The pack's rest-pose arm elevation, measured rather than asserted.
+
+    The retarget map claims the pack rests in T-pose, "matching the target", which removes
+    the need for a rest-pose correction. That claim came from the vendor's preview renders,
+    not from the file. This measures it: in a T-pose the vector from the upper-arm joint's
+    origin to the lower-arm joint's origin is horizontal, so its elevation is ~0 degrees;
+    an A-pose reads ~45. Returns {"l": deg, "r": deg}, or None if the joints cannot be
+    found — the probe then simply reports no elevation figure.
+    """
+    nodes = document.get("nodes") or []
+    index_by_name = {}
+    for skin in document.get("skins") or []:
+        for joint in skin.get("joints") or []:
+            if 0 <= joint < len(nodes):
+                name = nodes[joint].get("name")
+                if name:
+                    index_by_name[name] = joint
+    needed = ("upperarm_l", "lowerarm_l", "upperarm_r", "lowerarm_r")
+    if not all(n in index_by_name for n in needed):
+        return None
+
+    world = node_world_matrices(document)
+
+    def origin(name):
+        m = world[index_by_name[name]]
+        return (m[12], m[13], m[14])
+
+    elevations = {}
+    for side in ("l", "r"):
+        upper = origin("upperarm_" + side)
+        lower = origin("lowerarm_" + side)
+        dx, dy, dz = (lower[0] - upper[0], lower[1] - upper[1], lower[2] - upper[2])
+        horizontal = math.hypot(dx, dz)
+        if horizontal < 1e-9 and abs(dy) < 1e-9:
+            elevations[side] = 0.0
+        else:
+            elevations[side] = math.degrees(math.atan2(dy, horizontal))
+    return elevations
+
+
 def extract_archives(root_dir, extract_dir):
     """Unzip anything still packed. Returns the archives found."""
     archives = []
@@ -289,6 +404,7 @@ def main():
     clips_by_source = {}
     fbx_files = []
     joints_by_source = {}
+    docs_by_source = {}
     for root, _dirs, files in os.walk(extract_dir):
         for name in files:
             path = os.path.join(root, name)
@@ -305,6 +421,7 @@ def main():
                 joints = glb_joint_names(document)
                 if joints:
                     joints_by_source[name] = joints
+                    docs_by_source[name] = document
             elif lower.endswith(".fbx"):
                 fbx_files.append(name)
 
@@ -347,12 +464,26 @@ def main():
         # Joints the map does not mention. Fingers are expected here and are deliberately
         # collapsed, so they are reported but are not a failure.
         unmapped = sorted(all_joints - expected)
+
+        # The map claims the pack rests in T-pose. Measure that rather than assert it:
+        # the elevation of the upper-arm -> lower-arm vector in the rest transforms.
+        # ~0 degrees is a T-pose, ~45 is an A-pose. A number far from zero means the
+        # retarget map's rest_pose claim is wrong and a rest-pose correction is needed.
+        arm_elevation = None
+        for doc in docs_by_source.values():
+            arm_elevation = measure_rest_pose(doc)
+            if arm_elevation is not None:
+                break
+        arm_elevation_json = None if arm_elevation is None else {
+            side: round(angle, 1) for side, angle in sorted(arm_elevation.items())
+        }
         print("RESULT " + json.dumps({
             "step": "retarget_bones",
             "ok": len(unmatched) == 0,
             "joints_in_glb": len(joint_list),
             "mapped_names": len(expected),
             "matched": len(matched),
+            "arm_elevation_deg": arm_elevation_json,
             # Full lists, not a 25-name sample. The first run truncated `sample_joints` to 25,
             # which was exactly the information needed to rewrite the map and half of it was
             # cut off — so the map had to be written partly from the Unreal convention anyway.
