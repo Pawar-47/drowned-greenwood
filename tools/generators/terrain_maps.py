@@ -130,17 +130,19 @@ RIM_POWER = 2.6
 RIVER_HALF_WIDTH_M = 8.0
 RIVER_BANK_M = 24.0
 RIVER_DEPTH_M = 1.4
-# Bed height at the bog and at the northern edge, in metres. The bed has to end below the waterline
-# or the river never reaches the lake, and it has to start above it or it starts as a lake.
-RIVER_BED_SOURCE_M = 33.5
-RIVER_BED_OUTLET_M = 30.5
+# Bed height at the bog and at the northern edge, in metres. Both end below the waterline on
+# purpose: a river whose bed is above lake level is a dry channel, which is what the first
+# published terrain had — a carved trench with a floor 13 m above the water and nothing in it.
+RIVER_BED_SOURCE_M = 30.0
+RIVER_BED_OUTLET_M = 29.0
 
 # The bog bowl, as a radius in u/v units (1.0 is the whole map across).
 BOG_CENTRE_U = 0.30
 BOG_CENTRE_V = 0.68
 BOG_RADIUS_U = 0.26
-# Just above the waterline: a basin that is wet but not under water, with the lake in its middle.
-BOG_FLOOR = 0.168
+# Below the waterline: the basin holds a lake rather than being a damp lawn. At 0.168 (33.6 m) it
+# sat above the 32 m water level and the bog came out dry.
+BOG_FLOOR = 0.148
 
 
 def smoothstep(edge0, edge1, x):
@@ -245,18 +247,23 @@ def shape_height(base, valley):
             bog_weight = 1.0 - smoothstep(0.0, BOG_RADIUS_U * 2.0, bog_distance)
             h = h * (1.0 - bog_weight) + BOG_FLOOR * bog_weight
 
-            # The river, carved from the bog to the northern edge. It is a *blend toward a bed
-            # height*, not a proportional cut of whatever the terrain happens to be: that is what
-            # makes the channel a few metres deep everywhere along its length instead of 100 m
-            # deep where the valley is tall.
-            if v <= BOG_CENTRE_V:
+            # The river, carved from inside the bog to the northern edge. It is a *blend toward a
+            # bed height*, not a proportional cut of whatever the terrain happens to be: that is
+            # what makes the channel a few metres deep everywhere along its length instead of
+            # 100 m deep where the valley is tall.
+            #
+            # The carve runs past the bog centre rather than starting there. Ending it at a row
+            # is what put a wall across the map both times: first with a hard `v < 0.72`, then
+            # with a hard `v <= BOG_CENTRE_V`. And it only ever lowers ground, so it cannot cut a
+            # step upward where the bed is above the floor it meets.
+            if v <= BOG_CENTRE_V + 0.08:
                 distance_m = abs(u - river_centre_u(v)) * 1000.0
                 bank = 1.0 - smoothstep(
                     RIVER_HALF_WIDTH_M, RIVER_HALF_WIDTH_M + RIVER_BANK_M, distance_m
                 )
                 if bank > 0.0:
                     bed = river_bed_m(v) / MAX_HEIGHT_M
-                    h = h * (1.0 - bank) + bed * bank
+                    h = min(h, h * (1.0 - bank) + bed * bank)
 
             row[x] = max(0.0, min(1.0, h))
         field.append(row)
