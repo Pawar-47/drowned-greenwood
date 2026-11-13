@@ -629,6 +629,28 @@ def test_sampler_without_repeat_is_rejected():
     assert error, "repeat_disable was read as if it enabled repeating"
 
 
+def test_wind_lean_is_taken_into_model_space():
+    """The gust lean is a world-space direction added to a model-space vertex.
+
+    wind_offset() samples the flowmap with world XZ, so the lean it returns points at the
+    world; the VERTEX it is added to is model space. A tree yawed by the scatter would rotate
+    the lean with itself, and the forest — which the comment promises leans the same way —
+    would lean in every direction at once. Nothing downstream catches it: it compiles, and it
+    reads as "the wind looks wrong" only after thousands of trees are scattered.
+
+    So the include must be seen taking the direction back into model space before adding it.
+    """
+    source = open(
+        os.path.join(ROOT, "shaders", "tech_wind_include.gdshaderinc"), encoding="utf-8"
+    ).read()
+    code = re.sub(r"//[^\n]*", "", source)
+    assert "transpose(mat3(model))" in code, (
+        "the gust lean is added in model space without being taken back from world space, so "
+        "every yawed instance leans its own way instead of the forest leaning together. Wind "
+        "the lean through transpose(mat3(model)) before adding it to VERTEX"
+    )
+
+
 def test_flow_accumulation_counts_upstream_area():
     """Each cell in a downhill chain adds the one before it: 1, 2, 3, 4, 5.
 
@@ -743,6 +765,7 @@ TESTS = [
     ("generators: slope is zero on flat ground", test_slope_is_zero_on_flat_ground),
     ("generators: surface ids match the contract", test_surface_ids_are_still_the_numbers_the_generator_writes),
     ("shaders: wind UV requires repeat", test_wind_uv_leaves_the_unit_range_so_repeat_is_required),
+    ("shaders: wind lean lands in model space", test_wind_lean_is_taken_into_model_space),
     ("shaders: alpha writes match the pipeline", test_alpha_writes_match_the_pipeline_they_ask_for),
     ("shaders: a sampler without repeat is rejected", test_sampler_without_repeat_is_rejected),
     ("generators: PNG round trip 8-bit", test_png_round_trip_preserves_every_value),
