@@ -109,6 +109,7 @@ These are real and unfixed. They are listed so they are not rediscovered as surp
 | Mobile renderer verification | owner's decision: a real-device check, not a CI one. The CI shader gate compiles under Compatibility |
 | Blender 4.2 LTS end of life | 4.2 is pinned because MPFB2 requires ≥ 4.2. Revisit when MPFB2 supports 4.5 and drop to one Blender for every job |
 | Play Asset Delivery | only relevant if published to Google Play, which is not planned yet |
+| Texture compression for Android (ETC2 / ASTC) | no Godot export preset or import setting exists yet, so there is nothing to gate. The trigger is the first export preset; the gate is then a check that every texture set declares its target format and that its compressed size is counted against the budget |
 | Sparse checkout | see above; trigger is the first committed binary |
 | 1,110 assets with `source custom` | the largest open question in the manifest. `tools/generators/` now exists but covers terrain and hydrology only; the rest are `UNVERIFIED` — planned, never shippable — until each entry records where it comes from. Phase 2 onward |
 | Generator performance: 1,025² grids in pure stdlib Python | the three generator steps share a 10-minute job and finish in seconds today. Pinned numpy would remove the ceiling but adds the first third-party dependency to the generators. Revisit when a generator run approaches the limit, and record wall time at that point |

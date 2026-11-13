@@ -12,6 +12,9 @@ import sys
 
 import bpy
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from blender_probe_common import export_glb  # noqa: E402
+
 
 def arg_value(flag, default=None):
     argv = sys.argv
@@ -47,6 +50,26 @@ def main():
     obj.name = "probe_sphere"
     bpy.ops.object.shade_smooth()
 
+    # Vertex colours, deliberately, and this is the point of the control mesh. The wind include
+    # takes its per-vertex mask from the ALPHA of COLOR_0, so a sphere with no colours cannot
+    # answer the question the whole LOD decision rests on: does gltfpack keep them? A probe on a
+    # mesh without them passes while every tree in the game would be rigid.
+    #
+    # The attribute is wired into the material as well as exported, because Blender's exporter
+    # omits COLOR_0 unless a material samples it — which is exactly how the wind mask went
+    # missing once already.
+    mesh = obj.data
+    colours = mesh.color_attributes.new(name="wind_mask", type="FLOAT_COLOR", domain="POINT")
+    for entry in colours.data:
+        # Alpha 0 means "this vertex carries wind data"; 1 means "unauthored". Every vertex gets
+        # 0 so a dropped colour channel is visible rather than looking like an untouched default.
+        entry.color = (1.0, 1.0, 1.0, 0.0)
+    try:
+        mesh.color_attributes.active_color = colours
+    except (AttributeError, TypeError):
+        # Older Blender names this differently; the material link below still forces the export.
+        pass
+
     mat = bpy.data.materials.new("probe_material")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
@@ -54,26 +77,26 @@ def main():
         bsdf.inputs["Base Color"].default_value = (0.22, 0.33, 0.16, 1.0)
         bsdf.inputs["Roughness"].default_value = 0.45
         bsdf.inputs["Metallic"].default_value = 0.0
+        vertex_colour = mat.node_tree.nodes.new("ShaderNodeVertexColor")
+        vertex_colour.layer_name = "wind_mask"
+        mat.node_tree.links.new(vertex_colour.outputs["Color"], bsdf.inputs["Base Color"])
     obj.data.materials.append(mat)
 
     obj.data.calc_loop_triangles()
     tris = len(obj.data.loop_triangles)
 
     glb = os.path.join(outdir, "probe_sphere.glb")
-    ok = True
-    error = ""
-    try:
-        bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=False)
-    except Exception as exc:  # noqa: BLE001 - the point of the probe is to report the failure
-        ok = False
-        error = str(exc)[:300]
+    # The shared exporter, not a direct call: it is the one that asks for vertex colours, and a
+    # second copy of that decision here is a second place for it to be wrong.
+    ok, size, error = export_glb(glb)
 
     result(
         step="gltf_export",
-        ok=ok and os.path.exists(glb),
+        ok=ok,
         path=glb,
-        bytes=os.path.getsize(glb) if os.path.exists(glb) else 0,
+        bytes=size,
         tris=tris,
+        vertex_colours=len(mesh.vertices),
         error=error,
     )
     return 0

@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Check that the numbers and contracts quoted in the docs match the code.
+
+Run:
+    python tools/validate/check_docs.py
+
+Why this exists: every stale figure in this repository was a number written once in prose and then
+changed in the code. The README said "15 unit tests" while the suite had 35. `ADDITIONS.md` said
+the surface-ID map was 1024² while every generator wrote 1025² — twice, in two different files, and
+both times the contradiction was found by a human reading, not by a check.
+
+A number in prose is a claim about the code. This makes it one that can fail.
+"""
+
+import importlib.util
+import json
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def load_module(name, relative_path):
+    """Import a script by path; these live in directories that are not packages."""
+    path = os.path.join(ROOT, relative_path)
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    directory = os.path.dirname(path)
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    spec.loader.exec_module(module)
+    return module
+
+
+def read(relative):
+    with open(os.path.join(ROOT, relative), encoding="utf-8") as handle:
+        return handle.read()
+
+
+def main():
+    problems = []
+
+    readme = read("README.md")
+    manifest = json.loads(read(os.path.join("assets", "manifest.json")))
+    records, manifest_problems = build_manifest.build(manifest)
+    if manifest_problems:
+        # The builder's own failures are check_manifest.py's to report. Stacking a doc failure on
+        # top of them would bury the cause.
+        print(
+            "skipping doc checks: the manifest does not build (%s)"
+            % manifest_problems[0],
+            file=sys.stderr,
+        )
+        return 1
+
+    expected_assets = len(records)
+    match = re.search(r"([\d,]+)-asset manifest", readme)
+    if not match:
+        problems.append("README.md no longer states the asset count")
+    elif int(match.group(1).replace(",", "")) != expected_assets:
+        problems.append(
+            "README.md says the manifest holds %s assets; it holds %d"
+            % (match.group(1), expected_assets)
+        )
+
+    materials = json.loads(read(os.path.join("tools", "config", "materials.json")))
+    expected_materials = len(materials.get("materials", []))
+    match = re.search(r"(\d+) materials\b", readme)
+    if not match:
+        problems.append("README.md no longer states the material count")
+    elif int(match.group(1)) != expected_materials:
+        problems.append(
+            "README.md says there are %s materials; materials.json has %d"
+            % (match.group(1), expected_materials)
+        )
+
+    expected_tests = len(test_tools.TESTS)
+    match = re.search(r"(\d+) unit tests", readme)
+    if not match:
+        problems.append("README.md no longer states the unit test count")
+    elif int(match.group(1)) != expected_tests:
+        problems.append(
+            "README.md says %s unit tests; test_tools.py registers %d"
+            % (match.group(1), expected_tests)
+        )
+
+    # The 1025 contract. This is the exact number that drifted twice: the generator has always
+    # written 1025 samples and two documents said 1024.
+    samples = terrain_maps.SAMPLES
+    surface_ids = json.loads(read(os.path.join("assets", "surface_ids.json")))
+    encoding = surface_ids.get("encoding", {})
+    quoted = "%dx%d" % (samples, samples)
+    if quoted not in encoding.get("map", ""):
+        problems.append(
+            "assets/surface_ids.json encoding.map does not say %s, but the generator writes %d "
+            "samples" % (quoted, samples)
+        )
+    if "why_1025" not in encoding:
+        problems.append(
+            "assets/surface_ids.json no longer explains why the grid is %s" % quoted
+        )
+
+    # The exact wrong figure, caught by name. If this string ever comes back, it is the same
+    # contradiction a reader has had to find by hand twice.
+    additions = read(os.path.join("assets", "ADDITIONS.md"))
+    if "1024²" in additions:
+        problems.append(
+            "assets/ADDITIONS.md says 1024², but every terrain map is %s" % quoted
+        )
+
+    if problems:
+        print("documentation checks failed:", file=sys.stderr)
+        for problem in problems:
+            print("  - " + problem, file=sys.stderr)
+        return 1
+
+    print(
+        "docs: %d assets, %d materials, %d unit tests, %s grid all match their documents"
+        % (expected_assets, expected_materials, expected_tests, quoted)
+    )
+    return 0
+
+
+build_manifest = load_module("build_manifest", os.path.join("tools", "build_manifest.py"))
+test_tools = load_module(
+    "test_tools", os.path.join("tools", "validate", "test_tools.py")
+)
+terrain_maps = load_module(
+    "terrain_maps", os.path.join("tools", "generators", "terrain_maps.py")
+)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
