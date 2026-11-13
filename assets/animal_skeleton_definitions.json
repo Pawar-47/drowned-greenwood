@@ -33,6 +33,22 @@
         "LeftHorn", "RightHorn",
         "LeftMane", "RightMane", "Withers"
       ],
+      "parents": {
+        "Hips": "Root", "Spine1": "Hips", "Spine2": "Spine1", "Spine3": "Spine2", "Chest": "Spine3",
+        "Neck1": "Chest", "Neck2": "Neck1", "Head": "Neck2", "Jaw": "Head",
+        "Tail1": "Hips", "Tail2": "Tail1", "Tail3": "Tail2",
+        "LeftShoulder": "Chest", "RightShoulder": "Chest",
+        "LeftUpperLeg_F": "LeftShoulder", "LeftLowerLeg_F": "LeftUpperLeg_F", "LeftHoof_F": "LeftLowerLeg_F",
+        "RightUpperLeg_F": "RightShoulder", "RightLowerLeg_F": "RightUpperLeg_F", "RightHoof_F": "RightLowerLeg_F",
+        "LeftHip": "Hips", "RightHip": "Hips",
+        "LeftUpperLeg_B": "LeftHip", "LeftLowerLeg_B": "LeftUpperLeg_B", "LeftHoof_B": "LeftLowerLeg_B",
+        "RightUpperLeg_B": "RightHip", "RightLowerLeg_B": "RightUpperLeg_B", "RightHoof_B": "RightLowerLeg_B",
+        "LeftEar": "Head", "RightEar": "Head",
+        "LeftEye": "Head", "RightEye": "Head",
+        "LeftHorn": "Head", "RightHorn": "Head",
+        "LeftMane": "Neck1", "RightMane": "Neck1",
+        "Withers": "Chest"
+      },
       "optional_bones": {
         "LeftHorn": "antlered and horned species only; dropped for horses and cattle",
         "RightHorn": "always dropped or kept with LeftHorn; a one-sided horn is a rigging error",
@@ -64,6 +80,19 @@
         "LeftEar", "RightEar", "LeftEye", "RightEye",
         "LeftAntler", "RightAntler", "Muzzle"
       ],
+      "parents": {
+        "Hips": "Root", "Spine1": "Hips", "Spine2": "Spine1", "Chest": "Spine2",
+        "Neck1": "Chest", "Neck2": "Neck1", "Head": "Neck2", "Jaw": "Head",
+        "Tail1": "Hips", "Tail2": "Tail1",
+        "LeftShoulder": "Chest", "RightShoulder": "Chest",
+        "LeftUpperLeg_F": "LeftShoulder", "LeftLowerLeg_F": "LeftUpperLeg_F", "LeftPaw_F": "LeftLowerLeg_F",
+        "RightUpperLeg_F": "RightShoulder", "RightLowerLeg_F": "RightUpperLeg_F", "RightPaw_F": "RightLowerLeg_F",
+        "LeftHip": "Hips", "RightHip": "Hips",
+        "LeftUpperLeg_B": "LeftHip", "LeftLowerLeg_B": "LeftUpperLeg_B", "LeftPaw_B": "LeftLowerLeg_B",
+        "RightUpperLeg_B": "RightHip", "RightLowerLeg_B": "RightUpperLeg_B", "RightPaw_B": "RightLowerLeg_B",
+        "LeftEar": "Head", "RightEar": "Head", "LeftEye": "Head", "RightEye": "Head",
+        "LeftAntler": "Head", "RightAntler": "Head", "Muzzle": "Head"
+      },
       "optional_bones": {
         "LeftAntler": "deer and ibex only",
         "RightAntler": "always dropped or kept with LeftAntler; a one-sided antler is a rigging error",
@@ -87,6 +116,15 @@
         "RightUpperLeg_B", "RightLowerLeg_B", "RightPaw_B",
         "LeftEar", "RightEar", "LeftEye"
       ],
+      "parents": {
+        "Hips": "Root", "Spine": "Hips", "Chest": "Spine", "Neck": "Chest", "Head": "Neck", "Jaw": "Head",
+        "Tail1": "Hips", "Tail2": "Tail1",
+        "LeftUpperLeg_F": "Chest", "LeftLowerLeg_F": "LeftUpperLeg_F", "LeftPaw_F": "LeftLowerLeg_F",
+        "RightUpperLeg_F": "Chest", "RightLowerLeg_F": "RightUpperLeg_F", "RightPaw_F": "RightLowerLeg_F",
+        "LeftUpperLeg_B": "Hips", "LeftLowerLeg_B": "LeftUpperLeg_B", "LeftPaw_B": "LeftLowerLeg_B",
+        "RightUpperLeg_B": "Hips", "RightLowerLeg_B": "RightUpperLeg_B", "RightPaw_B": "RightLowerLeg_B",
+        "LeftEar": "Head", "RightEar": "Head", "LeftEye": "Head"
+      },
       "note": "Small mammals are seen at a distance and mostly move as silhouettes; 24 bones is deliberately lean."
     },
     {
@@ -112,6 +150,16 @@
         "RightUpperLeg", "RightLowerLeg", "RightFoot",
         "LeftEye", "RightEye", "Crest"
       ],
+      "parents": {
+        "Hips": "Root", "Spine": "Hips", "Chest": "Spine",
+        "Neck1": "Chest", "Neck2": "Neck1", "Head": "Neck2", "Beak": "Head", "Jaw": "Head",
+        "Tail1": "Hips", "Tail2": "Tail1",
+        "LeftWing1": "Chest", "LeftWing2": "LeftWing1", "LeftWing3": "LeftWing2",
+        "RightWing1": "Chest", "RightWing2": "RightWing1", "RightWing3": "RightWing2",
+        "LeftUpperLeg": "Hips", "LeftLowerLeg": "LeftUpperLeg", "LeftFoot": "LeftLowerLeg",
+        "RightUpperLeg": "Hips", "RightLowerLeg": "RightUpperLeg", "RightFoot": "RightLowerLeg",
+        "LeftEye": "Head", "RightEye": "Head", "Crest": "Head"
+      },
       "notes": {
         "flap_glide": "Wing1/2/3 drive both flap and glide; glide is a static pose held on Wing1, so no extra bones are needed.",
         "crest": "Used for raven, jay, owl and pheasant silhouettes.",
@@ -132,6 +180,14 @@
         "DorsalFin", "AnalFin",
         "LeftEye", "RightEye"
       ],
+      "parents": {
+        "Body1": "Root", "Body2": "Body1", "Body3": "Body2", "Body4": "Body3", "Body5": "Body4",
+        "Head": "Body5", "Jaw": "Head",
+        "Tail1": "Body1", "Tail2": "Tail1",
+        "LeftPectoral": "Body3", "RightPectoral": "Body3",
+        "DorsalFin": "Body2", "AnalFin": "Body2",
+        "LeftEye": "Head", "RightEye": "Head"
+      },
       "note": "A single spine chain drives swim and turn. Eels use the same skeleton with a longer Body chain, which is why the count is generous for a fish."
     },
     {
@@ -150,6 +206,15 @@
         "RightUpperLeg_B", "RightLowerLeg_B", "RightFoot_B",
         "LeftEye", "RightEye"
       ],
+      "parents": {
+        "Hips": "Root", "Spine": "Hips", "Chest": "Spine", "Neck": "Chest", "Head": "Neck", "Jaw": "Head",
+        "Tail1": "Hips", "Tail2": "Tail1",
+        "LeftUpperLeg_F": "Chest", "LeftLowerLeg_F": "LeftUpperLeg_F", "LeftFoot_F": "LeftLowerLeg_F",
+        "RightUpperLeg_F": "Chest", "RightLowerLeg_F": "RightUpperLeg_F", "RightFoot_F": "RightLowerLeg_F",
+        "LeftUpperLeg_B": "Hips", "LeftLowerLeg_B": "LeftUpperLeg_B", "LeftFoot_B": "LeftLowerLeg_B",
+        "RightUpperLeg_B": "Hips", "RightLowerLeg_B": "RightUpperLeg_B", "RightFoot_B": "RightLowerLeg_B",
+        "LeftEye": "Head", "RightEye": "Head"
+      },
       "notes": {
         "why_a_separate_family": "Frogs and salamanders cannot use the small-mammal skeleton: a frog's hind limbs fold in two planes for the crouch and the jump, and a salamander's body is a long lateral chain. Sharing would need corrective shapes worth more than the clips it saved.",
         "tail": "Salamanders keep Tail1/Tail2; frogs and toads drop them. Dropping a bone never renames the others.",
@@ -170,6 +235,12 @@
         "RightWing1", "RightWing2", "RightWing3",
         "LeftLeg", "RightLeg"
       ],
+      "parents": {
+        "Hips": "Root", "Spine": "Hips", "Chest": "Spine", "Neck": "Chest", "Head": "Neck",
+        "LeftWing1": "Chest", "LeftWing2": "LeftWing1", "LeftWing3": "LeftWing2",
+        "RightWing1": "Chest", "RightWing2": "RightWing1", "RightWing3": "RightWing2",
+        "LeftLeg": "Hips", "RightLeg": "Hips"
+      },
       "notes": {
         "why_not_the_bird_skeleton": "A bat's wing is a membrane stretched across four elongated fingers, not a feathered arm. The bird family's Beak, Crest and tail-feather bones would all be dead weight, and its three-segment wing cannot express the finger-fan that makes a bat silhouette read at night.",
         "size": "14 bones: this is night ambience seen as a fluttering silhouette, not a creature the player studies.",
@@ -189,6 +260,14 @@
         "LeftEye", "RightEye",
         "LeftLeg", "RightLeg"
       ],
+      "parents": {
+        "Body1": "Root", "Body2": "Body1", "Body3": "Body2", "Body4": "Body3", "Body5": "Body4",
+        "Body6": "Body5", "Body7": "Body6", "Body8": "Body7", "Body9": "Body8", "Body10": "Body9",
+        "Neck": "Body10", "Head": "Neck", "Jaw": "Head",
+        "Tail1": "Body1", "Tail2": "Tail1",
+        "LeftEye": "Head", "RightEye": "Head",
+        "LeftLeg": "Body5", "RightLeg": "Body5"
+      },
       "optional_bones": {
         "LeftLeg": "lizard only; dropped for snakes and the slow worm",
         "RightLeg": "always dropped or kept with LeftLeg; a one-legged serpent is a rigging error"

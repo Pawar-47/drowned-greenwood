@@ -321,13 +321,38 @@ def check_animals(problems):
 
     check_bilateral_optional(families, problems)
 
-    # Say what is not checked. These families are flat lists of bone names with no parent links,
-    # so check_hierarchy() cannot run on them; a silent "skeleton checks passed" read as if the
-    # animal rigs had been validated as deeply as the humanoid one, which they have not.
-    print(
-        "animals: bone hierarchy NOT validated — these families carry no parent links; only "
-        "caps, duplicates, optional-bone pairing and coverage are checked"
-    )
+    # Every family now carries an explicit parent map, so its hierarchy is checked the same way the
+    # humanoid one is. Before that the families were flat bone lists and the only honest thing to
+    # print was "hierarchy NOT validated" — which meant Phase 4 would have built eight rigs from
+    # names with no structure behind them.
+    for family in families:
+        label = family["name"]
+        bones = family["bones"]
+        parents = family.get("parents") or {}
+        if not parents:
+            problems.append("%s: no parents map, so this rig cannot be built or validated" % label)
+            continue
+        if "Root" in parents:
+            problems.append("%s: Root must have no parent entry" % label)
+        missing = [bone for bone in bones if bone != "Root" and parents.get(bone) is None]
+        if missing:
+            problems.append(
+                "%s: %d bones have no parent: %s" % (label, len(missing), missing[:5])
+            )
+        unknown = sorted(set(parents) - set(bones))
+        if unknown:
+            problems.append("%s: parents reference unknown bones: %s" % (label, unknown[:5]))
+        for bone in bones:
+            seen = set()
+            current = bone
+            while current and current != "Root":
+                if current in seen:
+                    problems.append("%s: cycle in the hierarchy through %s" % (label, bone))
+                    break
+                seen.add(current)
+                current = parents.get(current)
+
+    print("animals: bone hierarchies validated — single root, no orphans, no cycles")
 
     for family in families:
         label = family["name"]
