@@ -412,7 +412,7 @@ jobs:
           cp artifacts/phase0/probe_sphere.glb tools/phase0/godot_probe/probe_sphere.glb
           # --headless uses a dummy renderer: no pixels, but a real import and load.
           run_capture godot_import "$GODOT" --headless --path tools/phase0/godot_probe --import
-          run_capture godot_load "$GODOT" --headless --path tools/phase0/godot_probe -- label=plain
+          run_capture godot_load "$GODOT" --headless --path tools/phase0/godot_probe -- label=plain expect_vertex_colours=1
 
       - name: Import the generated tree and human
         run: |
@@ -460,6 +460,11 @@ jobs:
             rm -f "$dir/probe_sphere.glb"
             cp "$src" "$dir/probe_sphere.glb"
             run_capture "godot_import_${variant}" "$GODOT" --headless --path "$dir" --import
+            # No expect_vertex_colours here on purpose. This run measures what gltfpack does to
+            # the attribute, and the first Phase 0 run that carried vertex colours measured it:
+            # gltfpack drops COLOR_0 entirely (vertex_colours=0). Requiring it would turn that
+            # finding into a permanently red gate instead of a recorded one; the probe still
+            # prints both counts, and the ledger carries the follow-up.
             run_capture "godot_load_${variant}" "$GODOT" --headless --path "$dir" -- "label=${variant}"
           done
 

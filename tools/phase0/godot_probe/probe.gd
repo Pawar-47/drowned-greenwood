@@ -18,6 +18,19 @@ func _label() -> String:
 	return "unlabelled"
 
 
+## Whether this file is supposed to carry vertex colours.
+##
+# The probe loads two different things: the Phase 0 sphere, which is authored with a wind mask so
+## that losing it is a failure, and the MTree tree and MPFB2 human, which have no vertex colours
+# and never did. Making the check unconditional turned three passing probes red on the first run
+# that exercised it — the workflow knows which file it copied in, so the workflow says.
+func _expect_vertex_colours() -> bool:
+	for arg in OS.get_cmdline_user_args():
+		if arg == "expect_vertex_colours=1":
+			return true
+	return false
+
+
 func _finish(label: String, payload: Dictionary) -> void:
 	payload["step"] = "godot_scene_%s" % label
 	print("RESULT " + JSON.stringify(payload))
@@ -26,6 +39,7 @@ func _finish(label: String, payload: Dictionary) -> void:
 
 func _ready() -> void:
 	var label := _label()
+	var expect_colours := _expect_vertex_colours()
 
 	if not ResourceLoader.exists(GLB):
 		_finish(label, {"ok": false, "reason": "glb_missing"})
@@ -86,7 +100,8 @@ func _ready() -> void:
 	# the same reason triangles are: a mesh that arrives without them is not the mesh that was
 	# exported, and nothing downstream would notice until the foliage stopped moving.
 	_finish(label, {
-		"ok": meshes > 0 and triangles > 0 and vertex_colours > 0,
+		"ok": meshes > 0 and triangles > 0 and (not expect_colours or vertex_colours > 0),
+		"expect_vertex_colours": expect_colours,
 		"meshes": meshes,
 		"empty_meshes": empty_meshes,
 		"surfaces": surfaces,
