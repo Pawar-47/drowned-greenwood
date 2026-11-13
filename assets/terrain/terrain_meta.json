@@ -3,7 +3,7 @@
   "cells": 1024,
   "deep_water_m": 22.0,
   "generator": "terrain_maps",
-  "heightmap_sha256": "ebc6000d7c882394f8f0f4ba3f1209a8b0be4013c73c535710d1fe33c37e5537",
+  "heightmap_sha256": "01ca4a3375208ed3c382436ca00ed294806b4149fe6a1456ad2e26effd3e3cfb",
   "input_hash": "bc25b899d03f04d112eeb82aaee02a1f40493cd8cd98853323d6d9aad92e3a52",
   "max_height_m": 200.0,
   "name": "terrain_meta",
