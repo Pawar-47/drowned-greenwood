@@ -41,6 +41,7 @@
     "Every non-retired surface id has exactly one row here.",
     "A row may set a field to null, which means deliberately nothing — never leave a field absent.",
     "Every non-null name here is a manifest entry. A name the plan does not declare is a typo or an undeclared asset, and check_assets.py fails on it.",
+    "A name may be the base name of a variant group (decal_leaf_pile has four variants), which is what a runtime that picks a variant at random should reference.",
     "A row with a null field carries a `missing` note saying what is absent and what the nearest planned asset is."
   ]
 }

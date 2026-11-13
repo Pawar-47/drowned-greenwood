@@ -59,7 +59,11 @@ def check_fx_contract(problems):
     if build_problems:
         problems.append("manifest does not build: %s" % build_problems[0])
         return 0
+    # A reference may name a record or the base name of a variant group. `decal_leaf_pile` with
+    # four variants expands to decal_leaf_pile_a..d, and the runtime picks one at random, so the
+    # family is the right thing for a table like this to name.
     declared = {record["name"] for record in records}
+    declared |= {record["base_name"] for record in records if record.get("variants", 1) > 1}
 
     fx = read_json(FX)
     fields = ("footstep_audio", "footstep_vfx", "impact_vfx", "decal", "ambient")
