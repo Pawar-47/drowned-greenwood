@@ -375,6 +375,31 @@ jobs:
           run_capture shader_compile "$GODOT" --headless --quit-after 600 \
             --path tools/phase0/godot_probe shader_probe.tscn
 
+      - name: Probe the hydrology mask in Godot
+        timeout-minutes: 10
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          GODOT="$PWD/tools/vendor/godot/godot"
+          out="artifacts/phase0/hydrology"
+          # Generated here, in the job that loads it, so the engine reads the same bytes the
+          # generator just wrote rather than an artifact from an earlier run.
+          python tools/generators/terrain_maps.py --out "$out" --report "$out/report.json" >>"$LOG" 2>&1
+          python tools/generators/hydrology.py \
+            --heightmap "$out/terrain_heightmap_master_1km.png" \
+            --out "$out" --report "$out/hydrology.json" >>"$LOG" 2>&1
+          if [ ! -f "$out/terrain_hydrology_mask.png" ]; then
+            echo "RESULT godot_hydrology_mask ok=False reason=generator_produced_no_mask" | tee -a "$LOG"
+            exit 1
+          fi
+          cp "$out/terrain_hydrology_mask.png" tools/phase0/godot_probe/terrain_hydrology_mask.png
+          # The import must happen before the scene runs; running first made Godot wait for an
+          # import that never came and the job hit its ceiling.
+          run_capture godot_hydrology_import "$GODOT" --headless \
+            --path tools/phase0/godot_probe --import
+          run_capture godot_hydrology_mask "$GODOT" --headless --quit-after 300 \
+            --path tools/phase0/godot_probe hydrology_probe.tscn
+
       - name: Import and load the generated GLBs
         run: |
           source tools/phase0/lib.sh

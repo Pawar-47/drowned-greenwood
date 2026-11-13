@@ -23,6 +23,7 @@ export_presets.cfg.bak
 # The Phase 0 shader probe copies the real shaders in at run time and rewrites their include
 # paths; these are generated, never committed.
 tools/phase0/godot_probe/includes/
+tools/phase0/godot_probe/terrain_hydrology_mask.png
 tools/phase0/godot_probe_*/
 
 # Generated from assets/manifest.json by tools/build_manifest.py
