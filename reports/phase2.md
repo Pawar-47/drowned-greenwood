@@ -15,21 +15,21 @@ one that passed the gates.
 
 | Asset | State | Measured |
 |---|---|---|
-| `terrain_heightmap_master_1km` | **built** | R16, 1025², height 9.1–152.0 m, 1843 KB |
-| `terrain_biome_mask` | **built** | R8 bit field, 1025², 12 KB |
-| `terrain_surface_id_map` | **built** | R8, 1025², 21 KB |
-| `terrain_hydrology_mask` | **built** | RGB8, 1025², depth in R, flow direction as a unit vector in G,B, 100 KB |
-| `terrain_shore_mask` | **built** | R8, 1025², 4 m falloff from the waterline, 21 KB |
-| `terrain_river_splines` | **built** | 655 points, 146.4 m down to 9.1 m, every segment descends, 86 KB |
-| `terrain_water_level_table` | **built** | one row per centreline point, 79 KB |
-| `terrain_normalmap_master` | **built** | RGB8, 1025², tangent-space normals from the heightmap, 953 KB |
-| `terrain_splat_0` | **built** | RGBA8, weights for grass, moss, rock, gravel, 1618 KB |
-| `terrain_splat_1` | **built** | RGBA8, weights for mud, sand, clay, reserved, 57 KB |
-| `terrain_macro_noise_texture` | **built** | R8, 1025², tiling low-frequency variation, 198 KB |
+| `terrain_heightmap_master_1km` | **built** | R16, 1025², height 29.1–135.1 m, 1783 KB |
+| `terrain_biome_mask` | **built** | R8 bit field, 1025², 16 KB |
+| `terrain_surface_id_map` | **built** | R8, 1025², 31 KB |
+| `terrain_hydrology_mask` | **built** | RGB8, 1025², depth in R, flow direction as a unit vector in G,B, 117 KB |
+| `terrain_shore_mask` | **built** | R8, 1025², 4 m falloff from the waterline, 3 KB |
+| `terrain_river_splines` | **built** | 321 points, every segment descends, 42 KB |
+| `terrain_water_level_table` | **built** | one row per centreline point, every surface above its bed, 39 KB |
+| `terrain_normalmap_master` | **built** | RGB8, 1025², tangent-space normals from the heightmap, 1583 KB |
+| `terrain_splat_0` | **built** | RGBA8, weights for grass, moss, rock, gravel, 814 KB |
+| `terrain_splat_1` | **built** | RGBA8, weights for mud, sand, clay, reserved, 36 KB |
+| `terrain_macro_noise_texture` | **built** | R8, 1024², tiling low-frequency variation, 199 KB |
 | `terrain_height_blend_rules` | **built** | the thresholds the weights were built from, 1 KB |
 
-`terrain_splat_1` is 28× smaller than `terrain_splat_0`, which is the expected signature: mud,
-sand and clay are rare (0.6 %, 0.3 % and 0.03 % of the map), so those channels are almost entirely
+`terrain_splat_1` is 22× smaller than `terrain_splat_0`, which is the expected signature: mud,
+sand and clay are rare (1.3 %, 0.6 % and 0.1 % of the map), so those channels are almost entirely
 zero and compress hard. A splat map that did not compress that well would mean the sparse surfaces
 were being painted everywhere.
 
@@ -91,8 +91,10 @@ disagree. The last four come from `tools/generators/hydrology.py`, which **reads
 rather than being told about it. Deterministic from the seed `drowned-greenwood-v1`; `input_hash`
 and `sha256` are recorded in each generator's report.
 
-The hydrology run: **5.81 % of the map is water**, the largest single catchment drains 194,958
-cells, and 115,935 cells lie within the 4 m shore band.
+The hydrology run: **6.32 % of the map is water**, the largest single catchment drains 55,733
+cells, and 7,980 cells lie within the 4 m shore band. The river centreline is 321 points; it is
+shorter than the 655 it used to be because the channel is now an 8 m stream down a floodplain
+rather than a 200 m trench, so the same basin drains through a narrower line.
 
 ## Hydrology: three attempts at the river
 
@@ -121,19 +123,24 @@ first: one assumed the cardinal neighbour won a tie it did not, and one asserted
 all flow values equals the cell count, which is false — the correct invariant is that the outlets
 collect exactly one unit per cell.
 
-The map composition the last run produced:
+The map composition the last run produced, after the shape fixes:
 
 | Surface | Share |
 |---|---|
-| grass | 49.9 % |
-| moss | 21.8 % |
-| bare rock | 16.6 % |
-| gravel | 6.3 % |
-| water (shallow + deep) | 4.5 % |
-| mud, sand, clay | 0.9 % |
+| grass | 43.8 % |
+| moss | 21.3 % |
+| bare rock | 17.3 % |
+| gravel | 9.2 % |
+| water (shallow + deep) | 6.3 % |
+| mud, sand, clay | 2.1 % |
 
-That is a temperate rainforest valley: 72 % moss and grass, rock confined to the rim, and water
-where the river and bog were carved.
+The height range is 29.1–135.1 m, the largest step between neighbouring texels is under 6 m, and
+the splats agree with the surface-ID map on 100 % of 984,212 land cells.
+
+That is a temperate rainforest valley: 65 % moss and grass, rock and gravel on the rim and the
+scree, and water where the bog and the river hold it. The water share rose from 4.5 % to 6.3 % when
+the bog floor was put below the waterline; before that it was a damp lawn with a dry channel
+through it.
 
 ## Four attempts, and what each one got wrong
 
