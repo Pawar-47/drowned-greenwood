@@ -117,10 +117,10 @@ DEEP_WATER_M = 22.0
 # The rim gradient is RIM_AMPLITUDE · RIM_POWER · r^(RIM_POWER-1) · MAX_HEIGHT_M / 500. At
 # 0.45 / 2.6 that peaks at 0.47 — a ridge you can walk up, well below the 35° rock threshold, so
 # bare rock appears only where the noise adds enough on top of it.
-FLOOR = 0.22
-NOISE_AMPLITUDE = 0.14
-RIM_AMPLITUDE = 0.43
-RIM_POWER = 2.3
+FLOOR = 0.20
+NOISE_AMPLITUDE = 0.11
+RIM_AMPLITUDE = 0.30
+RIM_POWER = 2.0
 
 # The river. The first version carved a band 0.09 of the map wide — 90 m either side — down by
 # 70 % of the terrain's own height, which is a canyon, not a stream: the measured channel was about
