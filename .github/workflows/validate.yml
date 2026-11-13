@@ -188,42 +188,6 @@ jobs:
           print("OK: %d assets" % len(report["assets"]))
           PY
 
-      # "Deterministic from the seed" was a claim in reports/phase2.md with nothing behind it. Two
-      # runs of the same generator from the same seed must produce identical bytes: otherwise every
-      # hash in the manifest is a snapshot of one machine's mood, and a rebuilt asset silently
-      # differs from the one that passed the gates.
-      - name: The generators are deterministic
-        run: |
-          set -euo pipefail
-          root="${RUNNER_TEMP:-/tmp}"
-          a="$root/terrain"
-          b="$root/terrain_repeat"
-          python tools/generators/terrain_maps.py --out "$b" --report "$b/report.json"
-          python tools/generators/hydrology.py \
-            --heightmap "$a/terrain_heightmap_master_1km.png" \
-            --out "$b" --report "$b/hydrology.json"
-          python tools/generators/terrain_surfaces.py \
-            --heightmap "$a/terrain_heightmap_master_1km.png" \
-            --out "$b" --report "$b/surfaces.json"
-          # Only the produced assets, not the report JSON, which records the output directory and
-          # would differ for a reason that has nothing to do with determinism.
-          for name in \
-            terrain_heightmap_master_1km.png terrain_biome_mask.png \
-            terrain_surface_id_map.png terrain_meta.json \
-            terrain_hydrology_mask.png terrain_shore_mask.png \
-            terrain_river_splines.json terrain_water_level_table.json \
-            terrain_normalmap_master.png terrain_splat_0.png terrain_splat_1.png \
-            terrain_macro_noise_texture.png terrain_height_blend_rules.json
-          do
-            first=$(sha256sum "$a/$name" | awk '{print $1}')
-            second=$(sha256sum "$b/$name" | awk '{print $1}')
-            if [ "$first" != "$second" ]; then
-              echo "::error::$name differs between two runs of the same generator and seed"
-              exit 1
-            fi
-          done
-          echo "determinism: 13 generated files are byte-identical across two runs"
-
       # Hydrology reads the heightmap terrain_maps just wrote, so it proves the sidecar contract
       # too: if the scale metadata were missing or stale, this step would refuse rather than
       # placing water at the wrong height.
@@ -351,6 +315,46 @@ jobs:
           print("blend rules: rock at slope %.2f, scree at %.2f, %d channels"
                 % (rules["slope_rock"], rules["slope_scree"], len(rules["splat_layers"])))
           PY
+
+      # "Deterministic from the seed" was a claim in reports/phase2.md with nothing behind it. Two
+      # runs of the same generator from the same seed must produce identical bytes: otherwise every
+      # hash in the manifest is a snapshot of one machine's mood, and a rebuilt asset silently
+      # differs from the one that passed the gates.
+      #
+      # It runs last of the three generator steps on purpose: it compares against the directory they
+      # have all written into, and an earlier version of this step sat before hydrology existed and
+      # failed looking for a file that had not been generated yet.
+      - name: The generators are deterministic
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP:-/tmp}"
+          a="$root/terrain"
+          b="$root/terrain_repeat"
+          python tools/generators/terrain_maps.py --out "$b" --report "$b/report.json"
+          python tools/generators/hydrology.py \
+            --heightmap "$a/terrain_heightmap_master_1km.png" \
+            --out "$b" --report "$b/hydrology.json"
+          python tools/generators/terrain_surfaces.py \
+            --heightmap "$a/terrain_heightmap_master_1km.png" \
+            --out "$b" --report "$b/surfaces.json"
+          # Only the produced assets, not the report JSON, which records the output directory and
+          # would differ for a reason that has nothing to do with determinism.
+          for name in \
+            terrain_heightmap_master_1km.png terrain_biome_mask.png \
+            terrain_surface_id_map.png terrain_meta.json \
+            terrain_hydrology_mask.png terrain_shore_mask.png \
+            terrain_river_splines.json terrain_water_level_table.json \
+            terrain_normalmap_master.png terrain_splat_0.png terrain_splat_1.png \
+            terrain_macro_noise_texture.png terrain_height_blend_rules.json
+          do
+            first=$(sha256sum "$a/$name" | awk '{print $1}')
+            second=$(sha256sum "$b/$name" | awk '{print $1}')
+            if [ "$first" != "$second" ]; then
+              echo "::error::$name differs between two runs of the same generator and seed"
+              exit 1
+            fi
+          done
+          echo "determinism: 13 generated files are byte-identical across two runs"
 
       # The maps were generated and checked, and then thrown away when the runner stopped. That
       # made every "built" claim in reports/phase2.md a description of a file that no longer
