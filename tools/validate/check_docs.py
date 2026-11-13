@@ -38,6 +38,49 @@ def read(relative):
         return handle.read()
 
 
+def check_markdown_tables(relative, text, problems):
+    """Every row in a markdown table must have the same shape as the table it sits in.
+
+    A row appended to the line above it — which is what happens when an edit replaces a line and
+    its trailing newline — produces two rows fused into one. Markdown renders that as a single
+    malformed row, and it reads as a typo rather than as lost content. This happened to
+    reports/phase2.md and had to be found by eye.
+
+    Fenced code blocks are skipped: a shell fragment with pipes in it is not a table.
+    """
+    first_row_pipes = None
+    first_row_line = 0
+    in_fence = False
+
+    def close_table():
+        nonlocal first_row_pipes, first_row_line
+        first_row_pipes = None
+        first_row_line = 0
+
+    for number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            close_table()
+            continue
+        if in_fence:
+            continue
+        if stripped.startswith("|") and stripped.endswith("|"):
+            pipes = stripped.count("|")
+            if first_row_pipes is None:
+                first_row_pipes = pipes
+                first_row_line = number
+            elif pipes != first_row_pipes:
+                problems.append(
+                    "%s:%d: this table row has %d pipes; the table at line %d has %d — a row was "
+                    "probably merged into the one above it"
+                    % (relative, number, pipes, first_row_line, first_row_pipes)
+                )
+                return
+        else:
+            close_table()
+
+
 def main():
     problems = []
 
@@ -109,6 +152,15 @@ def main():
             "assets/ADDITIONS.md says 1024², but every terrain map is %s" % quoted
         )
 
+    for directory, _dirs, files in os.walk(ROOT):
+        if ".git" in directory:
+            continue
+        for name in sorted(files):
+            if not name.endswith(".md"):
+                continue
+            relative = os.path.relpath(os.path.join(directory, name), ROOT)
+            check_markdown_tables(relative, read(relative), problems)
+
     if problems:
         print("documentation checks failed:", file=sys.stderr)
         for problem in problems:
@@ -116,7 +168,8 @@ def main():
         return 1
 
     print(
-        "docs: %d assets, %d materials, %d unit tests, %s grid all match their documents"
+        "docs: %d assets, %d materials, %d unit tests, %s grid all match their documents, and "
+        "every markdown table is rectangular"
         % (expected_assets, expected_materials, expected_tests, quoted)
     )
     return 0

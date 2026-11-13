@@ -105,6 +105,11 @@ jobs:
       - name: Documentation agrees with the code
         run: python tools/validate/check_docs.py
 
+      # Three audit reports in a row were answered partly. This fails the build if any clause of
+      # the audit loses its state, its evidence, or its row. Silence becomes a red job.
+      - name: Every audit clause is accounted for
+        run: python tools/validate/check_audit_ledger.py
+
       # Generators are only worth what they produce, so this runs one and checks the output rather
       # than trusting that it imports. It writes into the runner's temp directory: nothing binary
       # is committed, and the check is that the bytes exist and are the right shape.

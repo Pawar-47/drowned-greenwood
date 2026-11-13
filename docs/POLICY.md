@@ -86,6 +86,11 @@ happens when it is broken, because a rule with no consequence is a comment.
     report the failed first attempt's traceback in a PASS row, so `ModuleNotFoundError` appeared
     next to PASS. Detail fields are cleared when they no longer apply.
 
+20. **An audit is answered by a ledger, not from memory.** Every finding an audit makes goes into
+    `reports/audit_ledger.json` with a state and evidence, or a reason, before any code changes.
+    `check_audit_ledger.py` fails the build on a clause with no state or no evidence, so "I dealt
+    with that" is a row rather than a recollection. `docs/AUDIT_PROTOCOL.md` states the protocol.
+
 ## Not adopted, with reasons
 
 **Sparse checkout.** Deferred because the asset directory layout does not exist yet, so any

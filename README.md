@@ -22,7 +22,7 @@ assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skele
 tools/           build_manifest.py, TOOLS.md, config/materials.json, generators/, phase0/
                  (probes), validate/ (checks)
 shaders/         surface_base.gdshader, foliage_base.gdshader, shared includes, SHADER_GLOBALS.md
-docs/            HISTORY_PURGE.md, LESSONS.md, POLICY.md
+docs/            HISTORY_PURGE.md, LESSONS.md, POLICY.md, AUDIT_PROTOCOL.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md, phase2.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
@@ -59,6 +59,8 @@ python tools/validate/check_manifest.py   # structure, budgets, licences
 python tools/validate/check_skeletons.py  # bone caps, humanoid hierarchy, LOD and cloth budgets, animal coverage
 python tools/validate/check_materials.py  # materials, surface ids, FX table, duplicate shader uniforms
 python tools/validate/check_action_pins.py  # every pinned action SHA resolves through the GitHub API (needs network)
+python tools/validate/check_docs.py        # numbers quoted in the docs, and markdown table shapes
+python tools/validate/check_audit_ledger.py  # every audit clause has a state and something behind it
 ```
 
 `assets/ADDITIONS.md` records the six approved additions, all P1 and scheduled: weather

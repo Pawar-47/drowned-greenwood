@@ -251,6 +251,28 @@ And when the mistake is static, write the check: `test_tools.py` now asserts tha
 never writes `ALPHA` and that a cut-out shader writes a texture channel, because both wrong
 versions compile.
 
+## 22. A fix is not a licence to stop reading
+
+Three audit reports, three partial answers. The findings that were easy or interesting got fixed;
+the rest were dropped without being mentioned, and a re-audit four passes later still found
+untouched clauses. Knowing better did not prevent it: a 99-clause report read as prose loses
+clauses, and nothing about good intentions restores them.
+
+**Rule:** transcribe every clause into `reports/audit_ledger.json` before changing code, give each
+one a state from a closed set, and let `check_audit_ledger.py` fail the build on an empty row. A
+clause that is not done is fine; a clause that cannot be counted is not.
+
+## 23. An edit that touches a boundary can merge two things
+
+Three documents lost a paragraph break, one markdown table lost a row into the row above it, and a
+workflow lost the line break between `- name:` and `run:` — all while fixing something else. The
+YAML one failed the static gate in eight seconds, which is the system working; the markdown ones
+were found by a person reading.
+
+**Rules:** if an anchor ends with a newline, the replacement does too, and re-read the edited
+region before moving on. Markdown table integrity is now checked by `check_docs.py`; paragraph
+joins are not, and that is what the re-read is for.
+
 ## Applying these
 
 The asset validators in Phase 2 onward are probes with the same failure modes. In particular:

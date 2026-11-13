@@ -270,6 +270,8 @@ def check_workflow(path):
     for job_name, job in data["jobs"].items():
         if not isinstance(job, dict):
             return "%s: job %s is not a mapping" % (path, job_name)
+        # Step names are scoped to their job: two jobs may both have a "Static checks" step.
+        step_names = set()
         if "runs-on" not in job:
             return "%s: job %s has no runs-on" % (path, job_name)
         if "steps" not in job and "uses" not in job:
@@ -283,6 +285,20 @@ def check_workflow(path):
                     job_name,
                     str(step)[:60],
                 )
+            # A step is `uses` or `run`, never both. Both means two steps were merged by an edit.
+            if "uses" in step and "run" in step:
+                return (
+                    "%s: job %s has a step with both `uses` and `run` — a workflow step is one or "
+                    "the other, so two steps were merged" % (path, job_name)
+                )
+            step_name = step.get("name")
+            if isinstance(step_name, str) and step_name.strip():
+                if step_name in step_names:
+                    return (
+                        "%s: job %s has two steps named %r; the second replaces the first in the "
+                        "job's log and in the report" % (path, job_name, step_name)
+                    )
+                step_names.add(step_name)
             error = check_run_block(step, path, job_name)
             if error:
                 return error
