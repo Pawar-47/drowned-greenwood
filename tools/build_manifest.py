@@ -36,8 +36,18 @@ VALID_STATUS = {"pending", "built", "PASSED", "BELOW_TARGET", "PLACEHOLDER"}
 # verified. An entry may still override the tool default with its own sixth field (a font is
 # OFL, a music loop may be CC-BY), and that override wins.
 LICENCE_BY_TOOL = {
-    # Our own generators. The scripts are ours and the geometry they emit is ours.
-    "custom": "project-original",
+    # An asset with no recorded tool. This says nothing about who owns it, so it is recorded as
+    # unknown rather than as ours.
+    #
+    # This used to map to `project-original`, which was wrong for 1,110 of 1,954 records: `custom`
+    # means "one of our scripts will produce this", and today those scripts exist for terrain and
+    # hydrology only. Fonts, music and audio in that set are not project-original by any reading —
+    # nobody has recorded where they come from. Calling them ours moved the blanket-CC0 problem
+    # rather than fixing it, which is exactly the failure this table was written to end.
+    #
+    # `UNVERIFIED` may be planned and may never be built: check_manifest.py enforces that, so the
+    # state is visible on every run instead of being a claim nobody checked.
+    "custom": "UNVERIFIED",
     # Poly Haven publishes everything on its API under CC0.
     "polyhaven": "CC0-1.0",
     # MPFB2's bundled assets (base mesh, skins, clothes) are CC0 per its LICENSE.ASSETS.md,

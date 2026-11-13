@@ -22,8 +22,10 @@ happens when it is broken, because a rule with no consequence is a comment.
    probe report `ok=False reason=unpinned` and print the measured hash, instead of passing
    silently. A cache hit must not skip a checksum either: the Blender cache holds the *archive*,
    keyed by its expected hash, so the check runs on every job. Godot, gltfpack, Blender, Modular
-   Tree, Quaternius and MPFB2 are all pinned and verified now; GitHub Actions is not. See
-   `tools/TOOLS.md`.
+   Tree, Quaternius and MPFB2 are all pinned and verified now. GitHub Actions is pinned by commit
+   SHA, and `tools/validate/check_action_pins.py` resolves every one of those SHAs through the API
+   on every run, so a pin that does not exist fails in seconds instead of at setup in every job.
+   See `tools/TOOLS.md`.
 7. **A probe that reports and then crashes is a failure.** The bare `<name>_exit` row is no
    longer discarded: a non-zero exit after a result means the result may be partial.
 8. **A check that cannot be enforced must say what it does not cover.** The animal skeleton
@@ -48,6 +50,12 @@ happens when it is broken, because a rule with no consequence is a comment.
     unrecognised tool yields `null` and fails validation. A blanket CC0 default made an unchecked
     asset indistinguishable from a verified one. An entry may override it with its own sixth
     field, checked against the same allowlist.
+    **`source_tool: custom` maps to `UNVERIFIED`, not to `project-original`.** `custom` says a
+    script will make the asset, which is true for terrain and hydrology and says nothing about the
+    fonts, music and audio that share the label — 1,110 of 1,954 records. `UNVERIFIED` may be
+    planned and may never be built, so `check_manifest.py` reports the count on every run and fails
+    the moment one of them claims to be built. Calling them ours was the blanket CC0 problem with
+    a different word.
 11. **`NEEDS-REVIEW` may be planned, never shipped.** It marks a real legal question — whether
     GPL-3.0 Modular Tree's output inherits that licence. Assets in that state fail validation the
     moment they are marked built.
@@ -102,4 +110,5 @@ These are real and unfixed. They are listed so they are not rediscovered as surp
 | Blender 4.2 LTS end of life | 4.2 is pinned because MPFB2 requires ≥ 4.2. Revisit when MPFB2 supports 4.5 and drop to one Blender for every job |
 | Play Asset Delivery | only relevant if published to Google Play, which is not planned yet |
 | Sparse checkout | see above; trigger is the first committed binary |
-| 1,110 assets with `source custom` and no generator | the largest open question in the manifest: `tools/generators/` does not exist, and Phase 0 tested no tool that produces them. Phase 2 onward |
+| 1,110 assets with `source custom` | the largest open question in the manifest. `tools/generators/` now exists but covers terrain and hydrology only; the rest are `UNVERIFIED` — planned, never shippable — until each entry records where it comes from. Phase 2 onward |
+| Generator performance: 1,025² grids in pure stdlib Python | the three generator steps share a 10-minute job and finish in seconds today. Pinned numpy would remove the ceiling but adds the first third-party dependency to the generators. Revisit when a generator run approaches the limit, and record wall time at that point |

@@ -70,17 +70,18 @@ printing which one it used rather than leaving you to infer it from a later fail
 deliberate act is storing the secret: the pipeline never obtains a scoped token for itself.
 
 **2. A protected environment with a required reviewer.** The job declares
-`environment: history-purge`. Two caveats, both real:
+`environment: history-purge`. Three caveats, all real:
 
 - Declaring the name gates **nothing** on its own; it only creates the environment on first use.
   It must be configured in **Settings → Environments → history-purge**.
 - It gates the **whole job, dry run included**, because GitHub environments are job-level. A dry
   run therefore needs approval too. That is accepted: approving a run of a history-rewriting
   workflow is cheap, and a dry run nobody looked at is not a safeguard.
-- **GitHub does not let the person who dispatched a run approve it.** On a single-maintainer
-  repository, adding yourself as the required reviewer would deadlock this workflow. Either
-  leave required reviewers unset and rely on the typed `FORCE-PUSH` confirmation, or add a second
-  account as reviewer. Do not configure it and then wonder why an apply run never starts.
+- **"Prevent self-review" is an option, and it is off unless ticked.** When it is on, the person
+  who dispatched a run cannot approve it — which on a single-maintainer repository deadlocks this
+  workflow. When it is off (the default), one account can dispatch and approve, so required
+  reviewers are usable here. Decide which you want before adding yourself as the reviewer:
+  do not configure it and then wonder why an apply run never starts.
 
 **3. Nothing else running, and you are the only purge in flight.** This workflow declares **no
 concurrency group**, deliberately: a group keeps one running and one pending run, and a third

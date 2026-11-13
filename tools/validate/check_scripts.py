@@ -100,6 +100,22 @@ WRONG_SAMPLER_HINTS = {
     "hint_transparent": "hint_default_transparent",
 }
 
+# Samplers that may legitimately clamp instead of repeat, keyed by name, each with the reason it is
+# safe to clamp.
+#
+# Empty, and it should stay that way for a while: every sampler in this project is sampled with a
+# UV that leaves 0..1 — a world-space UV crosses 1.0 at 100 m, and a time-driven one within a
+# second — and a clamped sample there freezes the surface with no error anywhere. That is a shader
+# that compiles, renders, and is simply wrong. Widening this needs a reason, not a name.
+CLAMPED_SAMPLERS = {}
+
+# `uniform sampler2D <name> : <hints>;` — used only for the repeat rule below. The per-line hint
+# loop above cannot see the sampler's name, and reading it out of the line with string replaces
+# turned `sampler2DArray` into `Array`.
+SAMPLER_DECL = re.compile(
+    r"uniform\s+(sampler[A-Za-z0-9]*)\s+(\w+)\s*:([^;]*);"
+)
+
 
 def walk(extension):
     """Yield paths ending in `extension`, skipping dependencies, build output and caches.
@@ -367,6 +383,30 @@ def check_shader(path):
                 continue
             if hint.startswith("hint_"):
                 return "%s:%s: unknown sampler hint %r" % (path, line_number, hint)
+
+    # Every sampler must repeat. This is the one hint whose absence compiles, renders, and then
+    # quietly stops working: a clamped sample of a world-space or time-driven UV freezes to an edge
+    # texel. A shader cannot be inspected for its UVs by a static check, so the rule is the
+    # conservative one — repeat, unless the sampler is argued into CLAMPED_SAMPLERS with a reason.
+    #
+    # Comments are stripped first: the wind include documents this exact rule in prose, and prose
+    # is not a declaration.
+    code_only = "\n".join(line.split("//", 1)[0] for line in source.splitlines())
+    for match in SAMPLER_DECL.finditer(code_only):
+        name = match.group(2)
+        if name in CLAMPED_SAMPLERS:
+            continue
+        hints = [h.strip().split("=", 1)[0].strip() for h in match.group(3).split(",")]
+        # Exactly `repeat_enable`. `repeat_disable` is the opposite and must not satisfy this.
+        if "repeat_enable" in hints:
+            continue
+        return (
+            "%s: sampler %r does not declare repeat_enable. Every sampler here is sampled with a "
+            "UV that leaves 0..1 — world-space crosses it at 100 m, time-driven within a second — "
+            "and a clamped sample freezes the surface with no error anywhere. Add repeat_enable, "
+            "or add %r to CLAMPED_SAMPLERS in tools/validate/check_scripts.py with the reason it "
+            "is safe to clamp" % (path, name, name)
+        )
     return None
 
 

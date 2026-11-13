@@ -41,13 +41,19 @@ thing a licence field must never do.
 
 | Source tool | Licence recorded | Why |
 |---|---|---|
-| `custom` | `project-original` | the generators are ours and the geometry they emit is ours |
+| `custom` | `UNVERIFIED` | "one of our scripts makes this" is not a statement about ownership. Allowed to plan, refused when built, until the entry records its inputs |
 | `polyhaven` | `CC0-1.0` | Poly Haven publishes its API assets as CC0 |
 | `mpfb2` | `CC0-1.0` | bundled base mesh, skins and clothes are CC0 per `LICENSE.ASSETS.md` |
 | `quaternius` | `CC0-1.0` | the Universal Animation Library is CC0 |
 | `infinigen` | `project-original` | BSD-3-Clause tool; generated output is ours |
 | `mtree` | `NEEDS-REVIEW` | see below |
 | anything else | none | `check_manifest.py` rejects it |
+
+`UNVERIFIED` means nobody has recorded where the asset comes from yet. It is allowed to plan and
+refused to ship, exactly like `NEEDS-REVIEW`, and `check_manifest.py` prints the count on every
+run. It covers the 1,110 records whose `source_tool` is `custom` — including fonts, music and
+audio, which cannot be project-original unless they were synthesised from nothing. Each needs its
+source recorded, at which point its licence follows from that source.
 
 An authored entry may override the tool default with a sixth field, because not every asset's
 licence follows from the tool that fetched it — a font is OFL, a music loop may be CC-BY:

@@ -75,10 +75,12 @@ jobs:
     # safeguard. It is also inert until the owner configures it: declaring the name only creates
     # the environment on first use.
     #
-    # If the owner does add themselves as a required reviewer, note that GitHub does not let the
-    # person who dispatched a run approve it. On a single-maintainer repository that would
-    # deadlock this workflow — so on this repository, leave required reviewers unset and rely on
-    # the typed FORCE-PUSH confirmation, or add a second account as reviewer.
+    # If the owner does add themselves as a required reviewer, the environment also offers
+    # "Prevent self-review", which is OFF unless it is ticked. With it off, the person who
+    # dispatched a run can approve it, and this repository works: one account dispatches and
+    # approves. With it on, a single-maintainer repository deadlocks this workflow, and the
+    # reviewer has to be a second account. Check which is configured before wondering why an
+    # apply run never starts.
     #
     # A token with the `workflows` scope is also required: GITHUB_TOKEN may not push commits
     # touching .github/workflows/, and rewriting history rewrites every commit. The guard below

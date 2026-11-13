@@ -50,6 +50,9 @@ hydrology = load_module("hydrology", os.path.join("tools", "generators", "hydrol
 terrain_surfaces = load_module(
     "terrain_surfaces", os.path.join("tools", "generators", "terrain_surfaces.py")
 )
+check_scripts = load_module(
+    "check_scripts", os.path.join("tools", "validate", "check_scripts.py")
+)
 
 
 def manifest_with(**categories):
@@ -119,6 +122,24 @@ def test_licence_is_derived_from_the_source_tool():
     records, problems = build_manifest.build(manifest)
     assert not problems, "unexpected problems: %r" % problems
     assert records[0]["source_license"] == "CC0-1.0", records[0]["source_license"]
+
+
+def test_custom_source_is_unverified_not_project_original():
+    """`custom` says a script will make it, not that anyone checked who owns it.
+
+    This mapping used to be `project-original`, which was true for terrain and hydrology and false
+    for the fonts, music and audio that share the same `source_tool` — 1,110 of 1,954 records. The
+    blanket CC0 default had been replaced by a blanket "ours", which is the same mistake wearing a
+    different word. `UNVERIFIED` may be planned and may not be built; check_manifest.py enforces
+    the second half.
+    """
+    manifest = manifest_with(**{"4.B": category(["rock_granite"], source_tool="custom")})
+    records, problems = build_manifest.build(manifest)
+    assert not problems, "unexpected problems: %r" % problems
+    assert records[0]["source_license"] == "UNVERIFIED", (
+        "a `custom` asset was recorded as %r; ownership of it has not been established"
+        % records[0]["source_license"]
+    )
 
 
 def test_unknown_source_tool_gets_no_licence():
@@ -567,6 +588,47 @@ def test_alpha_writes_match_the_pipeline_they_ask_for():
     )
 
 
+def test_sampler_without_repeat_is_rejected():
+    """A clamped sampler compiles, renders, and then freezes the surface. Nothing else notices.
+
+    check_scripts.py cannot see the UV a sampler is read with, so its rule is the conservative one
+    in the other direction: every sampler declares `repeat_enable` unless it is argued into
+    CLAMPED_SAMPLERS. This exercises that rule against a real file, so the rule cannot quietly stop
+    running and leave the gate green.
+    """
+    source = (
+        "shader_type spatial;\n"
+        "uniform sampler2D freeze_me : hint_default_black, filter_linear;\n"
+    )
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".gdshader", delete=False, encoding="utf-8"
+    )
+    handle.write(source)
+    handle.close()
+    try:
+        error = check_scripts.check_shader(handle.name)
+    finally:
+        os.unlink(handle.name)
+    assert error and "repeat_enable" in error, (
+        "a sampler with no repeat hint was accepted: %r" % error
+    )
+
+    # And the opposite: `repeat_disable` is not `repeat_enable`, and must not satisfy the rule.
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".gdshader", delete=False, encoding="utf-8"
+    )
+    handle.write(
+        "shader_type spatial;\n"
+        "uniform sampler2D freeze_me : hint_default_black, repeat_disable;\n"
+    )
+    handle.close()
+    try:
+        error = check_scripts.check_shader(handle.name)
+    finally:
+        os.unlink(handle.name)
+    assert error, "repeat_disable was read as if it enabled repeating"
+
+
 def test_flow_accumulation_counts_upstream_area():
     """Each cell in a downhill chain adds the one before it: 1, 2, 3, 4, 5.
 
@@ -661,6 +723,7 @@ TESTS = [
     ("build_manifest: group without phase", test_group_without_phase_is_reported),
     ("build_manifest: group without tier", test_group_without_tier_is_reported),
     ("build_manifest: licence from the tool", test_licence_is_derived_from_the_source_tool),
+    ("build_manifest: custom is unverified", test_custom_source_is_unverified_not_project_original),
     ("build_manifest: unknown tool gets no licence", test_unknown_source_tool_gets_no_licence),
     ("build_manifest: sixth field overrides", test_sixth_field_overrides_the_tool_licence),
     ("build_manifest: too many fields", test_too_many_fields_is_rejected),
@@ -681,6 +744,7 @@ TESTS = [
     ("generators: surface ids match the contract", test_surface_ids_are_still_the_numbers_the_generator_writes),
     ("shaders: wind UV requires repeat", test_wind_uv_leaves_the_unit_range_so_repeat_is_required),
     ("shaders: alpha writes match the pipeline", test_alpha_writes_match_the_pipeline_they_ask_for),
+    ("shaders: a sampler without repeat is rejected", test_sampler_without_repeat_is_rejected),
     ("generators: PNG round trip 8-bit", test_png_round_trip_preserves_every_value),
     ("generators: PNG round trip 16-bit", test_png_round_trip_sixteen_bit),
     ("generators: PNG round trip 2-channel", test_png_round_trip_two_channel),

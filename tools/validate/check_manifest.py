@@ -180,6 +180,36 @@ def main():
             file=sys.stderr,
         )
 
+    # UNVERIFIED is the honest state for an asset whose provenance has not been recorded. Most of
+    # the manifest's `source custom` records are not things a generator emits yet — fonts, music
+    # and audio are in that set — so `project-original` was a claim nobody had checked.
+    #
+    # Same rule as NEEDS-REVIEW: planned is fine, shipped is not. A licence nobody knows cannot be
+    # a licence that ships, and a warning keeps the count visible on every run rather than
+    # rediscovering it when a font is committed.
+    unverified = by_licence.pop("UNVERIFIED", [])
+    if unverified:
+        shipped = [
+            name
+            for name in unverified
+            if next(
+                (r["status"] for r in assets if r["name"] == name and r["status"] != "pending"),
+                "pending",
+            )
+            != "pending"
+        ]
+        if shipped:
+            problems.append(
+                "%d assets are marked built but their licence is unverified: %s"
+                % (len(shipped), shipped[:5])
+            )
+        print(
+            "warning: %d planned assets have an unverified licence (their source is not recorded "
+            "yet); they may be planned but never built until it is: %s"
+            % (len(unverified), unverified[:3]),
+            file=sys.stderr,
+        )
+
     bad_licences = sorted(set(by_licence) - allowed_licences)
     if bad_licences:
         problems.append(

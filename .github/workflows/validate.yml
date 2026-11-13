@@ -62,6 +62,15 @@ jobs:
       - name: Tool unit tests
         run: python tools/validate/test_tools.py
 
+      # check_scripts.py proves each `uses:` names a 40-character commit; only the API proves that
+      # commit exists. A wrong SHA passes every static check and then fails every job at setup,
+      # which reads like an outage rather than a bad pin. A 404 fails; a rate limit or a network
+      # error warns; a run that resolved nothing fails, because it verified nothing.
+      - name: Every pinned action exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/validate/check_action_pins.py
+
   manifest:
     name: Manifest integrity
     runs-on: ubuntu-latest
