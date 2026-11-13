@@ -119,8 +119,8 @@ DEEP_WATER_M = 22.0
 # bare rock appears only where the noise adds enough on top of it.
 FLOOR = 0.22
 NOISE_AMPLITUDE = 0.14
-RIM_AMPLITUDE = 0.45
-RIM_POWER = 2.6
+RIM_AMPLITUDE = 0.43
+RIM_POWER = 2.3
 
 # The river. The first version carved a band 0.09 of the map wide — 90 m either side — down by
 # 70 % of the terrain's own height, which is a canyon, not a stream: the measured channel was about
@@ -128,7 +128,10 @@ RIM_POWER = 2.6
 # dry. A river a hunter can step over is 8 m wide, cut a few metres into the valley floor, and it
 # descends from the bog to the outlet so the water on it can actually flow.
 RIVER_HALF_WIDTH_M = 8.0
-RIVER_BANK_M = 24.0
+# The bank is a floodplain, not a wall. The valley floor sits at 44-72 m and the waterline at 32 m,
+# so the channel is necessarily cut 20-40 m down; over a 24 m bank that is a 50 degree wall for the
+# half-kilometre of its length, which alone put the walkable fraction under the gate.
+RIVER_BANK_M = 80.0
 # How wide the rim opens to let the river out. The notch is deliberately much wider than the
 # channel: a rim 100 m high that drops over the 32 m of the bank is a wall, and measured as one.
 RIVER_NOTCH_M = 200.0
