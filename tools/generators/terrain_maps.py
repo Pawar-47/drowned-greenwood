@@ -129,6 +129,9 @@ RIM_POWER = 2.6
 # descends from the bog to the outlet so the water on it can actually flow.
 RIVER_HALF_WIDTH_M = 8.0
 RIVER_BANK_M = 24.0
+# How wide the rim opens to let the river out. The notch is deliberately much wider than the
+# channel: a rim 100 m high that drops over the 32 m of the bank is a wall, and measured as one.
+RIVER_NOTCH_M = 200.0
 RIVER_DEPTH_M = 1.4
 # Bed height at the bog and at the northern edge, in metres. Both end below the waterline on
 # purpose: a river whose bed is above lake level is a dry channel, which is what the first
@@ -230,12 +233,18 @@ def shape_height(base, valley):
             # at that row: that is the same fault twice, so the boundary is a smoothstep now.
             taper = smoothstep(0.0, 0.10, v) * (1.0 - smoothstep(BOG_CENTRE_V, BOG_CENTRE_V + 0.10, v))
             channel = 0.0
+            notch = 0.0
             bed_norm = 0.0
             if taper > 0.0:
                 distance_m = abs(u - river_centre_u(v)) * 1000.0
                 channel = taper * (
                     1.0 - smoothstep(RIVER_HALF_WIDTH_M, RIVER_HALF_WIDTH_M + RIVER_BANK_M, distance_m)
                 )
+                # The notch is much wider than the channel on purpose. The rim is 70-150 m high,
+                # so scaling it by a weight that changes over the 32 m of the bank put an 8 m step
+                # per texel into the map — measured at x=299, y=99, 91.9 m against 99.9 m. The
+                # valley opens over 200 m, which is a slope rather than a wall.
+                notch = taper * (1.0 - smoothstep(0.0, RIVER_NOTCH_M, distance_m))
                 bed_norm = river_bed_m(v) / MAX_HEIGHT_M
 
             # Distance from the centre, 0 at the middle and 1 at the edge. The world is a valley,
@@ -252,7 +261,7 @@ def shape_height(base, valley):
             rim = min(1.0, max(0.0, radius * warp)) ** RIM_POWER
             # The rim drops away along the channel: that is the notch the river leaves the valley
             # through, and it is why the water does not end at a wall.
-            rim *= 1.0 - 0.9 * channel
+            rim *= 1.0 - 0.85 * notch
 
             noise = base[y][x] * 0.55 + valley[y][x] * 0.45
             h = FLOOR + NOISE_AMPLITUDE * noise + RIM_AMPLITUDE * rim
