@@ -265,7 +265,7 @@ def shape_height(base, valley):
             bog_dy = (v - BOG_CENTRE_V) * 2.0
             bog_distance = (bog_dx * bog_dx + bog_dy * bog_dy) ** 0.5
             bog_distance *= 1.0 + 0.35 * (valley[y][x] * 2.0 - 1.0)
-            bog_weight = 1.0 - smoothstep(0.0, BOG_RADIUS_U * 2.0, bog_distance)
+            bog_weight = 1.0 - smoothstep(BOG_RADIUS_U * 0.7, BOG_RADIUS_U * 2.0, bog_distance)
             h = h * (1.0 - bog_weight) + BOG_FLOOR * bog_weight
 
             # The channel itself: a blend toward a bed height, not a proportional cut of whatever
@@ -277,7 +277,25 @@ def shape_height(base, valley):
 
             row[x] = max(0.0, min(1.0, h))
         field.append(row)
-    return field
+
+    # One 3x3 smoothing pass, and the reason is measurable. The fractal noise is generated at 256
+    # and upsampled bilinearly, so its gradient is piecewise constant: two adjacent texels a metre
+    # apart can differ by the full lattice step, which came out as an 8 m cliff in the shape gate
+    # even after every carve was made continuous. Averaging keeps every feature larger than three
+    # texels and removes the one-texel spikes, without touching the valley, the bog or the channel.
+    smoothed = [[0.0] * SAMPLES for _ in range(SAMPLES)]
+    for y in range(SAMPLES):
+        y0 = max(0, y - 1)
+        y1 = min(SAMPLES - 1, y + 1)
+        for x in range(SAMPLES):
+            x0 = max(0, x - 1)
+            x1 = min(SAMPLES - 1, x + 1)
+            total = 0.0
+            for yy in (y0, y, y1):
+                for xx in (x0, x, x1):
+                    total += field[yy][xx]
+            smoothed[y][x] = total / 9.0
+    return smoothed
 
 
 def height_metres(normalised):
