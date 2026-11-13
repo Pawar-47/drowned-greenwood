@@ -215,16 +215,9 @@
       "texture_set": "polyhaven/leaf_conifer_01",
       "tiling_m": 0.6,
       "wetness_darken": 0.25,
-      "wetness_kind_override": "beads",
-      "note": "needles barely flutter; a conifer that shimmers like a broadleaf reads as plastic. Waxy needles also bead rather than soak, so they take the same wetness override as the broadleaf.",
-      "alpha_cutoff": 0.5,
-      "translucency": 0.25,
-      "sway_amplitude": 0.06,
-      "branch_amplitude": 0.04,
-      "flutter_amplitude": 0.006,
       "tier": "S",
       "used_by": ["tree"],
-      "note": "needles barely flutter; a conifer that shimmers like a broadleaf reads as plastic"
+      "note": "needles barely flutter; a conifer that shimmers like a broadleaf reads as plastic. Waxy needles also bead rather than soak, so they take the same wetness override as the broadleaf."
     },
     {
       "name": "mat_foliage_fern",
@@ -234,7 +227,6 @@
       "tiling_m": 0.4,
       "wetness_darken": 0.3,
       "wetness_kind_override": "beads",
-      "note": "a fern is low, so its whole sway is smaller than a tree's branch sway. Its fronds bead like other leaves rather than soaking like the grass surface it shares.",
       "alpha_cutoff": 0.4,
       "translucency": 0.5,
       "sway_amplitude": 0.03,
@@ -242,7 +234,7 @@
       "flutter_amplitude": 0.01,
       "tier": "A",
       "used_by": ["fern", "ground_cover"],
-      "note": "a fern is low, so its whole sway is smaller than a tree's branch sway"
+      "note": "a fern is low, so its whole sway is smaller than a tree's branch sway. Its fronds bead like other leaves rather than soaking like the grass surface it shares."
     },
     {
       "name": "mat_foliage_grass_card",
