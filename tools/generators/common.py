@@ -52,14 +52,20 @@ def write_gray_png(path, rows, bit_depth=8):
 
 
 def write_png(path, rows, bit_depth=8, channels=1):
-    """Write a 1- or 2-channel PNG.
+    """Write a 1- to 4-channel PNG.
 
-    Colour type 0 is grayscale and 4 is grayscale+alpha, which is the cheapest way to carry two
-    independent masks in one file: the hydrology mask is water depth in R and flow direction in
-    G, and packing them as LA rather than as two textures halves the memory and the fetch.
+    Colour type carries the channel count: 0 grayscale, 4 grayscale+alpha, 2 RGB, 6 RGBA. The
+    two-mask case (hydrology: depth in R, flow direction in G) is packed as LA rather than as two
+    textures, and the normal map and splat weights need RGB and RGBA respectively.
+
+    Only 8-bit colour is supported for 3 and 4 channels: PNG has no 16-bit RGB path that is worth
+    the decode cost here, and nothing this pipeline emits needs more than 8-bit per channel in
+    colour.
     """
-    if channels not in (1, 2):
-        raise ValueError("channels must be 1 or 2, got %r" % (channels,))
+    if channels not in (1, 2, 3, 4):
+        raise ValueError("channels must be 1..4, got %r" % (channels,))
+    if channels > 2 and bit_depth != 8:
+        raise ValueError("3 and 4 channel images must be 8-bit, got %r" % (bit_depth,))
     if not rows:
         raise ValueError("no rows to write")
     width = len(rows[0]) // channels
@@ -88,9 +94,8 @@ def write_png(path, rows, bit_depth=8, channels=1):
         else:
             raise ValueError("bit_depth must be 8 or 16, got %r" % (bit_depth,))
 
-    # IHDR: width, height, bit depth, colour type (0 grayscale, 4 grayscale+alpha), deflate,
-    # adaptive filter, no interlace.
-    colour_type = 0 if channels == 1 else 4
+    # IHDR: width, height, bit depth, colour type, deflate, adaptive filter, no interlace.
+    colour_type = COLOUR_TYPES[channels]
     header = struct.pack(">IIBBBBB", width, height, bit_depth, colour_type, 0, 0, 0)
     payload = PNG_SIGNATURE
     payload += _chunk(b"IHDR", header)
@@ -102,11 +107,13 @@ def write_png(path, rows, bit_depth=8, channels=1):
     return len(payload)
 
 
-COLOUR_CHANNELS = {0: 1, 4: 2}
+# PNG colour type by channel count: grayscale, grayscale+alpha, RGB, RGBA.
+COLOUR_TYPES = {1: 0, 2: 4, 3: 2, 4: 6}
+COLOUR_CHANNELS = {0: 1, 4: 2, 2: 3, 6: 4}
 
 
 def read_png(path):
-    """Read a 1- or 2-channel PNG written by this module.
+    """Read a 1- to 4-channel PNG written by this module.
 
     Returns (width, height, channels, rows) where rows are flat channel-interleaved ints.
 

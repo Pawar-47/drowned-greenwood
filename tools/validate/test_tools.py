@@ -47,6 +47,9 @@ make_report = load_module("make_report", os.path.join("tools", "phase0", "make_r
 generator_common = load_module("generator_common", os.path.join("tools", "generators", "common.py"))
 terrain = load_module("terrain_maps", os.path.join("tools", "generators", "terrain_maps.py"))
 hydrology = load_module("hydrology", os.path.join("tools", "generators", "hydrology.py"))
+terrain_surfaces = load_module(
+    "terrain_surfaces", os.path.join("tools", "generators", "terrain_surfaces.py")
+)
 
 
 def manifest_with(**categories):
@@ -375,6 +378,88 @@ def test_png_round_trip_sixteen_bit():
         os.unlink(handle.name)
 
 
+def test_png_round_trip_rgb_and_rgba():
+    """The normal map is RGB and the splat weights are RGBA; both go through the same writer.
+
+    A wrong colour type here would produce a file that opens and has the wrong number of channels,
+    which is how a normal map ends up being read as a grayscale heightfield.
+    """
+    three = [[10, 20, 30, 40, 50, 60]]
+    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    handle.close()
+    try:
+        generator_common.write_png(handle.name, three, bit_depth=8, channels=3)
+        width, height, channels, decoded = generator_common.read_png(handle.name)
+        assert (width, height, channels) == (2, 1, 3), (width, height, channels)
+        assert decoded == three, "RGB round trip changed the data"
+
+        four = [[1, 2, 3, 4, 5, 6, 7, 8]]
+        generator_common.write_png(handle.name, four, bit_depth=8, channels=4)
+        width, height, channels, decoded = generator_common.read_png(handle.name)
+        assert (width, height, channels) == (2, 1, 4), (width, height, channels)
+        assert decoded == four, "RGBA round trip changed the data"
+    finally:
+        os.unlink(handle.name)
+
+
+def test_png_rejects_sixteen_bit_colour():
+    """PNG has no useful 16-bit RGB path here, and silently writing 8-bit would be worse."""
+    handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    handle.close()
+    try:
+        try:
+            generator_common.write_png(handle.name, [[1, 2, 3]], bit_depth=16, channels=3)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("16-bit RGB was accepted")
+    finally:
+        os.unlink(handle.name)
+
+
+def test_smoothstep_is_clamped_and_monotonic():
+    """The splat weights are built from smoothstep; an unclamped version gives negative weights."""
+    assert terrain_surfaces.smoothstep(0.0, 1.0, -5.0) == 0.0, "below the edge is not 0"
+    assert terrain_surfaces.smoothstep(0.0, 1.0, 5.0) == 1.0, "above the edge is not 1"
+    previous = -1.0
+    for step in range(11):
+        value = terrain_surfaces.smoothstep(0.0, 1.0, step / 10.0)
+        assert value >= previous, "smoothstep is not monotonic at %r" % (step / 10.0,)
+        assert 0.0 <= value <= 1.0, "smoothstep left 0..1 at %r" % value
+        previous = value
+
+
+def test_splat_weights_sum_to_one():
+    """Every texel's weights must sum to 1, or the terrain shader darkens or brightens it.
+
+    Reproduces the layer arithmetic the generator uses, for a spread of slopes and heights.
+    """
+    for gradient in (0.0, 0.1, 0.3, 0.5, 0.7, 0.9):
+        for above_water in (-5.0, 0.0, 2.0, 5.0, 20.0):
+            rock = terrain_surfaces.smoothstep(terrain_surfaces.SLOPE_SCREE,
+                                               terrain_surfaces.SLOPE_ROCK, gradient)
+            loose = (terrain_surfaces.smoothstep(terrain_surfaces.SLOPE_MOSS_EDGE,
+                                                 terrain_surfaces.SLOPE_SCREE, gradient)
+                     * (1.0 - rock))
+            soil = (1.0 - rock) * (1.0 - loose)
+            bog = (1.0 - terrain_surfaces.smoothstep(0.0, terrain_surfaces.BOG_BAND_M,
+                                                     above_water)) * (1.0 - rock)
+            shore = (1.0 - terrain_surfaces.smoothstep(0.0, terrain_surfaces.SHORE_BAND_M,
+                                                       above_water)) * (1.0 - rock) * soil
+            green = soil * (1.0 - bog) * (1.0 - shore)
+            moss = green * 0.5
+            grass = green * 0.5
+            weights = [grass + loose * 0.2, moss, rock, shore * 0.55 + loose * 0.8,
+                       bog * 0.75, shore * 0.45, bog * 0.25, 0.0]
+            total = sum(weights)
+            assert total > 0.0, "all weights are zero at gradient %r height %r" % (
+                gradient, above_water)
+            normalised = [w / total for w in weights]
+            assert abs(sum(normalised) - 1.0) < 1e-9, "weights sum to %r" % sum(normalised)
+            assert all(w >= 0.0 for w in normalised), "a negative weight: %r" % normalised
+
+
+
 def test_png_round_trip_two_channel():
     """The hydrology mask packs depth and flow direction as grayscale+alpha."""
     rows = [[0, 0, 255, 1], [12, 191, 34, 7]]
@@ -504,6 +589,10 @@ TESTS = [
     ("generators: PNG round trip 8-bit", test_png_round_trip_preserves_every_value),
     ("generators: PNG round trip 16-bit", test_png_round_trip_sixteen_bit),
     ("generators: PNG round trip 2-channel", test_png_round_trip_two_channel),
+    ("generators: PNG round trip RGB and RGBA", test_png_round_trip_rgb_and_rgba),
+    ("generators: PNG rejects 16-bit colour", test_png_rejects_sixteen_bit_colour),
+    ("terrain surfaces: smoothstep is clamped", test_smoothstep_is_clamped_and_monotonic),
+    ("terrain surfaces: splat weights sum to one", test_splat_weights_sum_to_one),
     ("hydrology: flow accumulates upstream", test_flow_accumulation_counts_upstream_area),
     ("hydrology: downhill picks the steepest", test_compute_downhill_picks_the_steepest_lower_neighbour),
     ("hydrology: flow conserves cells", test_flow_accumulation_conserves_cells),

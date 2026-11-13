@@ -221,6 +221,63 @@ jobs:
                 % (len(spline), spline[0]["height_m"], spline[-1]["height_m"]))
           PY
 
+      - name: Terrain material maps derive from the heightmap
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:-/tmp}/terrain"
+          python tools/generators/terrain_surfaces.py \
+            --heightmap "$out/terrain_heightmap_master_1km.png" \
+            --out "$out" --report "$out/surfaces.json"
+          python - "$out" <<'PY'
+          import json, os, struct, sys
+
+          out = sys.argv[1]
+          expected = {
+              # name: (width, height, bit depth, colour type)
+              "terrain_normalmap_master.png": (1025, 1025, 8, 2),   # RGB
+              "terrain_splat_0.png": (1025, 1025, 8, 6),            # RGBA
+              "terrain_splat_1.png": (1025, 1025, 8, 6),
+              "terrain_macro_noise_texture.png": (1025, 1025, 8, 0),  # grayscale
+          }
+          for name, want in expected.items():
+              path = os.path.join(out, name)
+              if not os.path.exists(path):
+                  raise SystemExit("%s was not produced" % name)
+              with open(path, "rb") as handle:
+                  head = handle.read(26)
+              width, height, bit_depth, colour = struct.unpack(">IIBB", head[16:26])
+              got = (width, height, bit_depth, colour)
+              if got != want:
+                  raise SystemExit(
+                      "%s is %dx%d depth %d colour type %d, expected %r"
+                      % ((name,) + got + (want,))
+                  )
+
+          with open(os.path.join(out, "surfaces.json"), encoding="utf-8") as handle:
+              report = json.load(handle)
+          for asset in report["assets"]:
+              if not asset.get("sha256") or not asset.get("input_hash"):
+                  raise SystemExit("%s has no sha256 or input_hash" % asset["name"])
+          print("terrain surfaces: %d maps" % len(report["assets"]))
+
+          # The blend rules are the contract between the weights and the shader that reads them.
+          # A splat map whose thresholds disagree with the shader is silently wrong, so the rules
+          # are checked for the fields a shader would need.
+          with open(os.path.join(out, "terrain_height_blend_rules.json"), encoding="utf-8") as handle:
+              rules = json.load(handle)
+          for field in ("slope_rock", "slope_scree", "shore_band_m", "bog_band_m",
+                        "water_level_m", "splat_layers"):
+              if field not in rules:
+                  raise SystemExit("blend rules have no %s" % field)
+          if len(rules["splat_layers"]) != 8:
+              raise SystemExit(
+                  "blend rules describe %d splat channels, expected 8"
+                  % len(rules["splat_layers"])
+              )
+          print("blend rules: rock at slope %.2f, scree at %.2f, %d channels"
+                % (rules["slope_rock"], rules["slope_scree"], len(rules["splat_layers"])))
+          PY
+
       - name: P1 set per phase
         run: |
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
