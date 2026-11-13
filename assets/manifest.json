@@ -154,16 +154,16 @@
         "ground_ash_burnt",
         "ground_charred_wood",
         "ground_ice_thin",
-        "terrain_splat_map_set||P1",
+        "terrain_splat_map_set||P1||custom|project-original",
         "terrain_triplanar_blend_material||P1",
-        "terrain_height_blend_rules||P1",
-        "terrain_macro_noise_texture",
-        "terrain_heightmap_master_1km||P1",
-        "terrain_heightmap_ridge",
-        "terrain_heightmap_valley",
-        "terrain_heightmap_basin_bog",
-        "terrain_normalmap_master||P1",
-        "terrain_biome_mask||P1",
+        "terrain_height_blend_rules||P1||custom|project-original",
+        "terrain_macro_noise_texture||||custom|project-original",
+        "terrain_heightmap_master_1km||P1||custom|project-original",
+        "terrain_heightmap_ridge||||custom|project-original",
+        "terrain_heightmap_valley||||custom|project-original",
+        "terrain_heightmap_basin_bog||||custom|project-original",
+        "terrain_normalmap_master||P1||custom|project-original",
+        "terrain_biome_mask||P1||custom|project-original",
         "terrain_cliff_module||P1|6",
         "terrain_overhang_ledge|||3",
         "terrain_ravine_wall|||3",
@@ -217,10 +217,10 @@
       "priority": "P1",
       "source_tool": "custom",
       "assets": [
-        "terrain_hydrology_mask",
-        "terrain_water_level_table",
-        "terrain_river_splines",
-        "terrain_shore_mask"
+        "terrain_hydrology_mask||||custom|project-original",
+        "terrain_water_level_table||||custom|project-original",
+        "terrain_river_splines||||custom|project-original",
+        "terrain_shore_mask||||custom|project-original"
       ]
     },
     "4.B.surface": {
@@ -230,9 +230,9 @@
       "priority": "P1",
       "source_tool": "custom",
       "assets": [
-        "terrain_surface_id_map",
-        "surface_ids",
-        "surface_fx_table"
+        "terrain_surface_id_map||||custom|project-original",
+        "surface_ids||||custom|project-original",
+        "surface_fx_table||||custom|project-original"
       ]
     },
     "4.C": {

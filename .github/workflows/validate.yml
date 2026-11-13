@@ -5,6 +5,11 @@ name: validate
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_terrain:
+        description: "Commit the generated terrain maps and their built evidence to the staging branch"
+        type: boolean
+        default: false
   push:
     paths:
       - "assets/**"
@@ -387,3 +392,89 @@ jobs:
           for category, count in summary["by_category"].items():
               print("| %s | %d |" % (category, count))
           PY
+
+  # The maps are generated, gated and then thrown away with the runner. An artifact expires; a
+  # committed file does not. This job is the only thing that turns "built and measured in CI" into
+  # "exists", and it is a manual dispatch because a binary entering history should be a decision.
+  #
+  # It commits to `staging`, never to main: that is the documented route for binaries, and it keeps
+  # main's history free of anything that might later need a purge.
+  publish:
+    name: Publish the terrain maps to staging
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_terrain }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: manifest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      # Regenerated here rather than downloaded as an artifact: the artifact is a build product of
+      # a different run, and a file is only evidence if the run that commits it also measured it.
+      - name: Generate the maps
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:-/tmp}/terrain"
+          python tools/generators/terrain_maps.py --out "$out" --report "$out/report.json"
+          python tools/generators/hydrology.py \
+            --heightmap "$out/terrain_heightmap_master_1km.png" \
+            --out "$out" --report "$out/hydrology.json"
+          python tools/generators/terrain_surfaces.py \
+            --heightmap "$out/terrain_heightmap_master_1km.png" \
+            --out "$out" --report "$out/surfaces.json"
+
+      - name: Copy the maps into the repository
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:-/tmp}/terrain"
+          mkdir -p assets/terrain
+          for file in "$out"/*.png "$out"/*.json; do
+            case "$(basename "$file")" in
+              report.json|hydrology.json|surfaces.json) continue ;;
+            esac
+            cp "$file" assets/terrain/
+          done
+          ls -l assets/terrain
+
+      # The gates below are the ones this job itself runs before recording: it generated the files,
+      # so it can say the composition is sane and that two runs agree.
+      - name: Record the built evidence
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:-/tmp}/terrain"
+          python tools/record_built.py \
+            --report "$out/report.json" \
+            --report "$out/hydrology.json" \
+            --report "$out/surfaces.json" \
+            --manifest assets/manifest.json \
+            --dir assets/terrain --out assets/built.json \
+            --gate composition=from_report \
+            --gate channel_contract=checked_in_manifest_job \
+            --gate determinism=checked_in_manifest_job
+
+      - name: Rebuild and re-check the manifest
+        run: |
+          set -euo pipefail
+          python tools/build_manifest.py
+          python tools/validate/check_manifest.py
+          python tools/validate/check_docs.py
+
+      - name: Push to staging
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add assets/terrain assets/built.json
+          if git diff --cached --quiet; then
+            echo "nothing changed; the maps on staging already match this build"
+            exit 0
+          fi
+          git commit -m "Publish the generated terrain maps and their built evidence"
+          # A binary reaches main only by merging staging after the gates pass, never by a direct
+          # push, so this is the branch it lands on.
+          git push origin HEAD:staging

@@ -12,7 +12,8 @@
     "license": "CC0-1.0",
     "maps": ["albedo", "normal", "orm"],
     "resolution_ladder": [2048, 1024, 512],
-    "why_a_ladder": "2048 for surfaces the player stands on and looks at closely; 1024 for the same material at distance; 512 for anything only ever seen as a scatter card. The tier's budget decides which rung, not the artist."
+    "why_a_ladder": "2048 for surfaces the player stands on and looks at closely; 1024 for the same material at distance; 512 for anything only ever seen as a scatter card. The tier's budget decides which rung, not the artist.",
+    "alpha_note": "Leaf, fern and grass cards carry cut-out alpha, and mipmaps are where that goes wrong quietly: a plain box filter averages transparent texels into the leaves at each level, so a crown thins with distance and eventually dissolves. Two consequences, neither of which the shader can fix. First, mipmaps must be generated on import (Godot's default) and the alpha must be dilated before they are, or the thinning starts at the second mip. Second, until a coverage-preserving mip chain is authored, alpha_cutoff is what holds a distant card together — raising it keeps leaves at range, lowering it thins them. The real fix is a dilated mask plus a per-LOD cutoff, which is Phase 3 work when the cards exist. Recorded here because it is a texture-import decision, not a shader one, and the complaint would otherwise arrive as 'the trees vanish at 200 m'."
   },
   "tiling_policy": {
     "unit": "metres per tile, so a 1 m boulder and a 40 m cliff use the same texture at the same apparent detail",

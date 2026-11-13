@@ -22,6 +22,9 @@ import sys
 
 MANIFEST = "assets/manifest.json"
 EXPANDED = "assets/manifest.expanded.json"
+# Evidence that assets were built and committed, keyed by record name. Separate from the authored
+# list: the plan is written by hand, the hashes are written by the build that produced them.
+BUILT = "assets/built.json"
 
 VALID_TIERS = {"S", "A", "B", "C"}
 VALID_PRIORITIES = {"P1", "P2", "P3"}
@@ -146,6 +149,10 @@ def build(manifest):
     problems = []
     defaults = manifest.get("field_defaults", {})
     categories = manifest.get("categories", {})
+    # Evidence that an asset was built and committed, keyed by record name. It lives in its own
+    # file (assets/built.json, merged in by main()) so the authored list stays hand-edited and the
+    # generated hashes never become hand-written lines in it.
+    built_overrides = manifest.get("built") or {}
     records = []
     seen = {}
     base_names = {}
@@ -210,6 +217,26 @@ def build(manifest):
                     problems,
                 )
             emitted_names[record["name"]] = "%s in %s" % (entry["name"], group_key)
+
+            # Built evidence overrides the placeholder fields. It is checked here as well as in
+            # check_manifest.py because a stale built entry is a data problem, not a policy one:
+            # a name the manifest no longer declares means the evidence points at nothing.
+            override = built_overrides.get(record["name"])
+            if override:
+                unknown = sorted(set(override) - set(record))
+                if unknown:
+                    fail(
+                        "%s: built evidence sets fields the manifest does not define: %s"
+                        % (record["name"], unknown),
+                        problems,
+                    )
+                record.update(override)
+                record["status"] = override.get("status", "built")
+                if not record.get("path") or not record.get("sha256"):
+                    fail(
+                        "%s: marked built without both a path and a sha256" % record["name"],
+                        problems,
+                    )
             records.append(record)
 
     # Authored entries first, so a derived group never shadows a hand-written one.
@@ -256,6 +283,17 @@ def build(manifest):
 
     order = {"P1": 0, "P2": 1, "P3": 2}
     records.sort(key=lambda r: (r["phase"], order.get(r["priority"], 9), r["category"], r["name"]))
+
+    # Evidence for an asset that no longer exists in the plan is worse than no evidence: it reads
+    # as "this was built" while pointing at a name nothing declares.
+    stale = sorted(set(built_overrides) - set(emitted_names))
+    if stale:
+        fail(
+            "built evidence for assets the manifest does not declare: %s%s"
+            % (stale[:5], "" if len(stale) <= 5 else " (+%d more)" % (len(stale) - 5)),
+            problems,
+        )
+
     return records, problems
 
 
@@ -284,6 +322,14 @@ def main():
 
     with open(args.manifest, "r", encoding="utf-8") as handle:
         manifest = json.load(handle)
+
+    # Built evidence lives in its own file, written by the build that produced the asset
+    # (tools/record_built.py). The authored manifest is the plan and stays hand-edited; merging
+    # generated hashes into it would put machine-written lines in a file people edit by hand.
+    if os.path.exists(BUILT):
+        with open(BUILT, "r", encoding="utf-8") as handle:
+            built = json.load(handle)
+        manifest["built"] = built.get("built", {})
 
     records, problems = build(manifest)
     if problems:

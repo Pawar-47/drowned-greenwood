@@ -91,6 +91,16 @@ happens when it is broken, because a rule with no consequence is a comment.
     `check_audit_ledger.py` fails the build on a clause with no state or no evidence, so "I dealt
     with that" is a row rather than a recollection. `docs/AUDIT_PROTOCOL.md` states the protocol.
 
+**What to configure on GitHub, since a local hook cannot exist here.** The 20 MB guard runs in CI,
+which is after a push, and there is no terminal on the device this repository is worked from, so a
+pre-push hook is not available. The substitute is a ruleset: **Settings → Rules → Rulesets**, target
+`main`, and require a pull request before merging, the `validate` status check to pass, and branches
+to be up to date; leave no admin bypass. That moves the guard to before the merge instead of after
+the commit, which is where the size check is actually useful. It is a repository setting, so nothing
+in this repository enforces it — recorded here because it is the decision a `pre-push` hook would
+otherwise have made for us. `docs/HISTORY_PURGE.md` remains the recovery path if something large
+still lands.
+
 ## Not adopted, with reasons
 
 **Sparse checkout.** Deferred because the asset directory layout does not exist yet, so any
