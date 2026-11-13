@@ -17,8 +17,8 @@ What exists now, and what is planned. Anything marked *planned* does not exist y
 listed so the intended shape is visible without being mistaken for present.
 
 ```
-assets/          manifest.json (authored list), LICENSES.md, ADDITIONS.md, skeleton definitions,
-                 surface_ids.json, surface_fx_table.json
+assets/          manifest.json (authored list), built.json (built evidence), LICENSES.md, ADDITIONS.md,
+                 skeleton definitions, surface_ids.json, surface_fx_table.json, terrain/ (the maps)
 tools/           build_manifest.py, TOOLS.md, config/materials.json, generators/, phase0/
                  (probes), validate/ (checks)
 shaders/         surface_base.gdshader, foliage_base.gdshader, shared includes, SHADER_GLOBALS.md
@@ -27,9 +27,10 @@ reports/         tool_evaluation.md, quality_report.md, below_target.md, phase2.
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
 
-Planned, not present: an APK build workflow (Phase 9) and a `staging` branch. The staging branch
-is the intended path for binaries to reach `main`; until it exists, nothing binary is committed at
-all, which is why the repository is currently about 0.6 MB of tooling, configs and definitions.
+Planned, not present: an APK build workflow (Phase 9). The `staging` branch now exists: the publish
+job in `validate.yml` regenerates the terrain maps on each push to `main`, commits them to `staging`
+only when the bytes changed, and they reach `main` by merging it. The repository is about 11 MB,
+most of it the twelve committed terrain maps in `assets/terrain/`.
 
 `tools/generators/` holds the asset generators. They are pure standard-library Python — no numpy,
 no Pillow — so there is no third-party dependency to pin, and a heightmap is written by a PNG
