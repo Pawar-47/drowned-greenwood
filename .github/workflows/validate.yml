@@ -217,7 +217,8 @@ jobs:
       # Hydrology reads the heightmap terrain_maps just wrote, so it proves the sidecar contract
       # too: if the scale metadata were missing or stale, this step would refuse rather than
       # placing water at the wrong height.
-      - name: Hydrology derives from the heightmap        run: |
+      - name: Hydrology derives from the heightmap
+        run: |
           set -euo pipefail
           out="${RUNNER_TEMP:-/tmp}/terrain"
           python tools/generators/hydrology.py \
