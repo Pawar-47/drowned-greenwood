@@ -215,6 +215,12 @@
       "texture_set": "polyhaven/leaf_conifer_01",
       "tiling_m": 0.6,
       "wetness_darken": 0.25,
+      "wetness_kind_override": "beads",
+      "alpha_cutoff": 0.5,
+      "translucency": 0.25,
+      "sway_amplitude": 0.06,
+      "branch_amplitude": 0.04,
+      "flutter_amplitude": 0.006,
       "tier": "S",
       "used_by": ["tree"],
       "note": "needles barely flutter; a conifer that shimmers like a broadleaf reads as plastic. Waxy needles also bead rather than soak, so they take the same wetness override as the broadleaf."
