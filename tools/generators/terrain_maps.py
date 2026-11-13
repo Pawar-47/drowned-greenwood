@@ -220,6 +220,24 @@ def shape_height(base, valley):
         for x in range(SAMPLES):
             u = x / (CELLS - 1)
 
+            # The river channel, computed before the rim because the rim has to open for it. A
+            # river leaves a valley through a notch; cutting a slot straight through the rim
+            # instead put a 150 m wall either side of the water at the map edge, which is exactly
+            # what the measured 13.3 m neighbour step was.
+            #
+            # `taper` fades the channel in and out along v rather than switching it on at a row.
+            # Both previous versions ended the carve with an `if` on v, and each one left a cliff
+            # at that row: that is the same fault twice, so the boundary is a smoothstep now.
+            taper = smoothstep(0.0, 0.10, v) * (1.0 - smoothstep(BOG_CENTRE_V, BOG_CENTRE_V + 0.10, v))
+            channel = 0.0
+            bed_norm = 0.0
+            if taper > 0.0:
+                distance_m = abs(u - river_centre_u(v)) * 1000.0
+                channel = taper * (
+                    1.0 - smoothstep(RIVER_HALF_WIDTH_M, RIVER_HALF_WIDTH_M + RIVER_BANK_M, distance_m)
+                )
+                bed_norm = river_bed_m(v) / MAX_HEIGHT_M
+
             # Distance from the centre, 0 at the middle and 1 at the edge. The world is a valley,
             # so height rises towards the rim. The power concentrates the rise near the edge and
             # keeps the interior broad rather than making a cone.
@@ -232,6 +250,9 @@ def shape_height(base, valley):
             radius = min(1.0, (dx * dx + dy * dy) ** 0.5)
             warp = 1.0 + 0.22 * (base[y][x] * 2.0 - 1.0)
             rim = min(1.0, max(0.0, radius * warp)) ** RIM_POWER
+            # The rim drops away along the channel: that is the notch the river leaves the valley
+            # through, and it is why the water does not end at a wall.
+            rim *= 1.0 - 0.9 * channel
 
             noise = base[y][x] * 0.55 + valley[y][x] * 0.45
             h = FLOOR + NOISE_AMPLITUDE * noise + RIM_AMPLITUDE * rim
@@ -247,23 +268,12 @@ def shape_height(base, valley):
             bog_weight = 1.0 - smoothstep(0.0, BOG_RADIUS_U * 2.0, bog_distance)
             h = h * (1.0 - bog_weight) + BOG_FLOOR * bog_weight
 
-            # The river, carved from inside the bog to the northern edge. It is a *blend toward a
-            # bed height*, not a proportional cut of whatever the terrain happens to be: that is
-            # what makes the channel a few metres deep everywhere along its length instead of
-            # 100 m deep where the valley is tall.
-            #
-            # The carve runs past the bog centre rather than starting there. Ending it at a row
-            # is what put a wall across the map both times: first with a hard `v < 0.72`, then
-            # with a hard `v <= BOG_CENTRE_V`. And it only ever lowers ground, so it cannot cut a
-            # step upward where the bed is above the floor it meets.
-            if v <= BOG_CENTRE_V + 0.08:
-                distance_m = abs(u - river_centre_u(v)) * 1000.0
-                bank = 1.0 - smoothstep(
-                    RIVER_HALF_WIDTH_M, RIVER_HALF_WIDTH_M + RIVER_BANK_M, distance_m
-                )
-                if bank > 0.0:
-                    bed = river_bed_m(v) / MAX_HEIGHT_M
-                    h = min(h, h * (1.0 - bank) + bed * bank)
+            # The channel itself: a blend toward a bed height, not a proportional cut of whatever
+            # the terrain happens to be. That is what makes it a few metres deep along its whole
+            # length instead of 100 m deep where the valley is tall. It only ever lowers ground,
+            # so it cannot cut a step upward where it meets a floor that is already below the bed.
+            if channel > 0.0:
+                h = min(h, h * (1.0 - channel) + bed_norm * channel)
 
             row[x] = max(0.0, min(1.0, h))
         field.append(row)
