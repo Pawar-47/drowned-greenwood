@@ -372,7 +372,13 @@ def check_materials(doc, by_id, surfaces_doc, problems):
         # instead of a silent contradiction.
         if isinstance(sid, int) and not isinstance(sid, bool) and sid in by_id:
             override = row.get("wetness_kind_override")
-            kind = override or by_id[sid].get("wetness")
+            # by_id maps id -> surface name; the wetness kind lives on the surface row itself.
+            surface_rows = {
+                entry.get("id"): entry
+                for entry in (surfaces_doc or {}).get("surfaces", [])
+                if isinstance(entry, dict)
+            }
+            kind = override or (surface_rows.get(sid) or {}).get("wetness")
             if override and not row.get("note"):
                 problems.append(
                     "%s: %s overrides its surface's wetness kind without a note saying why"
