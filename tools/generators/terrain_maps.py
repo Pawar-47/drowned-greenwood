@@ -401,6 +401,7 @@ def main():
     surface_rows = []
     heights = []
     max_step = 0.0
+    max_step_at = (0, 0, 0.0, 0.0)
     land_cells = 0
     land_under_30 = 0
 
@@ -426,11 +427,18 @@ def main():
 
             # Shape metrics. A format gate passes a terrain with a cliff across it, which is what
             # happened: every check was about bit depth and value ranges, and the hillshade showed
-            # a 20 m step. These are the two numbers that would have caught it.
+            # a 20 m step. These are the numbers that would have caught it, plus the location of
+            # the worst one — guessing where a cliff is has cost three runs already.
             if x > 0:
-                max_step = max(max_step, abs(h_m - heights[-2]))
+                step = abs(h_m - heights[-2])
+                if step > max_step:
+                    max_step = step
+                    max_step_at = (x, y, round(h_m, 2), round(heights[-2], 2))
             if y > 0:
-                max_step = max(max_step, abs(h_m - heights[(y - 1) * SAMPLES + x]))
+                step = abs(h_m - heights[(y - 1) * SAMPLES + x])
+                if step > max_step:
+                    max_step = step
+                    max_step_at = (x, y, round(h_m, 2), round(heights[(y - 1) * SAMPLES + x], 2))
             if h_m >= WATER_LEVEL_M:
                 land_cells += 1
                 if gradient < math.tan(math.radians(30.0)):
@@ -543,6 +551,12 @@ def main():
         # `land_under_30_deg_percent` is the playability number: a hunting world that is mostly
         # unwalkable is not the valley the brief describes.
         "max_neighbour_step_m": round(max_step, 2),
+        "max_neighbour_step_at": {
+            "x": max_step_at[0],
+            "y": max_step_at[1],
+            "height_m": max_step_at[2],
+            "neighbour_m": max_step_at[3],
+        },
         "land_under_30_deg_percent": round(100.0 * land_under_30 / land_cells, 2)
         if land_cells
         else 0.0,

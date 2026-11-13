@@ -189,8 +189,8 @@ jobs:
           max_step = coverage["max_neighbour_step_m"]
           if max_step > 6.0:
               raise SystemExit(
-                  "the largest height step between neighbouring texels is %.1f m, which is a "
-                  "cliff rather than a slope: a carve stopped abruptly" % max_step
+                  "the largest height step between neighbouring texels is %.1f m at %r, which "
+                  "is a cliff rather than a slope" % (max_step, coverage["max_neighbour_step_at"])
               )
           walkable = coverage["land_under_30_deg_percent"]
           if walkable < 85.0:
