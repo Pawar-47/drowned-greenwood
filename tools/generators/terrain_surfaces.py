@@ -67,6 +67,9 @@ SLOPE_MOSS_EDGE = 0.18
 SHORE_BAND_M = 2.5
 # The bog's mud fades out over this height above the waterline.
 BOG_BAND_M = 6.0
+# The macro-noise map is tiled, so it is a power of two rather than one texel wider than one: a
+# 1025-wide tile repeats its first column at the seam and doubles a texel wherever it wraps.
+MACRO_SIZE = 1024
 
 
 def smoothstep(edge0, edge1, x):
@@ -125,6 +128,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--heightmap", required=True)
     parser.add_argument("--meta", default="")
+    parser.add_argument(
+        "--surface-map",
+        default="",
+        help="the surface-ID map from terrain_maps.py (default: terrain_surface_id_map.png "
+        "beside the heightmap). The splat weights are anchored to it, so the two cannot disagree",
+    )
     parser.add_argument("--out", required=True)
     parser.add_argument("--seed", default="drowned-greenwood-v1")
     parser.add_argument("--normal-strength", type=float, default=1.0)
@@ -141,9 +150,40 @@ def main():
     heights = read_heightmap(args.heightmap)
     metres = [h / 65535.0 * max_height_m for h in heights]
 
+    # The surface-ID map is the authority for which surface a cell is. The splat weights are a
+    # smooth rendering of the same decision, anchored to it — they used to be computed from slope
+    # and height independently, and the dominant splat disagreed with the ID map on 54 % of land
+    # cells, so a footstep would have sounded like grass over visible gravel.
+    surface_map_path = args.surface_map or os.path.join(
+        os.path.dirname(os.path.abspath(args.heightmap)), "terrain_surface_id_map.png"
+    )
+    width, height, channels, id_rows = read_png(surface_map_path)
+    if channels != 1:
+        raise SystemExit("%s must be single-channel" % surface_map_path)
+    if (width, height) != (SAMPLES, SAMPLES):
+        raise SystemExit(
+            "%s is %dx%d, expected %dx%d" % (surface_map_path, width, height, SAMPLES, SAMPLES)
+        )
+    surface_ids = [value for row in id_rows for value in row]
+    if len(surface_ids) != SAMPLES * SAMPLES:
+        raise SystemExit(
+            "%s has %d cells, expected %d" % (surface_map_path, len(surface_ids), SAMPLES * SAMPLES)
+        )
+
+    # Which splat layer holds each surface id, taken from SPLAT_LAYERS itself so the two cannot
+    # drift. Water and paths have no layer of their own — the shader draws water and a path is a
+    # decal — so those cells keep the smooth weights and are not counted in the agreement figure.
+    LAYER_FOR_ID = {
+        surface_id: index
+        for index, (_name, surface_id) in enumerate(SPLAT_LAYERS)
+        if surface_id != 0
+    }
+
     # Large-scale variation, so the terrain does not read as one uniform material at distance.
     # Generated at 256 and upsampled: macro noise is by definition low frequency.
-    macro = bilinear_upsample(fbm_field(256, args.seed + ":macro", octaves=4, base_size=5), SAMPLES)
+    # Generated at MACRO_SIZE, not at SAMPLES: this map is tiled, and a 1025-wide tile repeats its
+    # first column at the seam, so the texture doubles a texel wherever it wraps.
+    macro = bilinear_upsample(fbm_field(256, args.seed + ":macro", octaves=4, base_size=5), MACRO_SIZE)
     # A second, independent field splits moss from grass so that boundary is not a contour line.
     patchiness = bilinear_upsample(
         fbm_field(256, args.seed + ":patch", octaves=4, base_size=9), SAMPLES
@@ -155,6 +195,8 @@ def main():
     normal_rows = []
     splat0_rows = []
     splat1_rows = []
+    land_agreed = 0
+    land_total = 0
     for y in range(SAMPLES):
         normal_row = []
         splat0 = []
@@ -212,8 +254,28 @@ def main():
             else:
                 weights = [w / total for w in weights]
 
-            splat0.extend(int(round(w * 255)) for w in weights[0:4])
-            splat1.extend(int(round(w * 255)) for w in weights[4:8])
+            # Anchor the smooth weights to the surface-ID map. The map is the decision; this is its
+            # rendering. 85 % of the weight goes to the map's own layer, so the dominant splat is
+            # the surface the map names, and the remaining 15 % keeps the boundary soft.
+            layer = LAYER_FOR_ID.get(surface_ids[cell])
+            if layer is not None:
+                weights = [w * 0.15 for w in weights]
+                weights[layer] += 0.85
+                total = sum(weights)
+                weights = [w / total for w in weights]
+                land_total += 1
+                if max(range(8), key=lambda i: weights[i]) == layer:
+                    land_agreed += 1
+
+            # Bytes have to sum to 255 exactly. They summed to 253-258 because each channel was
+            # rounded on its own after normalising in floats; the residual goes on the dominant
+            # channel, which is the one an error there is least visible in.
+            scaled = [int(round(w * 255)) for w in weights]
+            dominant = max(range(8), key=lambda i: weights[i])
+            scaled[dominant] = max(0, min(255, scaled[dominant] + 255 - sum(scaled)))
+
+            splat0.extend(scaled[0:4])
+            splat1.extend(scaled[4:8])
 
         normal_rows.append(normal_row)
         splat0_rows.append(splat0)
@@ -252,7 +314,7 @@ def main():
     write_gray_png(macro_path, macro_rows, bit_depth=8)
     products.append(
         ("terrain_macro_noise_texture", macro_path,
-         {"texture_sizes": {"r8": [SAMPLES, SAMPLES]}})
+         {"texture_sizes": {"r8": [MACRO_SIZE, MACRO_SIZE]}})
     )
 
     # The blend rules, as data. The shader could hardcode these, but then the weights and the
@@ -320,6 +382,16 @@ def main():
                 **extra
             )
         )
+
+    # The agreement figure the CI gate reads. Built from the same loop that wrote the channels, so
+    # it measures what was written rather than a re-derivation that could disagree with it.
+    report["coverage"] = {
+        "splat_id_agreement_percent": round(100.0 * land_agreed / land_total, 2)
+        if land_total
+        else 0.0,
+        "land_cells_compared": land_total,
+        "splat_sum": 255,
+    }
 
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.report:

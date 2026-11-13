@@ -182,6 +182,24 @@ jobs:
           if len(coverage["surface_histogram"]) < 3:
               raise SystemExit("only %d surfaces used; the map is degenerate"
                                % len(coverage["surface_histogram"]))
+
+          # Shape gates. Every previous check was about formats and value ranges, and a terrain
+          # with a 20 m cliff across it passed all of them: a heightfield can be perfectly
+          # well-formed and still be a quarry.
+          max_step = coverage["max_neighbour_step_m"]
+          if max_step > 6.0:
+              raise SystemExit(
+                  "the largest height step between neighbouring texels is %.1f m, which is a "
+                  "cliff rather than a slope: a carve stopped abruptly" % max_step
+              )
+          walkable = coverage["land_under_30_deg_percent"]
+          if walkable < 85.0:
+              raise SystemExit(
+                  "only %.1f%% of the land is under 30 degrees; most of the world is unwalkable"
+                  % walkable
+              )
+          print("shape: largest neighbour step %.1f m, %.1f%% of land under 30 degrees"
+                % (max_step, walkable))
           for asset in report["assets"]:
               if not asset.get("sha256") or not asset.get("input_hash"):
                   raise SystemExit("%s has no sha256 or input_hash" % asset["name"])
@@ -255,6 +273,22 @@ jobs:
                   "the channel is only %d points long; the headwater search is not finding the "
                   "main stem" % len(spline)
               )
+
+          # The water has to sit above the bed or it is inside the ground. The first version
+          # subtracted the depth instead of adding it, so the upper river was invisible for 226 of
+          # 655 points and no other check noticed.
+          with open(os.path.join(out, "terrain_water_level_table.json"), encoding="utf-8") as handle:
+              levels = json.load(handle)["levels"]
+          submerged = [
+              level for level in levels if level["water_surface_m"] <= level["bed_height_m"]
+          ]
+          if submerged:
+              raise SystemExit(
+                  "%d of %d river points have the water surface at or below the bed, so the water "
+                  "is inside the ground: first offender %r"
+                  % (len(submerged), len(levels), submerged[0])
+              )
+          print("water table: %d points, every surface above its bed" % len(levels))
           print("river: %d points, %.1f m to %.1f m, every segment descends"
                 % (len(spline), spline[0]["height_m"], spline[-1]["height_m"]))
           PY
@@ -275,7 +309,7 @@ jobs:
               "terrain_normalmap_master.png": (1025, 1025, 8, 2),   # RGB
               "terrain_splat_0.png": (1025, 1025, 8, 6),            # RGBA
               "terrain_splat_1.png": (1025, 1025, 8, 6),
-              "terrain_macro_noise_texture.png": (1025, 1025, 8, 0),  # grayscale
+              "terrain_macro_noise_texture.png": (1024, 1024, 8, 0),  # grayscale, tiled
           }
           for name, want in expected.items():
               path = os.path.join(out, name)
@@ -314,6 +348,18 @@ jobs:
               )
           print("blend rules: rock at slope %.2f, scree at %.2f, %d channels"
                 % (rules["slope_rock"], rules["slope_scree"], len(rules["splat_layers"])))
+
+          # The splats and the surface-ID map have to agree about what a cell is, or a footstep
+          # sounds like grass over visible gravel. They disagreed on 54 % of land cells while both
+          # were well-formed.
+          agreement = report["coverage"]["splat_id_agreement_percent"]
+          if agreement < 95.0:
+              raise SystemExit(
+                  "the dominant splat matches the surface-ID map on only %.1f%% of land cells; "
+                  "they are two classifications of one cell and must be one" % agreement
+              )
+          print("splats: %.1f%% agreement with the surface-ID map over %d land cells"
+                % (agreement, report["coverage"]["land_cells_compared"]))
           PY
 
       # "Deterministic from the seed" was a claim in reports/phase2.md with nothing behind it. Two

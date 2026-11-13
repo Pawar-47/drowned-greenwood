@@ -33,7 +33,45 @@ sand and clay are rare (0.6 %, 0.3 % and 0.03 % of the map), so those channels a
 zero and compress hard. A splat map that did not compress that well would mean the sparse surfaces
 were being painted everywhere.
 
+## The shape review, and eight fixes
+
+The first published maps were valid files and a wrong place. A hillshade showed a perfect circle, a
+disc at bottom-left and a dead-straight trench. Every gate passed, because the gates checked formats,
+hashes and value ranges — and a cliff can be perfectly well-formed.
+
+| What the review found | What it was | Fix |
+|---|---|---|
+| A 14–23 m height jump across the map at row 736 | the river carve was cut off by `if v < 0.72`, so the carving stopped and left a wall across its whole width | the carve runs the length of the river through a `smoothstep` bank, tapering at the ends |
+| Hard-edged circles | the rim and bog were discs with threshold edges, and the surface map painted a rock and gravel ring along each | the rim radius and the bog radius are warped by the noise field and blended with a `smoothstep` |
+| A 200 m wide, 100 m deep trench with a dry floor | the channel was `0.09` of the map either side and removed 70 % of the local height | 8 m half-width plus a 24 m bank, blended toward a bed height of 33.5 → 30.5 m |
+| Water 1.2 m below the riverbed for 226 of 655 points | a sign error: `bed - depth` instead of `bed + depth` | `max(water_level, bed + depth)` |
+| The dominant splat matched the surface map on 46 % of land | slope-and-height weights were computed independently of the ID map | the splats read the ID map and 85 % of each cell's weight goes to its layer; CI gates ≥ 95 % |
+| Water counted two ways (5.80 % vs 4.53 %) | hydrology also counted high-flow cells as water | water is ground below the waterline, in both generators |
+| Mean slope 16°, 10.7 % of land above 30° | mostly the trench and the rings | re-measured by the new gate; nothing else changed |
+| Splat weights summed 253–258 | each channel was rounded independently | the residual goes on the dominant channel, so every texel sums to 255 |
+
+Also fixed: the docstring said 0–600 m while the code has always used 200; the macro-noise texture
+is 1024 rather than 1025, so it no longer repeats a texel when tiled; and the hydrology header now
+states the axis convention (G is east, B is south, neutral is 128,128).
+
+**Four gates were added**, because the review was right that CI could not see shape: the largest
+height step between neighbouring texels (≤ 6 m), the percentage of land under 30° (≥ 85 %), the water
+surface being above its bed at every river point, and splat/ID agreement (≥ 95 %).
+
+
+
 ## Why the splat weights are computed, not blurred
+
+The obvious way to turn a surface-ID map into splat weights is a one-hot pass: one layer per cell,
+then a blur to soften the edges. A box blur averages alpha across a cliff edge, which is exactly
+where the boundary should stay sharp, and it is what made the splat and ID maps disagree before.
+
+The weights are computed from slope and height as before, then anchored to the surface-ID map: 85 %
+of each cell's weight goes to the layer the map names, and the remaining 15 % keeps the boundary
+soft. The dominant splat is therefore the surface the map names by construction, and CI checks that
+it stays that way rather than trusting the arithmetic.
+
+The older rationale, kept because the first version of this section explained it:
 
 The obvious way to turn a surface-ID map into splat weights is a hard mask per surface followed by
 a blur. A blur is expensive at 1025² in pure Python and, worse, it smears weights across a cliff

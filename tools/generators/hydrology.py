@@ -22,6 +22,10 @@ Outputs:
   terrain_hydrology_mask   RGB8, 1025², R = water depth (0..8 m), G,B = flow direction as a unit
                            vector (0..255 mapped to -1..1). A vector rather than an angle so that
                            bilinear filtering between neighbouring texels is meaningful.
+                           AXIS CONVENTION: G is the east component (cos of the angle, so +G points
+                           towards increasing x) and B is the south component (sin, so +B points
+                           towards increasing row index, i.e. south on the map as drawn). A neutral
+                           texel is (128,128): no flow, or a cell whose neighbours are all higher.
   terrain_shore_mask       R8,  1025², 255 at the waterline falling to 0 over 4 m
   terrain_river_splines    JSON, the main stem, headwater to outlet
   terrain_water_level_table JSON, the water surface height and flow at each centreline point
@@ -255,14 +259,13 @@ def main():
     water = [False] * len(metres)
     depth = [0.0] * len(metres)
     for cell, h_m in enumerate(metres):
+        # Water is defined here by exactly the rule the surface-ID map uses: ground below the
+        # waterline. It used to also count every high-flow cell as water, which reported 5.80 %
+        # water against the surface map's 4.53 % — two answers to one question, which is the same
+        # class of disagreement as two classifications for one cell.
         if h_m < water_level_m:
             water[cell] = True
             depth[cell] = min(MAX_MASK_DEPTH_M, water_level_m - h_m)
-        elif flow[cell] >= RIVER_FLOW_CELLS:
-            water[cell] = True
-            # Deeper where more ground drains through, saturating at the channel depth.
-            share = min(1.0, flow[cell] / (RIVER_FLOW_CELLS * 20.0))
-            depth[cell] = RIVER_DEPTH_M * (0.5 + 0.5 * share)
 
     # Flow direction as an angle, quantised to 8 bits. 0 means "no flow" — a pit or a cell that
     # holds water flows nowhere — so the angle is encoded 1..255 to keep 0 free. The first version
@@ -417,7 +420,12 @@ def main():
             "y": point["y"],
             "v": point["v"],
             "bed_height_m": point["height_m"],
-            "water_surface_m": round(max(water_level_m, point["height_m"] - RIVER_DEPTH_M), 2),
+            # The surface must sit ABOVE the bed, or the water is inside the ground and invisible.
+            # This read `height_m - RIVER_DEPTH_M`, which is a sign error: for the first 226 of
+            # 655 points the surface was 1.2 m below the riverbed and the upper river did not
+            # exist. Where the bed is below the lake level the lake level wins, because the river
+            # is then part of the lake.
+            "water_surface_m": round(max(water_level_m, point["height_m"] + RIVER_DEPTH_M), 2),
         }
         for point in spline
     ]

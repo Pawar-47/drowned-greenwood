@@ -15,7 +15,7 @@ bog basin, ridges at the edges, and a river running out of it. The shaping is wr
 steps so the intent survives — a reader can see "the bog is a bowl, not a random dip".
 
 Outputs, all lossless and all deterministic from the seed:
-  terrain_heightmap_master_1km  R16, 1025², 0..65535 mapped to 0..600 m
+  terrain_heightmap_master_1km  R16, 1025², 0..65535 mapped to 0..200 m
   terrain_biome_mask            R8,  1025², bit field: 1 bog, 2 forest, 4 ridge, 8 riverbed, 16 clearing
   terrain_surface_id_map        R8,  1025², ids from assets/surface_ids.json
 
@@ -25,6 +25,7 @@ height samples, and using 1024 makes the last row of cells share the edge sample
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -121,6 +122,53 @@ NOISE_AMPLITUDE = 0.14
 RIM_AMPLITUDE = 0.45
 RIM_POWER = 2.6
 
+# The river. The first version carved a band 0.09 of the map wide — 90 m either side — down by
+# 70 % of the terrain's own height, which is a canyon, not a stream: the measured channel was about
+# 200 m across and ~100 m deep and its floor sat 13 m above the waterline, so most of the river was
+# dry. A river a hunter can step over is 8 m wide, cut a few metres into the valley floor, and it
+# descends from the bog to the outlet so the water on it can actually flow.
+RIVER_HALF_WIDTH_M = 8.0
+RIVER_BANK_M = 24.0
+RIVER_DEPTH_M = 1.4
+# Bed height at the bog and at the northern edge, in metres. The bed has to end below the waterline
+# or the river never reaches the lake, and it has to start above it or it starts as a lake.
+RIVER_BED_SOURCE_M = 33.5
+RIVER_BED_OUTLET_M = 30.5
+
+# The bog bowl, as a radius in u/v units (1.0 is the whole map across).
+BOG_CENTRE_U = 0.30
+BOG_CENTRE_V = 0.68
+BOG_RADIUS_U = 0.26
+# Just above the waterline: a basin that is wet but not under water, with the lake in its middle.
+BOG_FLOOR = 0.168
+
+
+def smoothstep(edge0, edge1, x):
+    """0 below edge0, 1 above edge1, smooth between. Used so every carve has soft banks."""
+    if edge1 == edge0:
+        return 0.0 if x < edge0 else 1.0
+    t = (x - edge0) / (edge1 - edge0)
+    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def river_centre_u(v):
+    """Meandering centreline of the river, as a u coordinate for a given v.
+
+    A straight line reads as a canal. Two low-frequency sine terms make it wander the way water
+    does, and they are functions of v alone so the channel is continuous along its whole length —
+    the previous version cut the carve off at v = 0.72, which put a 14-23 m cliff straight across
+    the map where the carving stopped.
+    """
+    t = max(0.0, min(1.0, (BOG_CENTRE_V - v) / BOG_CENTRE_V))
+    return BOG_CENTRE_U + 0.035 * math.sin(t * 6.0) + 0.055 * t
+
+
+def river_bed_m(v):
+    """Bed height along the river, descending from the bog to the outlet."""
+    t = max(0.0, min(1.0, (BOG_CENTRE_V - v) / BOG_CENTRE_V))
+    return RIVER_BED_SOURCE_M + (RIVER_BED_OUTLET_M - RIVER_BED_SOURCE_M) * t
+
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -173,30 +221,42 @@ def shape_height(base, valley):
             # Distance from the centre, 0 at the middle and 1 at the edge. The world is a valley,
             # so height rises towards the rim. The power concentrates the rise near the edge and
             # keeps the interior broad rather than making a cone.
+            #
+            # The radius is warped by the noise before the power is taken. Without the warp the
+            # rim is a perfect circle, and the surface classifier then paints a rock-and-gravel
+            # ring exactly along its gradient threshold — a geometric feature in an organic world.
             dx = (u - 0.5) * 2.0
             dy = (v - 0.5) * 2.0
             radius = min(1.0, (dx * dx + dy * dy) ** 0.5)
-            rim = radius ** RIM_POWER
+            warp = 1.0 + 0.22 * (base[y][x] * 2.0 - 1.0)
+            rim = min(1.0, max(0.0, radius * warp)) ** RIM_POWER
 
             noise = base[y][x] * 0.55 + valley[y][x] * 0.45
             h = FLOOR + NOISE_AMPLITUDE * noise + RIM_AMPLITUDE * rim
 
             # The bog basin, low and flat, south-west of centre. A bowl rather than a dip: the
-            # noise is suppressed inside it so the floor stays level and water can sit.
-            bog_dx = (u - 0.30) * 2.0
-            bog_dy = (v - 0.68) * 2.0
+            # noise is suppressed inside it so the floor stays level and water can sit. The edge
+            # is a smoothstep and the radius is warped, because a hard-edged disc is exactly what
+            # the hillshade showed.
+            bog_dx = (u - BOG_CENTRE_U) * 2.0
+            bog_dy = (v - BOG_CENTRE_V) * 2.0
             bog_distance = (bog_dx * bog_dx + bog_dy * bog_dy) ** 0.5
-            if bog_distance < 0.42:
-                weight = 1.0 - (bog_distance / 0.42) ** 2
-                h = h * (1.0 - 0.75 * weight) + 0.06 * weight
+            bog_distance *= 1.0 + 0.35 * (valley[y][x] * 2.0 - 1.0)
+            bog_weight = 1.0 - smoothstep(0.0, BOG_RADIUS_U * 2.0, bog_distance)
+            h = h * (1.0 - bog_weight) + BOG_FLOOR * bog_weight
 
-            # A river channel from the bog to the northern edge, carved rather than added so it
-            # cuts through whatever is in the way.
-            river_centre = 0.30 + (v - 0.68) * 0.22
-            river_distance = abs(u - river_centre)
-            if v < 0.72 and river_distance < 0.09:
-                weight = 1.0 - (river_distance / 0.09) ** 2
-                h = h * (1.0 - 0.7 * weight)
+            # The river, carved from the bog to the northern edge. It is a *blend toward a bed
+            # height*, not a proportional cut of whatever the terrain happens to be: that is what
+            # makes the channel a few metres deep everywhere along its length instead of 100 m
+            # deep where the valley is tall.
+            if v <= BOG_CENTRE_V:
+                distance_m = abs(u - river_centre_u(v)) * 1000.0
+                bank = 1.0 - smoothstep(
+                    RIVER_HALF_WIDTH_M, RIVER_HALF_WIDTH_M + RIVER_BANK_M, distance_m
+                )
+                if bank > 0.0:
+                    bed = river_bed_m(v) / MAX_HEIGHT_M
+                    h = h * (1.0 - bank) + bed * bank
 
             row[x] = max(0.0, min(1.0, h))
         field.append(row)
@@ -258,7 +318,7 @@ def classify_surface(height_m, gradient, biome, noise):
 
 def classify_biome(height_m, gradient, bog_distance, forest_noise):
     bits = 0
-    if bog_distance < 0.42 and height_m < WATER_LEVEL_M + 6.0:
+    if bog_distance < BOG_RADIUS_U * 2.0 and height_m < WATER_LEVEL_M + 6.0:
         bits |= BIOME_BOG
     if height_m >= WATER_LEVEL_M and forest_noise > 0.45:
         bits |= BIOME_FOREST
@@ -305,6 +365,9 @@ def main():
     biome_rows = []
     surface_rows = []
     heights = []
+    max_step = 0.0
+    land_cells = 0
+    land_under_30 = 0
 
     for y in range(SAMPLES):
         height_row = []
@@ -318,13 +381,25 @@ def main():
             heights.append(h_m)
 
             gradient = slope(field, x, y)
-            bog_dx = (u - 0.30) * 2.0
-            bog_dy = (v - 0.68) * 2.0
+            bog_dx = (u - BOG_CENTRE_U) * 2.0
+            bog_dy = (v - BOG_CENTRE_V) * 2.0
             bog_distance = (bog_dx * bog_dx + bog_dy * bog_dy) ** 0.5
 
             biome = classify_biome(h_m, gradient, bog_distance, forest[y][x])
             biome_row.append(biome)
             surface_row.append(classify_surface(h_m, gradient, biome, detail[y][x]))
+
+            # Shape metrics. A format gate passes a terrain with a cliff across it, which is what
+            # happened: every check was about bit depth and value ranges, and the hillshade showed
+            # a 20 m step. These are the two numbers that would have caught it.
+            if x > 0:
+                max_step = max(max_step, abs(h_m - heights[-2]))
+            if y > 0:
+                max_step = max(max_step, abs(h_m - heights[(y - 1) * SAMPLES + x]))
+            if h_m >= WATER_LEVEL_M:
+                land_cells += 1
+                if gradient < math.tan(math.radians(30.0)):
+                    land_under_30 += 1
 
         height_rows.append(height_row)
         biome_rows.append(biome_row)
@@ -428,6 +503,14 @@ def main():
         },
         "height_min_m": round(min(heights), 2),
         "height_max_m": round(max(heights), 2),
+        # The two shape numbers. `max_neighbour_step_m` is the cliff detector: a natural valley
+        # does not jump 20 m between samples 1 m apart, and the first published terrain did.
+        # `land_under_30_deg_percent` is the playability number: a hunting world that is mostly
+        # unwalkable is not the valley the brief describes.
+        "max_neighbour_step_m": round(max_step, 2),
+        "land_under_30_deg_percent": round(100.0 * land_under_30 / land_cells, 2)
+        if land_cells
+        else 0.0,
         "water_percent": round(
             100.0
             * sum(
