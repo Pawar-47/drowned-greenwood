@@ -399,13 +399,17 @@ jobs:
 
   # The maps are generated, gated and then thrown away with the runner. An artifact expires; a
   # committed file does not. This job is the only thing that turns "built and measured in CI" into
-  # "exists", and it is a manual dispatch because a binary entering history should be a decision.
+  # "exists".
+  #
+  # It runs on every push to main and on a manual dispatch, and commits only when the generated
+  # bytes actually changed, so an unchanged tree costs one comparison and no commit. Waiting for a
+  # human to dispatch meant a built asset existed exactly as long as an artifact did.
   #
   # It commits to `staging`, never to main: that is the documented route for binaries, and it keeps
   # main's history free of anything that might later need a purge.
   publish:
     name: Publish the terrain maps to staging
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_terrain }}
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_terrain) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: manifest
