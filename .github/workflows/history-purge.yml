@@ -122,6 +122,17 @@ jobs:
                 echo "rejected: must be relative and must not contain '..': $trimmed"
                 exit 1
                 ;;
+              # A leading `-` makes the value look like an option to `git filter-repo --path`,
+              # and a bare `.` means the whole repository. Both pass the character allowlist, and
+              # both would be catastrophic rather than merely wrong.
+              -*)
+                echo "rejected: may not begin with '-': $trimmed"
+                exit 1
+                ;;
+              .)
+                echo "rejected: '.' means the whole repository: $trimmed"
+                exit 1
+                ;;
             esac
             printf '%s\n' "$trimmed" >> purge_paths.txt
             count=$((count + 1))
@@ -254,9 +265,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A fine-grained PAT with Contents: write and Workflows: write. GITHUB_TOKEN is not
+          # permitted to push commits that touch .github/workflows/, and rewriting history
+          # rewrites every commit — so on this repository an apply can only work with this token.
+          # It is optional: when absent, the guard below refuses rather than half-pushing.
+          PURGE_TOKEN: ${{ secrets.HISTORY_PURGE_TOKEN }}
         run: |
           set -euo pipefail
           cd purge-work
+
+          # Prefer the scoped token when the owner has supplied one, and say which is in use
+          # rather than leaving the reader to infer it from a later failure.
+          token="${PURGE_TOKEN:-$GITHUB_TOKEN}"
+          if [ -n "${PURGE_TOKEN:-}" ]; then
+            echo "using HISTORY_PURGE_TOKEN (has the workflows scope)"
+          else
+            echo "HISTORY_PURGE_TOKEN is not set; using GITHUB_TOKEN, which cannot push workflow files"
+          fi
 
           # This workflow has no concurrency group, so that no dispatch is ever dropped. The cost
           # is that two applies could in principle run at once and push conflicting histories, so
@@ -266,8 +291,8 @@ jobs:
           # few seconds could both see zero. The typed FORCE-PUSH confirmation and the manual
           # environment remain the real gates. See docs/HISTORY_PURGE.md.
           others=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/history-purge.yml/runs?status=in_progress&per_page=100" \
-            --jq "[.workflow_runs[] | select(.id != ${GITHUB_RUN_ID})] | length")
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/history-purge.yml/runs?per_page=100" \
+            --jq "[.workflow_runs[] | select((.status == \"in_progress\" or .status == \"queued\") and .id != ${GITHUB_RUN_ID})] | length")
           echo "other in-progress history-purge runs: ${others}"
           if [ "${others}" -ne 0 ]; then
             echo "REFUSING to push: another history-purge run is in progress."
@@ -283,23 +308,22 @@ jobs:
           # one does, from its first commit — cannot be force-pushed with GITHUB_TOKEN at all.
           # This is not an edge case here; it is the expected outcome, so it says so plainly and
           # stops before touching the remote rather than failing partway through.
-          if git log --oneline --all -- .github/workflows | head -1 | grep -q .; then
+          if [ -z "${PURGE_TOKEN:-}" ] && git log --oneline --all -- .github/workflows | head -1 | grep -q .; then
             echo "REFUSING to push: the rewritten history contains commits that touch"
-            echo ".github/workflows, which GITHUB_TOKEN is not permitted to push."
+            echo ".github/workflows, and HISTORY_PURGE_TOKEN is not set."
             echo ""
-            echo "Nothing on the remote has been changed. This repository's history contains"
-            echo "workflow commits from its first commit, so an apply run will always stop here"
-            echo "until a token with the 'workflows' scope is supplied."
+            echo "Nothing on the remote has been changed. GITHUB_TOKEN cannot push workflow files,"
+            echo "and this repository's history has contained them since its first commit."
             echo ""
-            echo "To proceed: create a fine-grained PAT with Contents: write and Workflows: write"
-            echo "on this repository, store it as the HISTORY_PURGE_TOKEN secret, and change the"
-            echo "push step below to use it. See docs/HISTORY_PURGE.md."
+            echo "To proceed: create a fine-grained PAT with Contents: write and Workflows: write,"
+            echo "store it as the HISTORY_PURGE_TOKEN secret, and dispatch apply again. The push"
+            echo "step picks it up automatically."
             exit 1
           fi
 
           # `git filter-repo` removes the origin remote as a safety measure, so `set-url` alone
           # would fail with "No such remote 'origin'". Add it if it is gone.
-          auth_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          auth_url="https://x-access-token:${token}@github.com/${GITHUB_REPOSITORY}.git"
           if git remote get-url origin >/dev/null 2>&1; then
             git remote set-url origin "$auth_url"
           else

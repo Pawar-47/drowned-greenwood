@@ -474,6 +474,99 @@ def test_png_round_trip_two_channel():
         os.unlink(handle.name)
 
 
+def test_wind_uv_leaves_the_unit_range_so_repeat_is_required():
+    """The wind UV provably leaves 0..1, so both samplers must repeat.
+
+    A shader can compile perfectly and still freeze: without `repeat_enable` a UV outside 0..1
+    clamps to the edge texel, so the foliage stops moving after a few seconds and everything more
+    than 100 m from the origin is frozen from the start. Godot cannot warn about this and the
+    renderer cannot catch it, because the shader is valid.
+
+    So the maths is checked in Python against the declaration in the shader. If someone removes
+    `repeat_enable`, the arithmetic here says the UV still leaves the range and the test fails.
+    """
+    import re
+
+    # Mirrors wind_phase() in tech_wind_include.gdshaderinc.
+    uv_scale_per_metre = 0.01
+    sway_frequency = 0.15
+    flutter_frequency = 2.1
+
+    # Position alone: 200 m from the origin is already outside 0..1, so the requirement does not
+    # depend on time at all.
+    assert 200.0 * uv_scale_per_metre > 1.0, (
+        "the static UV at 200 m is inside 0..1, so this test proves nothing"
+    )
+    # Time alone: swing crosses 1.0 after 1/0.15 = 6.7 s, flutter after 0.48 s.
+    assert 1.0 / sway_frequency < 7.0, "sway no longer crosses the range quickly"
+    assert 1.0 / flutter_frequency < 1.0, "flutter no longer crosses the range within a second"
+
+    source = open(
+        os.path.join(ROOT, "shaders", "tech_wind_include.gdshaderinc"), encoding="utf-8"
+    ).read()
+    for sampler in ("wind_noise", "gust_flowmap"):
+        match = re.search(r"uniform\s+sampler2D\s+%s\s*:([^;]*);" % sampler, source)
+        assert match, "%s is not declared in the wind include" % sampler
+        hints = match.group(1)
+        assert "repeat_enable" in hints, (
+            "%s does not declare repeat_enable, but the UV leaves 0..1 within a second and at "
+            "200 m from the origin, so the foliage would freeze" % sampler
+        )
+
+
+def test_alpha_writes_match_the_pipeline_they_ask_for():
+    """An opaque shader must not write ALPHA; a cut-out shader must write the texture's alpha.
+
+    Both rules come from the spatial shader reference, and both were nearly broken in the same
+    audit round, in opposite directions:
+
+      * "ALPHA ... If read from or written to, the material will go to the transparent pipeline."
+        So `ALPHA = 1.0` in the opaque shader does not mean "fully opaque": it means every rock,
+        wall and terrain surface in the game is drawn in the blended, depth-sorted pass and
+        stops casting shadows.
+      * "ALPHA_SCISSOR_THRESHOLD ... values below a certain amount of alpha are discarded." The
+        value compared is the ALPHA the shader writes, so setting ALPHA to the constant 1.0 in
+        the foliage shader makes the threshold discard nothing and every leaf card draws as a
+        full rectangle.
+
+    Neither mistake fails to compile and neither looks obviously wrong in a still frame, which
+    is why they are checked here rather than left to a device.
+    """
+    import re
+
+    def code_of(name):
+        with open(os.path.join(ROOT, "shaders", name), encoding="utf-8") as handle:
+            source = handle.read()
+        # Comments are stripped first: a comment quoting the rule must not trip it, and the
+        # comment that documents this very rule mentions both patterns.
+        return re.sub(r"//[^\n]*", "", source)
+
+    opaque = code_of("surface_base.gdshader")
+    assert not re.search(r"\bALPHA\s*=", opaque), (
+        "surface_base.gdshader writes ALPHA. Godot puts any shader that writes ALPHA on the "
+        "transparent pipeline, even if the value is a constant 1.0, so every opaque surface "
+        "would be blended, depth-sorted and unable to cast shadows. Opaque means leaving "
+        "ALPHA unwritten"
+    )
+
+    foliage = code_of("foliage_base.gdshader")
+    assert "ALPHA_SCISSOR_THRESHOLD" in foliage, (
+        "foliage_base.gdshader no longer sets an alpha scissor threshold, so leaf cards are "
+        "drawn as full quads"
+    )
+    match = re.search(r"\bALPHA\s*=\s*([^;]+);", foliage)
+    assert match, (
+        "foliage_base.gdshader sets ALPHA_SCISSOR_THRESHOLD but never writes ALPHA, so the "
+        "threshold is compared against the default and nothing is discarded"
+    )
+    written = match.group(1).strip()
+    assert ".a" in written, (
+        "foliage_base.gdshader writes ALPHA = %s. The scissor compares exactly that value, so a "
+        "constant passes every fragment and the cut-out disappears; it must be the albedo "
+        "texture's alpha" % written
+    )
+
+
 def test_flow_accumulation_counts_upstream_area():
     """Each cell in a downhill chain adds the one before it: 1, 2, 3, 4, 5.
 
@@ -586,6 +679,8 @@ TESTS = [
     ("generators: slope is metres per metre", test_slope_is_metres_per_metre),
     ("generators: slope is zero on flat ground", test_slope_is_zero_on_flat_ground),
     ("generators: surface ids match the contract", test_surface_ids_are_still_the_numbers_the_generator_writes),
+    ("shaders: wind UV requires repeat", test_wind_uv_leaves_the_unit_range_so_repeat_is_required),
+    ("shaders: alpha writes match the pipeline", test_alpha_writes_match_the_pipeline_they_ask_for),
     ("generators: PNG round trip 8-bit", test_png_round_trip_preserves_every_value),
     ("generators: PNG round trip 16-bit", test_png_round_trip_sixteen_bit),
     ("generators: PNG round trip 2-channel", test_png_round_trip_two_channel),

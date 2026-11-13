@@ -64,9 +64,10 @@ history contains workflow commits from its first commit — so an apply run with
 will always stop at the guard before the push step. Nothing is changed on the remote when it does.
 
 To proceed: create a fine-grained PAT with **Contents: write** and **Workflows: write** on this
-repository, store it as the `HISTORY_PURGE_TOKEN` secret, and change the push step to use it in
-place of `secrets.GITHUB_TOKEN`. That is a deliberate change requiring an explicit decision, not
-something the pipeline should do quietly.
+repository and store it as the `HISTORY_PURGE_TOKEN` secret. No workflow change is needed — the
+push step reads that secret when it is present and falls back to `GITHUB_TOKEN` when it is not,
+printing which one it used rather than leaving you to infer it from a later failure. The
+deliberate act is storing the secret: the pipeline never obtains a scoped token for itself.
 
 **2. A protected environment with a required reviewer.** The job declares
 `environment: history-purge`. Two caveats, both real:
@@ -87,10 +88,10 @@ arrival replaces the pending one, so a dropped `apply` would leave the remote un
 looking like it did nothing. Every dispatch therefore executes.
 
 The cost is that two applies could in principle run at once and push conflicting histories. The
-force-push step now refuses if another history-purge run is already in progress, checked through
-the API immediately before the irreversible push. **That narrows the window, it does not close
-it**: two dispatches starting within the same few seconds could both see an empty queue. The typed
-`FORCE-PUSH` confirmation is still the real gate, and so is not dispatching twice.
+force-push step now refuses if another history-purge run is already running **or queued**, checked
+through the API immediately before the irreversible push. **That narrows the window, it does not
+close it**: two dispatches starting within the same few seconds could both see an empty queue. The
+typed `FORCE-PUSH` confirmation is still the real gate, and so is not dispatching twice.
 
 ## Rehearse it on a throwaway fork first
 

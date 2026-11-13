@@ -63,7 +63,12 @@ void fragment() {
 	}
 
 	ALBEDO = puddle_albedo(albedo, puddle_mask, puddle_amount);
-	ALPHA = 1.0;
+	// No ALPHA write here, deliberately. In Godot 4, writing ALPHA at all — even the constant
+	// 1.0 — moves the material to the transparent pipeline (spatial shader reference: "If read
+	// from or written to, the material will go to the transparent pipeline"), where it is
+	// blended, depth-sorted and cannot cast shadows. An opaque surface is one that leaves ALPHA
+	// unwritten. test_tools.py asserts this, because `ALPHA = 1.0` compiles and looks right
+	// until you notice the rocks have stopped casting shadows.
 
 	NORMAL_MAP = texture(normal_tex, uv).rgb;
 	NORMAL_MAP_DEPTH = normal_strength;

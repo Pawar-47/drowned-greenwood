@@ -49,8 +49,25 @@ void fragment() {
 	// in — so this passes a smaller scale than surface_base does, on top of the material's own
 	// wetness_darken.
 	ALBEDO = wetness_albedo(tex.rgb, 0.55, wet);
-	ALPHA = tex.a;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
+	// ALPHA must be the texture's alpha. This pairing is not a mistake to be "tidied" later, and
+	// it was nearly removed on the theory that a surviving fragment must not be blended:
+	//
+	//   * Godot's material documentation describes exactly this path — alpha scissor: "Semi-
+	//     transparent areas whose opacity is below Alpha Scissor Threshold are not drawn (above
+	//     this opacity, these are drawn as opaque) ... this doesn't exhibit transparency sorting
+	//     issues ... Materials using alpha scissor can cast shadows." That is the comment above,
+	//     stated by the engine and not by me.
+	//   * The threshold is compared against the ALPHA *this shader writes*, so ALPHA has to be the
+	//     value being cut on. `ALPHA = 1.0` passes every fragment, the scissor discards nothing,
+	//     and every leaf card draws as a full rectangle. It fails silently: it compiles, and the
+	//     trees just look wrong from a distance.
+	//   * Not writing ALPHA at all is not the alternative either. The spatial shader reference says
+	//     a material "will go to the transparent pipeline" if ALPHA is read from or written to, so
+	//     transparency here is unavoidable and the scissor is what makes it behave as a cut-out.
+	//
+	// test_tools.py asserts ALPHA is a texture channel, because both wrong versions compile.
+	ALPHA = tex.a;
 
 	NORMAL_MAP = texture(normal_tex, uv).rgb;
 	NORMAL_MAP_DEPTH = 1.0;

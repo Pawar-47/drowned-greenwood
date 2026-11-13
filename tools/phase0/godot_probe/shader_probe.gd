@@ -70,7 +70,7 @@ void fragment() {
 # every wrapper declares itself, so its presence proves the shader parsed and built.
 const EXPECTED_UNIFORMS := {
 	"tech_wind_include.gdshaderinc": ["probe_marker", "wind_noise", "gust_flowmap"],
-	"tech_wetness_include.gdshaderinc": ["probe_marker"],
+	"tech_wetness_include.gdshaderinc": ["probe_marker", "wetness_darken"],
 	# For the full shaders the expectation is the material's own controls. If an include stops
 	# being resolved, these disappear and the probe fails, which is the point.
 	"surface_base.gdshader": ["albedo_tex", "normal_tex", "orm_tex", "moss_mask_tex", "puddle_mask_tex", "wetness_darken"],

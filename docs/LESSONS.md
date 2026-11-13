@@ -228,6 +228,29 @@ longer replace a queued manual dispatch, but two runs of the same workflow from 
 the same ref can still collide. Saying that out loud is worth more than a rule that sounds
 stronger and silently loses work.
 
+## 21. Some shader pairs only look contradictory
+
+Foliage sets `ALPHA = tex.a` alongside `ALPHA_SCISSOR_THRESHOLD = alpha_cutoff`. An audit read
+that pair and called it wrong: "under `blend_mix` a surviving fragment still blends", so the
+comment's "discarded rather than blended" was a lie. The suggested fix was `ALPHA = 1.0`.
+
+That compiles, passes the Godot probe, and silently deletes the cut-out: the scissor compares the
+`ALPHA` the shader writes, so a constant passes every fragment and every leaf card draws as a full
+rectangle. Godot's material documentation describes the mode precisely — semi-transparent areas
+below the threshold "are not drawn", above it they "are drawn as opaque", and such materials "can
+cast shadows". The code was right; the audit read it against its own mental model of `blend_mix`
+instead of against the engine's documentation.
+
+Checking that turned up the real bug in the same family, in the opaque shader: `ALPHA = 1.0` does
+not mean "fully opaque". Writing `ALPHA` at all puts a material on the transparent pipeline, so
+every rock, wall and terrain surface was blended, depth-sorted and unable to cast shadows.
+
+**Rule:** when a finding says "this line contradicts that line", check both against the engine's
+documented semantics before changing either. A pair that looks redundant may be the mechanism.
+And when the mistake is static, write the check: `test_tools.py` now asserts that an opaque shader
+never writes `ALPHA` and that a cut-out shader writes a texture channel, because both wrong
+versions compile.
+
 ## Applying these
 
 The asset validators in Phase 2 onward are probes with the same failure modes. In particular:
