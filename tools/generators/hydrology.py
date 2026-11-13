@@ -19,10 +19,12 @@ The method is D8 flow accumulation, the standard approach and the reason it is s
      level, there is standing water.
 
 Outputs:
-  terrain_hydrology_mask   LA8, 1025², R = water depth (0..8 m), G = flow direction (0..360°)
+  terrain_hydrology_mask   RGB8, 1025², R = water depth (0..8 m), G,B = flow direction as a unit
+                           vector (0..255 mapped to -1..1). A vector rather than an angle so that
+                           bilinear filtering between neighbouring texels is meaningful.
   terrain_shore_mask       R8,  1025², 255 at the waterline falling to 0 over 4 m
-  terrain_river_splines    JSON, one centreline point per row where the channel is wide enough
-  terrain_water_level_table JSON, the water surface height and flow at each of those points
+  terrain_river_splines    JSON, the main stem, headwater to outlet
+  terrain_water_level_table JSON, the water surface height and flow at each centreline point
 """
 
 import argparse
@@ -286,13 +288,29 @@ def main():
         for x in range(SAMPLES):
             cell = index(x, y)
             encoded_depth = int(round(min(1.0, depth[cell] / MAX_MASK_DEPTH_M) * 255))
+            # Direction as a unit VECTOR in two channels, not an angle in one.
+            #
+            # An angle does not interpolate: a texel at 10 degrees and one at 350 average to 180,
+            # which is the opposite direction. A vector does interpolate correctly, so a shader can
+            # sample this with ordinary bilinear filtering. And a grey+alpha PNG is not "R and G"
+            # — it is luminance plus alpha, and Godot would put the second channel in A — so this
+            # is RGB with the third channel unused.
+            if direction[cell] == 0:
+                # No flow: the neutral vector, which is also what a filtered edge should blend to.
+                dx_encoded = 128
+                dy_encoded = 128
+            else:
+                angle = (direction[cell] - 1) / 254.0 * 2.0 * math.pi - math.pi
+                dx_encoded = int(round((math.cos(angle) * 0.5 + 0.5) * 255))
+                dy_encoded = int(round((math.sin(angle) * 0.5 + 0.5) * 255))
             row.append(encoded_depth)
-            row.append(direction[cell])
+            row.append(dx_encoded)
+            row.append(dy_encoded)
         hydrology_rows.append(row)
     hydrology_path = os.path.join(args.out, "terrain_hydrology_mask.png")
-    write_png(hydrology_path, hydrology_rows, bit_depth=8, channels=2)
+    write_png(hydrology_path, hydrology_rows, bit_depth=8, channels=3)
     products.append(("terrain_hydrology_mask", hydrology_path,
-                     {"texture_sizes": {"la8": [SAMPLES, SAMPLES]}}))
+                     {"texture_sizes": {"rgb8": [SAMPLES, SAMPLES]}}))
 
     shore_rows = []
     for y in range(SAMPLES):

@@ -174,7 +174,7 @@ jobs:
             --heightmap "$out/terrain_heightmap_master_1km.png" \
             --out "$out" --report "$out/hydrology.json"
           python - "$out" <<'PY'
-          import json, os, sys
+          import json, os, struct, sys
 
           out = sys.argv[1]
           with open(os.path.join(out, "hydrology.json"), encoding="utf-8") as handle:
@@ -187,6 +187,19 @@ jobs:
                        "terrain_river_splines.json", "terrain_water_level_table.json"):
               if not os.path.exists(os.path.join(out, name)):
                   raise SystemExit("%s was not produced" % name)
+
+          # The mask carries depth in R and the flow direction as a vector in G,B. It used to be
+          # written as a 2-channel PNG, which is grey+alpha — not "R and G" — so Godot would have
+          # put the direction in the alpha channel and mirrored the depth into G. The channel
+          # count is the contract, so it is asserted rather than assumed.
+          with open(os.path.join(out, "terrain_hydrology_mask.png"), "rb") as handle:
+              head = handle.read(26)
+          width, height, bit_depth, colour = struct.unpack(">IIBB", head[16:26])
+          if (width, height, bit_depth, colour) != (1025, 1025, 8, 2):
+              raise SystemExit(
+                  "hydrology mask is %dx%d depth %d colour type %d, expected 1025x1025 depth 8 "
+                  "colour type 2 (RGB)" % (width, height, bit_depth, colour)
+              )
 
           # A river that does not exist is the failure worth catching: flow accumulation is
           # easy to get subtly wrong (wrong neighbour order, wrong iteration direction) and the
@@ -277,6 +290,19 @@ jobs:
           print("blend rules: rock at slope %.2f, scree at %.2f, %d channels"
                 % (rules["slope_rock"], rules["slope_scree"], len(rules["splat_layers"])))
           PY
+
+      # The maps were generated and checked, and then thrown away when the runner stopped. That
+      # made every "built" claim in reports/phase2.md a description of a file that no longer
+      # existed anywhere. They are small — about 5 MB in total, every one well under the 20 MB
+      # per-file cap — so they are kept as an artifact until the staging branch exists to carry
+      # them into the repository properly.
+      - name: Upload the generated terrain maps
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: terrain-maps
+          path: ${{ runner.temp }}/terrain
+          retention-days: 14
+          if-no-files-found: error
 
       - name: P1 set per phase
         run: |

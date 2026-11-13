@@ -3,6 +3,13 @@
 Phase 2 in progress. This file records what has been built and measured, in the order it was
 done. Every number here came from a CI run, not from an estimate.
 
+**"Built" here means generated and measured in CI, not committed.** The maps are written into the
+runner's temp directory, checked, and uploaded as the `terrain-maps` artifact. Nothing binary is in
+the repository yet, because the staging branch that is supposed to carry binaries does not exist.
+So a manifest record cannot honestly be marked `built` — it has no committed path and no hash in
+the repository — and they all remain `pending`. That gap is deliberate and tracked; it closes when
+staging exists.
+
 ## What exists
 
 | Asset | State | Measured |
@@ -10,7 +17,7 @@ done. Every number here came from a CI run, not from an estimate.
 | `terrain_heightmap_master_1km` | **built** | R16, 1025², height 9.1–152.0 m, 1843 KB |
 | `terrain_biome_mask` | **built** | R8 bit field, 1025², 12 KB |
 | `terrain_surface_id_map` | **built** | R8, 1025², 21 KB |
-| `terrain_hydrology_mask` | **built** | LA8, 1025², depth in R and flow direction in G, 100 KB |
+| `terrain_hydrology_mask` | **built** | RGB8, 1025², depth in R, flow direction as a unit vector in G,B, 100 KB |
 | `terrain_shore_mask` | **built** | R8, 1025², 4 m falloff from the waterline, 21 KB |
 | `terrain_river_splines` | **built** | 655 points, 146.4 m down to 9.1 m, every segment descends, 86 KB |
 | `terrain_water_level_table` | **built** | one row per centreline point, 79 KB |

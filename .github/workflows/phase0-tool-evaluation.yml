@@ -21,7 +21,7 @@ on:
         type: boolean
         default: false
       commit_report:
-        description: "Commit reports/tool_evaluation.md back to main when the gate passes"
+        description: "Commit reports/tool_evaluation.generated.md (not the hand-written report)"
         type: boolean
         default: false
   push:
@@ -743,22 +743,26 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build reports/tool_evaluation.md
+      - name: Build reports/tool_evaluation.generated.md
         # Writes the report, then exits 1 if a required probe failed. The two steps below must
         # still run in that case — the report is the explanation of the failure, and skipping it
         # is the same mistake as the earlier Gate bug: the reason existed but never reached the
         # reader. They are `if: always()` for exactly that reason.
+        #
+        # A SEPARATE file from reports/tool_evaluation.md. That one is hand-written and carries
+        # the reasoning the tables cannot; generating over it would destroy the record of why each
+        # decision was made.
         run: |
           set -uo pipefail
           python tools/phase0/make_report.py \
             --logs "$(find artifacts/downloaded -name 'phase0_log.txt' | tr '\n' ' ')" \
-            --out reports/tool_evaluation.md
+            --out reports/tool_evaluation.generated.md
 
       - name: Job summary
         if: always()
         run: |
-          if [ -f reports/tool_evaluation.md ]; then
-            cat reports/tool_evaluation.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f reports/tool_evaluation.generated.md ]; then
+            cat reports/tool_evaluation.generated.md >> "$GITHUB_STEP_SUMMARY"
           else
             echo "## Tool evaluation" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -770,7 +774,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: phase0-report
-          path: reports/tool_evaluation.md
+          path: reports/tool_evaluation.generated.md
           retention-days: 14
           if-no-files-found: warn
 
@@ -787,13 +791,13 @@ jobs:
         if: ${{ inputs.commit_report && job.status == 'success' && github.ref_name == 'main' }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- reports/tool_evaluation.md; then
+          if git diff --quiet -- reports/tool_evaluation.generated.md; then
             echo "report is unchanged; nothing to commit"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add reports/tool_evaluation.md
+          git add reports/tool_evaluation.generated.md
           # Two -m flags, not one multi-line string. A literal block scalar ends at the first
           # line with less indentation, so a continuation line at column 0 silently terminated
           # this whole `run:` block and broke the workflow file's YAML — which the static gate

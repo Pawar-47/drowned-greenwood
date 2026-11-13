@@ -1,8 +1,14 @@
-"""Turn the Phase 0 probe logs into reports/tool_evaluation.md.
+"""Turn the Phase 0 probe logs into a machine-generated report.
 
 Run:
     python tools/phase0/make_report.py --logs "a/phase0_log.txt b/phase0_log.txt" \
-        --out reports/tool_evaluation.md
+        --out reports/tool_evaluation.generated.md
+
+The output is a SEPARATE file from `reports/tool_evaluation.md`. That one is a hand-written
+snapshot carrying the reasoning the tables cannot — why a tool was rejected, which claim was
+withdrawn — and its own header says so. Writing generated tables over it would destroy the only
+record of why decisions were made, and a `--out` default that did so was a footgun waiting for
+someone to set `commit_report: true`.
 
 The logs contain two kinds of RESULT lines:
     RESULT <name> exit=<code>                  (shell probes)
@@ -30,7 +36,6 @@ DECISIONS = {
     "render_cycles": ("Cycles CPU render", "the official preview renderer"),
     "render_blender_workbench": ("Workbench via Xvfb + llvmpipe", "fast preview renderer if it works"),
     "render_blender_eevee_next": ("EEVEE Next via Xvfb + llvmpipe", "material preview renderer if it works"),
-    "mpfb_import": ("MPFB2 module import", "the real error behind a zero-operator add-on"),
     "mpfb_diagnostics": ("MPFB2 diagnostics", "where Blender looked for the add-on"),
     "gltfpack_help": ("gltfpack", "LOD simplification; -cc and -tc stay off until Godot accepts them"),
     "gltfpack_simplify": ("gltfpack -si", "LOD generation"),
@@ -103,6 +108,8 @@ DECISIONS = {
 FAILURE_CONSEQUENCE = {
     "render_cycles": "no preview renderer at all; previews would have to move to a paid GPU runner or be dropped",
     "render_workbench": "previews fall back to Cycles CPU only",
+    "render_blender_workbench": "previews fall back to Cycles CPU only",
+    "render_blender_eevee_next": "previews fall back to Cycles CPU only",
     "render_eevee": "previews fall back to Cycles CPU only",
     "godot_import": "the import gate cannot run; every asset would ship unverified",
     "godot_scene_plain": "the import gate cannot pass; every asset would ship unverified",
@@ -190,14 +197,13 @@ INFORMATIONAL_PROBES = {
 # nor defects: the tool works, but one of its inputs is not pinned to known bytes because the
 # vendor publishes no checksum to pin it to.
 #
-# Counting these as defects inflated the defect count with items no code change can fix, which
-# is how a red list stops being read (docs/LESSONS.md, the negative-control lesson). They are
-# reported in their own section, with the hash the run measured, so the fix is a one-line paste
-# by the owner rather than an investigation.
-EXPECTED_GAPS = {
-    "godot_checksum",
-    "gltfpack_checksum",
-}
+# This set is EMPTY now. Both archives it was written for — Godot and gltfpack — are pinned to
+# the digest GitHub records for the release asset, so a mismatch there is a real defect and must
+# read as one. The mechanism is kept because it is the right shape for the next genuinely
+# unpinnable dependency, but an entry must not linger once the pin is real: leaving them here
+# classified a `checksum_mismatch` as an expected gap, which is how a real corruption would be
+# filed as normal.
+EXPECTED_GAPS = set()
 
 # Probes that must pass for Phase 0 to be considered closed. A failure here is a defect and
 # must fail the job, and so must a required probe that produced no result at all.
@@ -418,7 +424,7 @@ def collapse_exit_rows(rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--logs", default="")
-    parser.add_argument("--out", default="reports/tool_evaluation.md")
+    parser.add_argument("--out", default="reports/tool_evaluation.generated.md")
     args = parser.parse_args()
 
     paths = [p for p in args.logs.split() if p and os.path.exists(p)]

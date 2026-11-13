@@ -140,20 +140,29 @@ jobs:
         run: |
           set -euo pipefail
           # A token-bearing URL is necessary to clone a private mirror, but `git clone` writes
-          # that URL into `.git/config` — and this repository's backup step tars the whole
+          # that URL into the repository config — and this repository's backup step tars the whole
           # working directory, so the token would be archived and uploaded as an artifact that
           # outlives the job by 90 days. Strip it before anything is copied or archived.
           git clone --mirror "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" purge-work
           git -C purge-work remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
-          # Prove the strip worked rather than assuming it. If any token-shaped string survives
-          # anywhere in the config, stop: an unverified backup is worse than none.
-          if grep -rEq 'x-access-token|ghs_|github_pat_|:[A-Za-z0-9_]{30,}@github' purge-work/.git/config; then
-            echo "REFUSING: a credential survived in purge-work/.git/config"
-            grep -rEo 'x-access-token|ghs_|github_pat_' purge-work/.git/config || true
+          # Prove the strip worked rather than assuming it.
+          #
+          # The config of a BARE repository — which `--mirror` creates — is `config` in its root,
+          # not `.git/config`. This check looked at `purge-work/.git/config`, which does not exist,
+          # so grep exited 2 and the `if` was false: the check passed without opening a file. It
+          # was a scan that could not fail, which is the failure mode docs/LESSONS.md #3 is about.
+          #
+          # A missing file is now a failure in its own right, so this can only pass by actually
+          # reading a config and finding nothing in it.
+          config=purge-work/config
+          [ -f "$config" ] || { echo "REFUSING: $config does not exist, so nothing was verified"; exit 1; }
+          if grep -Eq 'x-access-token|ghs_|github_pat_|:[A-Za-z0-9_]{30,}@github' "$config" || [ $? -eq 2 ]; then
+            echo "REFUSING: a credential survived in $config"
+            grep -Eo 'x-access-token|ghs_|github_pat_' "$config" || true
             exit 1
           fi
-          echo "credential stripped from purge-work/.git/config"
+          echo "credential stripped from $config"
           cd purge-work
           echo "size before:" && git count-objects -vH
 
@@ -163,8 +172,10 @@ jobs:
           cp -r purge-work purge-backup
           # Belt and braces: the copy inherits the already-stripped config, but this checks the
           # copy itself, because that is what gets archived.
-          if grep -rEq 'x-access-token|ghs_|github_pat_|:[A-Za-z0-9_]{30,}@github' purge-backup/.git/config; then
-            echo "REFUSING: a credential is present in purge-backup/.git/config"
+          config=purge-backup/config
+          [ -f "$config" ] || { echo "REFUSING: $config does not exist, so nothing was verified"; exit 1; }
+          if grep -Eq 'x-access-token|ghs_|github_pat_|:[A-Za-z0-9_]{30,}@github' "$config" || [ $? -eq 2 ]; then
+            echo "REFUSING: a credential is present in $config"
             exit 1
           fi
           tar -czf purge-backup.tar.gz purge-backup
@@ -174,14 +185,32 @@ jobs:
       - name: Scan the archive for credentials before uploading it
         run: |
           set -euo pipefail
-          # The archive is what leaves the runner, so scan the archive, not the directory it
-          # came from. A token found here means the earlier checks missed a path; fail loudly.
-          if tar -xzOf purge-backup.tar.gz ./purge-backup/.git/config 2>/dev/null \
-              | grep -Eq 'x-access-token|ghs_|github_pat_'; then
-            echo "REFUSING: the archive contains a credential in .git/config"
+          # The archive is what leaves the runner, so scan the archive, not the directory it came
+          # from.
+          #
+          # The member name is `purge-backup/config`, not `./purge-backup/.git/config`: tar strips
+          # the leading `./`, and a bare mirror has no `.git` subdirectory. The earlier version
+          # asked tar for a member that could not exist, sent the error to /dev/null, and then
+          # grepped an empty stream — which finds nothing and reports success. A scan that cannot
+          # find the file it is scanning proves nothing.
+          #
+          # So: extract the member to a file first, insist it exists, and grep that.
+          member=purge-backup/config
+          if ! tar -xzOf purge-backup.tar.gz "$member" > /tmp/purge-config 2>/dev/null; then
+            echo "REFUSING: $member is not in the archive, so the scan verified nothing"
+            echo "The archive members are:"
+            tar -tzf purge-backup.tar.gz | head -20
             exit 1
           fi
-          echo "archive scanned: no credential patterns found"
+          if [ ! -s /tmp/purge-config ]; then
+            echo "REFUSING: $member extracted empty, so the scan verified nothing"
+            exit 1
+          fi
+          if grep -Eq 'x-access-token|ghs_|github_pat_' /tmp/purge-config; then
+            echo "REFUSING: the archive contains a credential in $member"
+            exit 1
+          fi
+          echo "archive scanned: $member read, no credential patterns found"
 
       - name: Install git-filter-repo (pinned)
         run: |

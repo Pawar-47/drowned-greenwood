@@ -3,10 +3,11 @@
   "name": "surface_ids",
   "description": "The closed set of surface types in the world, and the number each one is known by. Every consumer of a surface agrees on these numbers: the surface-ID map's R8 texels, a prop's `surface:<id>` tag in its GLB extras, and surface_fx_table.json. An id is a contract, so ids are never reused and never renumbered — a retired surface keeps its number and gains `retired: true`.",
   "encoding": {
-    "map": "terrain_surface_id_map, lossless R8, 1024x1024 over the 1 km terrain (about 1 m per texel)",
+    "map": "terrain_surface_id_map, lossless R8, 1025x1025 over the 1 km terrain (about 0.98 m per texel)",
     "glb_extra": "surface:<id>, an integer in the GLB extras of a prop or building",
     "lookup": "surface_fx_table.json, keyed by the same ids",
-    "why_r8_and_not_a_palette": "An 8-bit index is lossless and exactly representable; a colour palette would be lossy after sRGB conversion and would need its own lookup anyway. 255 usable ids is more than this world will ever have surfaces."
+    "why_r8_and_not_a_palette": "An 8-bit index is lossless and exactly representable; a colour palette would be lossy after sRGB conversion and would need its own lookup anyway. 255 usable ids is more than this world will ever have surfaces.",
+    "why_1025": "A 1024-cell terrain needs 1025 height samples, and this map shares that grid so a texel centre lands on a height sample rather than half a texel away from one. Every terrain map — heightmap, biome, surface ids, hydrology, splats — is 1025x1025 for that reason. An earlier version of this file said 1024x1024, which contradicted every generator."
   },
   "reserved": {
     "0": "unknown — a texel no generator has claimed. Treated as `dirt_path` for audio and VFX so a gap is quiet rather than silent, but it is a defect and the validator reports how many texels use it.",
@@ -38,6 +39,6 @@
   "rules": [
     "An id is assigned once. Removing a surface sets retired: true and keeps the number.",
     "A new surface takes the next unused id; ids are not chosen for their order in this file.",
-    "The map, the GLB extras and surface_fx_table.json must all cover every non-retired id, and tools/validate/check_surfaces.py enforces that."
+    "The map, the GLB extras and surface_fx_table.json must all cover every non-retired id, and tools/validate/check_materials.py enforces that."
   ]
 }
