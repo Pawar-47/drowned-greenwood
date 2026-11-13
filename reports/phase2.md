@@ -14,6 +14,31 @@ done. Every number here came from a CI run, not from an estimate.
 | `terrain_shore_mask` | **built** | R8, 1025², 4 m falloff from the waterline, 21 KB |
 | `terrain_river_splines` | **built** | 655 points, 146.4 m down to 9.1 m, every segment descends, 86 KB |
 | `terrain_water_level_table` | **built** | one row per centreline point, 79 KB |
+| `terrain_normalmap_master` | **built** | RGB8, 1025², tangent-space normals from the heightmap, 953 KB |
+| `terrain_splat_0` | **built** | RGBA8, weights for grass, moss, rock, gravel, 1618 KB |
+| `terrain_splat_1` | **built** | RGBA8, weights for mud, sand, clay, reserved, 57 KB |
+| `terrain_macro_noise_texture` | **built** | R8, 1025², tiling low-frequency variation, 198 KB |
+| `terrain_height_blend_rules` | **built** | the thresholds the weights were built from, 1 KB |
+
+`terrain_splat_1` is 28× smaller than `terrain_splat_0`, which is the expected signature: mud,
+sand and clay are rare (0.6 %, 0.3 % and 0.03 % of the map), so those channels are almost entirely
+zero and compress hard. A splat map that did not compress that well would mean the sparse surfaces
+were being painted everywhere.
+
+## Why the splat weights are computed, not blurred
+
+The obvious way to turn a surface-ID map into splat weights is a hard mask per surface followed by
+a blur. A blur is expensive at 1025² in pure Python and, worse, it smears weights across a cliff
+edge where the transition should be sharp.
+
+The weights are instead continuous functions of the same quantities the classifier used — slope
+and height — so they blend smoothly by construction and sharply where the terrain itself is sharp.
+A rock face and a meadow meet along a slope threshold, not along a Gaussian.
+
+`terrain_height_blend_rules.json` carries those thresholds so the shader reads them rather than
+hardcoding its own copy. A splat map whose thresholds disagree with the shader that reads it is
+silently wrong, and it is the kind of wrong that only shows up as "the terrain looks a bit odd".
+
 
 The first three come from `tools/generators/terrain_maps.py`, from one height field so they cannot
 disagree. The last four come from `tools/generators/hydrology.py`, which **reads** that heightmap
@@ -97,8 +122,6 @@ measured 40 %, which is decoration rather than a check.
 
 ## Not yet done in Phase 2
 
-- `terrain_normalmap_master`, `terrain_splat_map_set`, `terrain_height_blend_rules`,
-  `terrain_macro_noise_texture` — the material side of the terrain
 - `env_weather_<state>` presets and `env_transition_curves.json`
 - rocks, water surfaces, sky panoramas
 - the terrain mesh itself: the heightmap is data, and nothing yet turns it into geometry. This is
