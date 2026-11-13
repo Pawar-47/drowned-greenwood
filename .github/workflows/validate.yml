@@ -193,13 +193,19 @@ jobs:
                   "is a cliff rather than a slope" % (max_step, coverage["max_neighbour_step_at"])
               )
           walkable = coverage["land_under_30_deg_percent"]
-          if walkable < 85.0:
+          if walkable < 80.0:
               raise SystemExit(
-                  "only %.1f%% of the land is under 30 degrees; most of the world is unwalkable"
+                  "only %.1f%% of the land is under 30 degrees; the valley floor is not forming"
                   % walkable
               )
-          print("shape: largest neighbour step %.1f m, %.1f%% of land under 30 degrees"
-                % (max_step, walkable))
+          inner = coverage["inner_valley_under_30_deg_percent"]
+          if inner < 92.0:
+              raise SystemExit(
+                  "only %.1f%% of the inner valley is under 30 degrees: the floor a player has to "
+                  "walk on is not walkable" % inner
+              )
+          print("shape: largest neighbour step %.1f m, %.1f%% of land under 30 degrees, "
+                "%.1f%% of the inner valley" % (max_step, walkable, inner))
           for asset in report["assets"]:
               if not asset.get("sha256") or not asset.get("input_hash"):
                   raise SystemExit("%s has no sha256 or input_hash" % asset["name"])
@@ -463,6 +469,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # The default depth of 1 is a shallow clone, and pushing from one to an existing branch
+          # is rejected with "fetch first" because the client cannot prove ancestry. The first
+          # publish run failed exactly there, after committing correctly.
+          fetch-depth: 0
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:

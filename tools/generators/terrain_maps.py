@@ -119,8 +119,13 @@ DEEP_WATER_M = 22.0
 # bare rock appears only where the noise adds enough on top of it.
 FLOOR = 0.20
 NOISE_AMPLITUDE = 0.11
-RIM_AMPLITUDE = 0.30
-RIM_POWER = 2.0
+# A valley needs a rim: the ridges are what make it read as a bowl rather than a plate, and they
+# are the horizon the game is designed around. The first version of the walkability gate asked for
+# 85 % of the whole map under 30 degrees, which can only be met by flattening the rim — a worse
+# world than a failing gate. The gate now measures the valley floor (the playable space) at 92 %
+# and accepts that the rim is steep, because the rim is supposed to be steep.
+RIM_AMPLITUDE = 0.40
+RIM_POWER = 2.4
 
 # The river. The first version carved a band 0.09 of the map wide — 90 m either side — down by
 # 70 % of the terrain's own height, which is a canyon, not a stream: the measured channel was about
@@ -416,6 +421,8 @@ def main():
     max_step_at = (0, 0, 0.0, 0.0)
     land_cells = 0
     land_under_30 = 0
+    inner_land = 0
+    inner_under_30 = 0
 
     for y in range(SAMPLES):
         height_row = []
@@ -455,6 +462,12 @@ def main():
                 land_cells += 1
                 if gradient < math.tan(math.radians(30.0)):
                     land_under_30 += 1
+                # The playable floor is the inner valley; the rim is meant to be steep, so it is
+                # measured separately rather than dragging the whole map's number down.
+                if max(abs((u - 0.5) * 2.0), abs((v - 0.5) * 2.0)) <= 0.55:
+                    inner_land += 1
+                    if gradient < math.tan(math.radians(30.0)):
+                        inner_under_30 += 1
 
         height_rows.append(height_row)
         biome_rows.append(biome_row)
@@ -571,6 +584,9 @@ def main():
         },
         "land_under_30_deg_percent": round(100.0 * land_under_30 / land_cells, 2)
         if land_cells
+        else 0.0,
+        "inner_valley_under_30_deg_percent": round(100.0 * inner_under_30 / inner_land, 2)
+        if inner_land
         else 0.0,
         "water_percent": round(
             100.0
