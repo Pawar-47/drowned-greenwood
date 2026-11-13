@@ -62,6 +62,7 @@ python tools/validate/check_materials.py  # materials, surface ids, FX table, du
 python tools/validate/check_action_pins.py  # every pinned action SHA resolves through the GitHub API (needs network)
 python tools/validate/check_docs.py        # numbers quoted in the docs, and markdown table shapes
 python tools/validate/check_audit_ledger.py  # every audit clause has a state and something behind it
+python tools/validate/check_assets.py       # committed assets: FX names in the plan, built hashes, terrain maps agree
 ```
 
 `assets/ADDITIONS.md` records the six approved additions, all P1 and scheduled: weather

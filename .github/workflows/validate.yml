@@ -121,6 +121,13 @@ jobs:
       - name: Every audit clause is accounted for
         run: python tools/validate/check_audit_ledger.py
 
+      # The maps passed every format gate while containing a 20 m cliff, a dry trench, and splats
+      # that disagreed with the surface map on 54 % of cells. This opens the committed files and
+      # checks what they mean, and it checks that every asset the FX table names is one the plan
+      # declares rather than a name invented at a keyboard.
+      - name: Committed assets agree with each other and with the plan
+        run: python tools/validate/check_assets.py
+
       # Generators are only worth what they produce, so this runs one and checks the output rather
       # than trusting that it imports. It writes into the runner's temp directory: nothing binary
       # is committed, and the check is that the bytes exist and are the right shape.
