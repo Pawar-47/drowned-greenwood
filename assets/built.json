@@ -6,12 +6,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "bc25b899d03f04d112eeb82aaee02a1f40493cd8cd98853323d6d9aad92e3a52",
+      "input_hash": "e9c4fc055e0fcb719a8912a52590be8e5a7df873cdc4ed62496db5d2e897159a",
       "path": "assets/terrain/terrain_biome_mask.png",
-      "sha256": "e5818b5bea079b62bf69c7da57e49d960a2ddc9a144154304b6d92c4267a90ed",
+      "sha256": "ca9227e4ee17001779077029e6074fe34f93b3de0ffcfa1374bb5c364ec4b2ce",
       "size_kb": 16,
       "status": "built",
-      "tool_version": "terrain_maps/1.0.0"
+      "tool_version": "terrain_maps/1.3.0"
     },
     "terrain_height_blend_rules": {
       "gate_results": {
@@ -19,12 +19,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "305b335ee44fe99215aaf5afdad1e17989ad815a5c7259f976b66952c4cd21ff",
+      "input_hash": "921d63a919615f955a47f6929647fd7855979ef9ff9a6ffe7bcac5932112aec8",
       "path": "assets/terrain/terrain_height_blend_rules.json",
-      "sha256": "7b72a5dd81d0485913249e744ac5dd6e664ad6a491a955abc63479764d1bc696",
+      "sha256": "b2b67678727d1cfb61809a2eb30566efd90286ee2632c978f5cf9802ab4a5579",
       "size_kb": 1,
       "status": "built",
-      "tool_version": "terrain_surfaces/1.0.0"
+      "tool_version": "terrain_surfaces/1.3.0"
     },
     "terrain_heightmap_master_1km": {
       "gate_results": {
@@ -32,12 +32,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "bc25b899d03f04d112eeb82aaee02a1f40493cd8cd98853323d6d9aad92e3a52",
+      "input_hash": "e9c4fc055e0fcb719a8912a52590be8e5a7df873cdc4ed62496db5d2e897159a",
       "path": "assets/terrain/terrain_heightmap_master_1km.png",
-      "sha256": "01ca4a3375208ed3c382436ca00ed294806b4149fe6a1456ad2e26effd3e3cfb",
-      "size_kb": 1783,
+      "sha256": "443cf26f17c853fa003e29906264fa0a0143ddbc42704f8e0308242539c6a1b0",
+      "size_kb": 1705,
       "status": "built",
-      "tool_version": "terrain_maps/1.0.0"
+      "tool_version": "terrain_maps/1.3.0"
     },
     "terrain_hydrology_mask": {
       "gate_results": {
@@ -45,12 +45,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "62aeaf3dcc7c144daf48cb5c3fe45d252bf61511a8c6305e4975da19b4c8680f",
+      "input_hash": "c7d2b0dc93ab797c1e0eada71228bf443381ed7ede087879d87521dec4dd3561",
       "path": "assets/terrain/terrain_hydrology_mask.png",
-      "sha256": "b2492ff6e10bd877ab4b73d8de1e94edc9eba4b36f1c52ffe3569f0887255308",
-      "size_kb": 117,
+      "sha256": "a2b2ef610a3894bfd2d3c0589e42c2716f6979691f24773d47732176a2066653",
+      "size_kb": 118,
       "status": "built",
-      "tool_version": "hydrology/1.0.0"
+      "tool_version": "hydrology/1.3.0"
     },
     "terrain_macro_noise_texture": {
       "gate_results": {
@@ -58,12 +58,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "305b335ee44fe99215aaf5afdad1e17989ad815a5c7259f976b66952c4cd21ff",
+      "input_hash": "921d63a919615f955a47f6929647fd7855979ef9ff9a6ffe7bcac5932112aec8",
       "path": "assets/terrain/terrain_macro_noise_texture.png",
       "sha256": "a5fec89073eb5686590dfe672d008bbf14ffc1981434917ede18e4632a20d8ac",
       "size_kb": 199,
       "status": "built",
-      "tool_version": "terrain_surfaces/1.0.0"
+      "tool_version": "terrain_surfaces/1.3.0"
     },
     "terrain_normalmap_master": {
       "gate_results": {
@@ -71,12 +71,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "305b335ee44fe99215aaf5afdad1e17989ad815a5c7259f976b66952c4cd21ff",
+      "input_hash": "921d63a919615f955a47f6929647fd7855979ef9ff9a6ffe7bcac5932112aec8",
       "path": "assets/terrain/terrain_normalmap_master.png",
-      "sha256": "81aeb5d6f373f7254ff4ad341a9aaeab76c2f7852e1964295bf8a8500ec14a9b",
-      "size_kb": 1583,
+      "sha256": "ab062d13f2f426eec34e170e4602d2ebd297edf57d545743054e3add33a17c1e",
+      "size_kb": 1527,
       "status": "built",
-      "tool_version": "terrain_surfaces/1.0.0"
+      "tool_version": "terrain_surfaces/1.3.0"
     },
     "terrain_river_splines": {
       "gate_results": {
@@ -84,12 +84,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "62aeaf3dcc7c144daf48cb5c3fe45d252bf61511a8c6305e4975da19b4c8680f",
+      "input_hash": "c7d2b0dc93ab797c1e0eada71228bf443381ed7ede087879d87521dec4dd3561",
       "path": "assets/terrain/terrain_river_splines.json",
-      "sha256": "aefabffe5249c9cb0303d9d25ada2d7f0144860c105d619b217132c533788940",
-      "size_kb": 42,
+      "sha256": "a14402215f10decfbc3112f0d02fa5e94a4949e46663621fc53ca816ce5de632",
+      "size_kb": 45,
       "status": "built",
-      "tool_version": "hydrology/1.0.0"
+      "tool_version": "hydrology/1.3.0"
     },
     "terrain_shore_mask": {
       "gate_results": {
@@ -97,12 +97,38 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "62aeaf3dcc7c144daf48cb5c3fe45d252bf61511a8c6305e4975da19b4c8680f",
+      "input_hash": "c7d2b0dc93ab797c1e0eada71228bf443381ed7ede087879d87521dec4dd3561",
       "path": "assets/terrain/terrain_shore_mask.png",
-      "sha256": "0284f1ba1475ab34fcfb5e35c66acd4cd8f28bfbc487b017a91b7bf05448ae29",
+      "sha256": "61922493cb03cc412894f0378584e6b14ec710bcd1eb476f6ff59a224c222ae8",
       "size_kb": 3,
       "status": "built",
-      "tool_version": "hydrology/1.0.0"
+      "tool_version": "hydrology/1.3.0"
+    },
+    "terrain_splat_0": {
+      "gate_results": {
+        "channel_contract": "checked_in_manifest_job",
+        "composition": "from_report",
+        "determinism": "checked_in_manifest_job"
+      },
+      "input_hash": "921d63a919615f955a47f6929647fd7855979ef9ff9a6ffe7bcac5932112aec8",
+      "path": "assets/terrain/terrain_splat_0.png",
+      "sha256": "1f75f36d993a8640a06886d45c8e1f2b709c2a9dcd0294314572446f37bd4e79",
+      "size_kb": 873,
+      "status": "built",
+      "tool_version": "terrain_surfaces/1.3.0"
+    },
+    "terrain_splat_1": {
+      "gate_results": {
+        "channel_contract": "checked_in_manifest_job",
+        "composition": "from_report",
+        "determinism": "checked_in_manifest_job"
+      },
+      "input_hash": "921d63a919615f955a47f6929647fd7855979ef9ff9a6ffe7bcac5932112aec8",
+      "path": "assets/terrain/terrain_splat_1.png",
+      "sha256": "0ff08b59e2d8c1657f8e9dd9e9d0e760369865cc8784621f86e2d5b52d47d904",
+      "size_kb": 50,
+      "status": "built",
+      "tool_version": "terrain_surfaces/1.3.0"
     },
     "terrain_surface_id_map": {
       "gate_results": {
@@ -110,12 +136,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "bc25b899d03f04d112eeb82aaee02a1f40493cd8cd98853323d6d9aad92e3a52",
+      "input_hash": "e9c4fc055e0fcb719a8912a52590be8e5a7df873cdc4ed62496db5d2e897159a",
       "path": "assets/terrain/terrain_surface_id_map.png",
-      "sha256": "9ee93445fc9f9eabeb561b78310a99a8a9793bc53865ba4b1fe6b756f995e7ee",
-      "size_kb": 31,
+      "sha256": "3cdec729707805a1e7a4cecd494197fae7d8f69a0793791339bcdc0d4e85b399",
+      "size_kb": 30,
       "status": "built",
-      "tool_version": "terrain_maps/1.0.0"
+      "tool_version": "terrain_maps/1.3.0"
     },
     "terrain_water_level_table": {
       "gate_results": {
@@ -123,12 +149,12 @@
         "composition": "from_report",
         "determinism": "checked_in_manifest_job"
       },
-      "input_hash": "62aeaf3dcc7c144daf48cb5c3fe45d252bf61511a8c6305e4975da19b4c8680f",
+      "input_hash": "c7d2b0dc93ab797c1e0eada71228bf443381ed7ede087879d87521dec4dd3561",
       "path": "assets/terrain/terrain_water_level_table.json",
-      "sha256": "38d72d8a91c495aee0b94a044b2dab4d91b0321d29894492187b643036f96e05",
-      "size_kb": 39,
+      "sha256": "ed85aba6f096cb851f60e6bff2761d42406cd45f00ab5251040884b40c88a7a5",
+      "size_kb": 42,
       "status": "built",
-      "tool_version": "hydrology/1.0.0"
+      "tool_version": "hydrology/1.3.0"
     }
   },
   "description": "Evidence for assets that exist in the repository: path, SHA-256, input hash, tool version and the gates that ran. Written by tools/record_built.py; read by tools/build_manifest.py. A name here that the manifest does not declare is a failure, so deleting an asset means deleting its evidence too.",
