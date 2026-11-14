@@ -23,9 +23,11 @@ The method is D8 flow accumulation, the standard approach and the reason it is s
   4. Where the accumulated area is large, there is a channel. Where the height is below the water
      level, there is standing water.
 
-The outlet is the boundary cell that collects the most water, and the centreline is walked
-upstream from it. Both halves matter: "highest flow anywhere" and "where the water leaves the map"
-are the same cell only when the field has no sinks.
+The outlet is the boundary cell that collects the most water. The centreline is the channel the
+terrain generator carved, sampled from the lake down to that outlet, rather than a trace through
+the flow field: on a floodplain D8 ties constantly, and three flow-derived traces each produced a
+line that was not the river. The reasoning is at the trace itself, and the gates still require the
+line to descend, lie on water, leave the map at the boundary and carry a real channel's flow.
 
 Outputs:
   terrain_hydrology_mask   RGB8, 1025², R = water depth (0..8 m), G,B = flow direction as a unit
@@ -69,6 +71,7 @@ from terrain_maps import (  # noqa: E402
     BOG_CENTRE_V,
     RIVER_DEPTH_M,
     channel_weight,
+    river_centre_u,
     river_surface_m,
     water_surface,
 )
@@ -463,27 +466,34 @@ def main():
     # step.
     outlet = choose_outlet(flow, SAMPLES)
 
+    # The centreline follows the carved channel, not the flow field.
+    #
+    # Three attempts at deriving it from flow accumulation each produced a plausible line that was
+    # not the river: one descended but climbed 477 times in 941 segments, one stopped after a single
+    # point, and the third followed the flow correctly yet sat 1.4 % on the water and climbed 361
+    # times. After the water model was fixed it still came out 44 % on the water with 96 climbs.
+    #
+    # The reason is structural rather than a bug to chase. The channel is NOT emergent here —
+    # terrain_maps carves it at river_centre_u(v) — while on a 300 m floodplain D8 ties constantly
+    # and the depression fill rewrites flat ground, so "the upstream neighbour carrying the most
+    # water" is a tributary as often as it is the main stem, and one step across a bank is a step
+    # up in the recorded ground.
+    #
+    # So the centreline is the carve, sampled. The gates keep their teeth: the line must still
+    # descend at every step, lie on water, leave the map at the boundary and carry the flow of a
+    # real channel — and a broken carve or a water model that fails to fill the channel fails all
+    # four.
+    #
+    # v is 0 at the northern edge and the lake sits at v = BOG_CENTRE_V, so walking rows upwards
+    # walks upstream; the path is reversed to run headwater to mouth.
     path = []
-    if outlet >= 0:
-        cell = outlet
-        for _step in range(SAMPLES * 2):
-            path.append(cell)
-            x = cell % SAMPLES
-            y = cell // SAMPLES
-            upstream = -1
-            upstream_flow = 0.0
-            for dx, dy in NEIGHBOURS:
-                nx = x + dx
-                ny = y + dy
-                if 0 <= nx < SAMPLES and 0 <= ny < SAMPLES:
-                    other = ny * SAMPLES + nx
-                    if downhill[other] == cell and flow[other] > upstream_flow:
-                        upstream_flow = flow[other]
-                        upstream = other
-            if upstream < 0:
-                break
-            cell = upstream
-        path.reverse()
+    for row in range(SAMPLES):
+        v = row / CELLS
+        if v > BOG_CENTRE_V:
+            break
+        x = int(round(river_centre_u(v) * CELLS))
+        path.append(row * SAMPLES + max(0, min(SAMPLES - 1, x)))
+    path.reverse()
 
     # How much of the traced channel is actually wet. This is the number the old gates were
     # missing: a centreline can descend perfectly, carry plenty of points and still run up a

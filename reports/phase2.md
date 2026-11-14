@@ -110,7 +110,7 @@ river was not the river" changes it and a number in this file would then be wron
 checks. What the gate asserts is the property: every segment descends, at least 90 % of the points
 lie on water, and the outlet is on the map boundary.
 
-## Hydrology: three attempts at the river
+## Hydrology: five attempts at the river
 
 The flow accumulation worked first time. Extracting a *centreline* from it did not, and each
 failure produced a plausible-looking artefact.
@@ -120,6 +120,8 @@ failure produced a plausible-looking artefact.
 | 1 | 942 points, **477 of 941 segments climb** | Highest-flow cell per row. Where a channel runs across a row, several cells have similar flow and the winner jumps between them. |
 | 2 | **1 point** | Start from the highest cell above the flow threshold. That cell is almost always a **pit**, because flow accumulates into sinks. |
 | 3 | 655 points in the earlier extractor, **every segment descends** | Find the outlet — the cell collecting the most water — walk upstream taking the neighbour that drains into it with the most flow, then reverse. |
+| 4 | 1,356 points, **96 of 1,355 segments climb, 44 % on water** | Following the flow after the water model was fixed. On a 300 m floodplain D8 ties constantly, so the main stem and its tributaries swap places and one step across a bank is a step up. |
+| 5 | **the carve, sampled** | The centreline is `river_centre_u(v)` from the lake to the mouth. The channel is authored, not emergent, so this is the river by construction; the gates still require it to descend, lie on water, leave the map at the boundary and carry a real channel's flow. |
 
 The gate is absolute now: any climbing segment fails the build, and so does a channel shorter
 than 50 points.
