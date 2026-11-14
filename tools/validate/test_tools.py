@@ -24,6 +24,7 @@ before deleting it.
 import importlib.util
 import os
 import re
+import struct
 import sys
 import tempfile
 
@@ -66,6 +67,7 @@ check_environment = load_module(
 check_materials = load_module(
     "check_materials", os.path.join("tools", "validate", "check_materials.py")
 )
+check_meshes = load_module("check_meshes", os.path.join("tools", "validate", "check_meshes.py"))
 
 
 def manifest_with(**categories):
@@ -1167,6 +1169,75 @@ def test_a_water_surface_no_body_draws_is_reported():
     assert any("min_alpha" in problem and "max_alpha" in problem for problem in problems), problems
 
 
+def _glb(document, bin_data=b""):
+    """A minimal GLB around a JSON document, for exercising the mesh gate without a model."""
+    payload = json.dumps(document).encode("utf-8")
+    payload += b" " * ((4 - len(payload) % 4) % 4)
+    chunks = struct.pack("<II", len(payload), 0x4E4F534A) + payload
+    if bin_data:
+        padded = bin_data + b"\x00" * ((4 - len(bin_data) % 4) % 4)
+        chunks += struct.pack("<II", len(padded), 0x004E4942) + padded
+    return struct.pack("<4sII", b"glTF", 2, 12 + len(chunks)) + chunks
+
+
+def _model(indices=3, texcoords=True):
+    """One triangle, textured, with bounds that have a real extent."""
+    attributes = {"POSITION": 0}
+    if texcoords:
+        attributes["TEXCOORD_0"] = 1
+    return {
+        "asset": {"version": "2.0"},
+        "meshes": [{"primitives": [{"attributes": attributes, "indices": 2, "material": 0}]}],
+        "accessors": [
+            {"count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 1]},
+            {"count": 3, "type": "VEC2"},
+            {"count": indices, "type": "SCALAR"},
+        ],
+        "materials": [
+            {"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}
+        ],
+    }
+
+
+def test_a_valid_glb_is_read_and_measured():
+    """The gate must count triangles from the index accessor, not from a file name."""
+    document, problems = check_meshes.parse_glb(_glb(_model()))
+    assert document is not None and problems == [], problems
+
+    more = []
+    triangles = check_meshes.check_document(document, 10, more)
+    assert triangles == 1, "a three-index primitive is %d triangles" % triangles
+    assert more == [], more
+
+
+def test_a_model_over_its_triangle_budget_is_reported():
+    """The budget is the manifest's, and a model that doubles it fails rather than opens."""
+    document, _ = check_meshes.parse_glb(_glb(_model(indices=6)))
+    problems = []
+    triangles = check_meshes.check_document(document, 1, problems)
+    assert triangles == 2, triangles
+    assert any("budget of 1" in problem for problem in problems), problems
+
+
+def test_a_textured_material_without_uvs_is_reported():
+    """A base-colour texture with no TEXCOORD_0 draws flat white and nothing else notices."""
+    document, _ = check_meshes.parse_glb(_glb(_model(texcoords=False)))
+    problems = []
+    check_meshes.check_document(document, 0, problems)
+    assert any("TEXCOORD_0" in problem for problem in problems), problems
+
+
+def test_a_broken_glb_container_is_rejected():
+    """A wrong magic and a truncated file are different faults and both must stop."""
+    good = _glb(_model())
+    document, problems = check_meshes.parse_glb(b"XXXX" + good[4:])
+    assert document is None and problems, problems
+
+    document, problems = check_meshes.parse_glb(good[:-8])
+    assert document is None, "a truncated GLB produced a document"
+    assert any("declares" in problem for problem in problems), problems
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -1239,6 +1310,10 @@ TESTS = [
         "water: a surface no body draws is reported",
         test_a_water_surface_no_body_draws_is_reported,
     ),
+    ("meshes: a valid GLB is measured", test_a_valid_glb_is_read_and_measured),
+    ("meshes: a model over budget is reported", test_a_model_over_its_triangle_budget_is_reported),
+    ("meshes: a textured material without UVs is reported", test_a_textured_material_without_uvs_is_reported),
+    ("meshes: a broken GLB container is rejected", test_a_broken_glb_container_is_rejected),
 ]
 
 

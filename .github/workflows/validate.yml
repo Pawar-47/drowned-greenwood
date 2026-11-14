@@ -118,6 +118,12 @@ jobs:
       - name: Weather presets agree with Godot and with each other
         run: python tools/validate/check_environment.py
 
+      # The gate the first real model will pass through: GLB container, index count, UVs where a
+      # material samples a texture, materials that resolve, and the triangle budget from the
+      # manifest. It exists before the first model, and its rules are exercised by the unit tests.
+      - name: Every committed model fits its container and its budget
+        run: python tools/validate/check_meshes.py
+
       # A number in prose is a claim about the code. README said "15 unit tests" when there were
       # 35, and ADDITIONS.md said 1024² twice while every generator wrote 1025². Both were found
       # by a person reading, which is not a gate.
