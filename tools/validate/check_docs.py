@@ -130,6 +130,23 @@ def main():
             % (match.group(1), expected_tests)
         )
 
+    # The number of validator scripts is a claim in prose as well, and it drifts the moment one is
+    # added: this line said "eight" while tools/validate held nine, and only a person reading would
+    # have caught it. Counting the files is the one version of the check that cannot go stale.
+    validator_scripts = sorted(
+        name
+        for name in os.listdir(os.path.join(ROOT, "tools", "validate"))
+        if name.startswith("check_") and name.endswith(".py")
+    )
+    match = re.search(r"(\d+) validator scripts", readme)
+    if not match:
+        problems.append("README.md no longer states the validator script count")
+    elif int(match.group(1)) != len(validator_scripts):
+        problems.append(
+            "README.md says %s validator scripts; tools/validate holds %d (%s)"
+            % (match.group(1), len(validator_scripts), ", ".join(validator_scripts))
+        )
+
     # The 1025 contract. This is the exact number that drifted twice: the generator has always
     # written 1025 samples and two documents said 1024.
     samples = terrain_maps.SAMPLES
@@ -199,9 +216,16 @@ def main():
         return 1
 
     print(
-        "docs: %d assets, %d materials, %d unit tests, %s grid all match their documents, the "
-        "river constants match reports/phase2.md, and every markdown table is rectangular"
-        % (expected_assets, expected_materials, expected_tests, quoted)
+        "docs: %d assets, %d materials, %d validator scripts, %d unit tests, %s grid all match "
+        "their documents, the river constants match reports/phase2.md, and every markdown table is "
+        "rectangular"
+        % (
+            expected_assets,
+            expected_materials,
+            len(validator_scripts),
+            expected_tests,
+            quoted,
+        )
     )
     return 0
 
