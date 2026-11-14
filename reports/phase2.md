@@ -9,15 +9,14 @@ are kept as the last recorded run rather than quietly restated, and where a fix 
 figure out from under the prose, the prose names the property the gate checks instead of quoting
 the number.
 
-**"Built" here means the file is committed and its hash is recorded.** The 12 terrain products
-are present in `assets/terrain/`, but `assets/built.json` currently has records for 10: the two
-splat outputs were not individually recorded because the manifest represented them as one entry.
-The manifest now declares `terrain_splat_0` and `terrain_splat_1` separately, and the publish job
-is configured to record each from its generator report. That change has not run yet, so those two rows remain
-pending. For every recorded asset, `assets/built.json` stores its path, SHA-256, input hash, tool
-version and gate results, and `build_manifest.py` merges that evidence into the manifest. The
-publish job regenerates the maps on every push to main and commits to `staging` only when the bytes
-changed, so a rebuilt map cannot silently differ from the one that passed the gates.
+**"Built" here means the file is hashed and recorded, and its bytes are on a release pack.** The 12
+terrain products are all recorded in `assets/built.json` at generator 1.3.0, and none of them is
+committed: `assets/packs.json` names the release archive, with the archive's SHA-256 and a hash and
+size for every file inside it, and `tools/fetch_packs.py` downloads and verifies them into
+`assets/terrain/` before any check or build runs. The publish job regenerates the maps on every push
+to main, cuts a pack, verifies the upload by downloading it again, and commits the catalogue and the
+evidence to `staging` only when the bytes changed — so a rebuilt map cannot silently differ from the
+one that passed the gates, and a binary never enters git. See `docs/RELEASES.md`.
 
 ## What exists
 

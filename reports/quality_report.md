@@ -3,20 +3,16 @@
 Per-asset results against the brief's section 2A. This report is maintained by hand; no workflow
 writes it. Generator reports and `assets/built.json` carry the machine-recorded evidence.
 
-The repository contains 12 generated terrain products in `assets/terrain/`. At this revision,
-`assets/built.json` has records for 10 of the 12: `terrain_splat_0` and `terrain_splat_1` exist as
-files but were not individually recorded because the manifest previously represented them as one
-combined entry. The authored manifest now declares them separately, and the publish job is changed
-to require evidence for all 12. That pipeline change has not run yet, so the two splat records remain
-unverified here.
+The twelve generated terrain products are recorded in `assets/built.json` and are **not committed**:
+they are a release pack, listed in `assets/packs.json` with the archive's SHA-256 and a hash and
+size for every file. `tools/fetch_packs.py` downloads and verifies them into `assets/terrain/`
+before any check or build runs, in CI and in a fresh clone alike, so the paths `built.json` names
+are the paths everything reads whether or not git carries the bytes.
 
-Terrain is also the first category to move to a **release pack** (`docs/RELEASES.md`). The pack is
-cut by the publish job and listed in `assets/packs.json`, with the archive's SHA-256 and every file's;
-`tools/fetch_packs.py` puts the bytes back into `assets/terrain/` before any check or build runs, and
-the publish job removes them from the git index only after the upload has been verified by
-downloading it again. Until that run lands, `main` still carries the twelve products as committed
-files from the 1.0.0 generator, and everything below describes `main` rather than what the generator
-now produces.
+Terrain is the first category to make that move (`docs/RELEASES.md`). The publish job cut the pack
+from the 1.3.0 generator, verified the upload by downloading it again, recorded the catalogue, and
+removed the thirteen committed copies from the index. `main` no longer carries a terrain binary;
+what it carries is the catalogue and the evidence.
 
 Terrain products are not a substitute for the asset classes and quality metrics in section 2A.
 No production GLB models, characters, animation clips or collision meshes are committed under
@@ -42,12 +38,13 @@ terrain maps or the successful checks recorded for them.
 
 | Measure | Value |
 |---|---|
-| Generated terrain products present | 12 of 12 |
-| Terrain products with built-evidence records | 10 of 12 |
-| Missing built-evidence records | `terrain_splat_0`, `terrain_splat_1` |
+| Generated terrain products recorded | 12 of 12, from a release pack |
+| Terrain products with built-evidence records | 12 of 12 |
+| Missing built-evidence records | none |
+| Terrain bytes committed to git | 0: the pack is on `assets-terrain-1.3.0`, 4.5 MB across 13 files |
 | GLB/model assets with section 2A geometry and deformation measurements | 0 |
 | Full per-asset section 2A reports | 0 |
-| Complete committed asset-size total | Not established by the current evidence: two terrain records are missing |
+| Tracked repository size | about 2 MB, against the 800 MB cap; measured by `check_scripts.py` on every run |
 
 `tools/validate/check_assets.py` opens every recorded built file and verifies its SHA-256 and
 recorded size. For the terrain, it also checks that the heightmap matches its sidecar, the splat
@@ -60,15 +57,14 @@ channel, both water ids existing and splat/ID agreement. These checks validate t
 data; they do not measure model geometry, visual quality on device or every `[HARD-TECH]` criterion
 in section 2A.
 
-The last measurements recorded in `reports/phase2.md` — 43.8 % grass, 21.3 % moss, 17.3 % bare
-rock, 6.3 % water, a 29.1–135.1 m height range, a 321-point descending centreline and 100 %
-splat/ID agreement — describe generator 1.0.0. Generator 1.1.0 was measured and its river failed:
-1.4 % of 971 centreline points on water, 66 % of the map raised by the depression fill. Generator
-1.2.0 gave the river its own descending surface and was measured too; it failed differently, with
-5 of 591 centreline segments climbing where the channel met the lake, and with the river's surface
-2 m below the lake along the reach they share. Generator 1.3.0 — which makes the two bodies meet at
-one height, widens the channel to 80 m and deepens it to 2.6 m — has not been run, so there are no
-current measurements to quote and none are quoted here.
+The last composition measurements recorded in `reports/phase2.md` — 43.8 % grass, 21.3 % moss, 17.3 %
+bare rock, 6.3 % water, a 29.1–135.1 m height range, a 321-point descending centreline and 100 %
+splat/ID agreement — describe generator 1.0.0. Generators 1.1.0 and 1.2.0 were measured and failed,
+in different ways and on the river. **1.3.0 was measured by the publish run that cut the pack**: the
+river gates, the wet-width gate, the two water ids, the splat agreement and the pair check all
+passed, and the only failure was in the publishing machinery rather than in the assets. Its
+composition numbers live in that job's log and in `assets/built.json`; they are not copied here,
+because a figure copied out of a log is a figure that drifts.
 
 ## Checks that are weaker than they look
 

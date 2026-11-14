@@ -123,8 +123,8 @@ still lands.
 **Sparse checkout.** The first committed terrain products have made the asset layout known, so the
 original trigger has occurred. Sparse checkout remains deferred until a measured checkout cost
 justifies maintaining patterns that could omit files and make a validator pass by finding nothing.
-The full repository is currently about 11 MB; the existing workflow cost does not yet justify that
-added risk.
+The tracked repository is currently about 2 MB, with the terrain bytes on a release pack beside it;
+the existing workflow cost does not yet justify that added risk.
 
 ## Deferred, and tracked
 
