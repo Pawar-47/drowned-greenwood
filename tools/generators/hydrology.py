@@ -71,6 +71,7 @@ from terrain_maps import (  # noqa: E402
     BOG_CENTRE_V,
     RIVER_DEPTH_M,
     channel_weight,
+    river_bed_m,
     river_centre_u,
     river_surface_m,
     water_surface,
@@ -486,13 +487,21 @@ def main():
     #
     # v is 0 at the northern edge and the lake sits at v = BOG_CENTRE_V, so walking rows upwards
     # walks upstream; the path is reversed to run headwater to mouth.
+    #
+    # It stops where the bowl takes over from the carve. Inside the bog the ground is the bowl
+    # floor, which lies BELOW the bed — that is how a lake holds water — so the "channel" there is
+    # the lake's bed and its height is the lake's, not the river's. Walking it in produced 23 climbs
+    # in 696 segments on run 5c03e05, all of them in the bowl; this trims exactly those.
     path = []
     for row in range(SAMPLES):
         v = row / CELLS
         if v > BOG_CENTRE_V:
             break
         x = int(round(river_centre_u(v) * CELLS))
-        path.append(row * SAMPLES + max(0, min(SAMPLES - 1, x)))
+        cell = row * SAMPLES + max(0, min(SAMPLES - 1, x))
+        if metres[cell] < river_bed_m(v) - 0.5:
+            break
+        path.append(cell)
     path.reverse()
 
     # How much of the traced channel is actually wet. This is the number the old gates were
