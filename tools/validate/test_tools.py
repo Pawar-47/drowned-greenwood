@@ -572,12 +572,12 @@ def test_alpha_writes_match_the_pipeline_they_ask_for():
         "ALPHA unwritten"
     )
 
-    foliage = code_of("foliage_base.gdshader")
-    assert "ALPHA_SCISSOR_THRESHOLD" in foliage, (
+    planted = code_of("foliage_base.gdshader")
+    assert "ALPHA_SCISSOR_THRESHOLD" in planted, (
         "foliage_base.gdshader no longer sets an alpha scissor threshold, so leaf cards are "
         "drawn as full quads"
     )
-    match = re.search(r"\bALPHA\s*=\s*([^;]+);", foliage)
+    match = re.search(r"\bALPHA\s*=\s*([^;]+);", planted)
     assert match, (
         "foliage_base.gdshader sets ALPHA_SCISSOR_THRESHOLD but never writes ALPHA, so the "
         "threshold is compared against the default and nothing is discarded"
@@ -587,6 +587,12 @@ def test_alpha_writes_match_the_pipeline_they_ask_for():
         "foliage_base.gdshader writes ALPHA = %s. The scissor compares exactly that value, so a "
         "constant passes every fragment and the cut-out disappears; it must be the albedo "
         "texture's alpha" % written
+    )
+
+    water = code_of("water_base.gdshader")
+    assert re.search(r"\bALPHA\s*=", water), (
+        "water_base.gdshader writes no ALPHA. Water is transparent; leaving ALPHA unwritten draws "
+        "it as an opaque sheet over the riverbed"
     )
 
 

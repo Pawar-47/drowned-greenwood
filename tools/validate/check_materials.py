@@ -440,6 +440,74 @@ def check_materials(doc, by_id, surfaces_doc, problems):
     )
 
 
+def check_water_shader(problems):
+    """The water shader must decode the hydrology mask at the scale the generator wrote it.
+
+    This is the same contract `terrain_meta.json` enforces for the heightmap, applied to the one
+    consumer that reads the mask on the GPU. A shader that decodes 0..1 over 4 m when the generator
+    stored 0..1 over 8 m renders water half as deep as the terrain says it is, with no error
+    anywhere: the mask is valid, the shader compiles, and the lake is simply shallower than the
+    lake. So the number is read out of both files and compared.
+
+    The channel order is checked the same way. R is depth and G,B are the flow vector; a shader that
+    read `.g` as depth would get a plausible number between 0 and 1 and a surface of the wrong
+    depth everywhere, which is exactly the class of bug that survives every format check.
+    """
+    shader_path = os.path.join(SHADER_ROOT, "water_base.gdshader")
+    hydrology_path = os.path.join("tools", "generators", "hydrology.py")
+    if not os.path.isfile(shader_path):
+        problems.append("%s: the water shader is missing" % shader_path)
+        return
+    with open(shader_path, "r", encoding="utf-8") as handle:
+        source = handle.read()
+    code = re.sub(r"//[^\n]*", "", source)
+
+    try:
+        with open(hydrology_path, "r", encoding="utf-8") as handle:
+            hydrology = handle.read()
+    except OSError as exc:
+        problems.append("%s: cannot read (%s)" % (hydrology_path, exc))
+        return
+    expected = re.search(r"^MAX_MASK_DEPTH_M\s*=\s*([\d.]+)", hydrology, re.MULTILINE)
+    if not expected:
+        problems.append("%s: MAX_MASK_DEPTH_M is no longer declared" % hydrology_path)
+        return
+    expected_m = float(expected.group(1))
+
+    declared = re.search(r"uniform\s+float\s+depth_scale_m\s*:[^=]*=\s*([\d.]+)\s*;", code)
+    if not declared:
+        problems.append("%s: depth_scale_m is not declared with a default" % shader_path)
+    elif abs(float(declared.group(1)) - expected_m) > 1e-9:
+        problems.append(
+            "%s: depth_scale_m is %s but hydrology.py stores the mask over %s m — the water would "
+            "be drawn %s as deep as the terrain says"
+            % (shader_path, declared.group(1), expected_m, float(declared.group(1)) / expected_m)
+        )
+
+    for needle, meaning in (
+        ("hydro.r", "depth from the mask's R channel"),
+        ("hydro.gb", "flow from the mask's G and B channels"),
+    ):
+        if needle not in code:
+            problems.append("%s: no %r, so the shader does not read %s" % (shader_path, needle, meaning))
+
+    for name in ("wind_time", "wind_strength", "wind_gust"):
+        declared_global = re.search(
+            r"global\s+uniform\s+float\s+%s\b" % name, code
+        )
+        if not declared_global:
+            problems.append(
+                "%s: %s is not declared as a global uniform, so the weather system cannot drive it"
+                % (shader_path, name)
+            )
+
+    if not re.search(r"\bALPHA\s*=", code):
+        problems.append(
+            "%s: water writes no ALPHA. It is a transparent surface; leaving ALPHA unwritten draws "
+            "it opaque" % shader_path
+        )
+
+
 def main():
     problems = []
 
@@ -448,6 +516,7 @@ def main():
     materials = load(MATERIALS, problems)
 
     check_shader_includes(problems)
+    check_water_shader(problems)
 
     if surfaces_doc is not None:
         by_id = check_surfaces(surfaces_doc, problems)

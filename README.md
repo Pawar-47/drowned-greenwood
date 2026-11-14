@@ -22,7 +22,7 @@ assets/          manifest.json (authored list), built.json (built evidence), pac
                  surface_fx_table.json, terrain/ (the maps, downloaded from their pack)
 tools/           build_manifest.py, pack_release.py, fetch_packs.py, TOOLS.md,
                  config/materials.json, generators/, phase0/ (probes), validate/ (checks)
-shaders/         surface_base.gdshader, foliage_base.gdshader, shared includes, SHADER_GLOBALS.md
+shaders/         surface_base, foliage_base, water_base, shared includes, SHADER_GLOBALS.md
 docs/            RELEASES.md, HISTORY_PURGE.md, LESSONS.md, POLICY.md, AUDIT_PROTOCOL.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md, phase2.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
@@ -82,7 +82,9 @@ artifacts, and two animal skeleton families found while writing the validator.
 Every opaque surface and every plant in the game is one of **two shaders** with different
 parameters, not its own shader. `shaders/surface_base.gdshader` covers ground, rock, wood and
 buildings; `shaders/foliage_base.gdshader` covers leaves, ferns, grass and ivy. Both include the
-wetness pass, so no material can be forgotten and left bone dry next to a soaked one.
+wetness pass, so no material can be forgotten and left bone dry next to a soaked one. Water is a
+third, `shaders/water_base.gdshader`: it is transparent, so it belongs on the transparent pipeline,
+and it decodes the terrain's hydrology mask — depth in R, flow in G and B — instead of a texture set.
 
 A material is a row in `tools/config/materials.json`: a texture set, a tiling in metres, a
 `wetness_darken`, and — for foliage — its wind amplitudes. `tools/validate/check_materials.py`

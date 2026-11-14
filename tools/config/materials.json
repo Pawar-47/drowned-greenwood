@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
   "name": "materials",
-  "description": "The shared PBR material system. Every opaque surface in the game is one row here, rendered by shaders/surface_base.gdshader or shaders/foliage_base.gdshader. A material is a parameter set, never its own shader, so the Mobile renderer compiles one variant per shader rather than one per material.",
+  "description": "The shared PBR material system. Every opaque surface in the game is one row here, rendered by shaders/surface_base.gdshader or shaders/foliage_base.gdshader; water is shaders/water_base.gdshader, which is not a material row because it reads the hydrology mask rather than a texture set. A material is a parameter set, never its own shader, so the Mobile renderer compiles one variant per shader rather than one per material.",
   "shaders": {
     "surface": "res://shaders/surface_base.gdshader",
-    "foliage": "res://shaders/foliage_base.gdshader"
+    "foliage": "res://shaders/foliage_base.gdshader",
+    "water": "res://shaders/water_base.gdshader"
   },
   "texture_sets": {
     "note": "A texture set is three maps in the glTF convention, so a Poly Haven download maps straight on with no conversion: albedo is sRGB, normal is tangent-space, and ORM packs ambient occlusion in R, roughness in G, metallic in B.",

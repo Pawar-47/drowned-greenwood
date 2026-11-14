@@ -28,6 +28,11 @@ const INCLUDES := [
 	# system whose first real test is on a device.
 	"res://includes/surface_base.gdshader",
 	"res://includes/foliage_base.gdshader",
+	# Water is a complete shader too, and it decodes the hydrology mask — R depth, G/B flow — so it
+	# is the one place a channel-order mistake would render plausible-looking water of the wrong
+	# depth. Compiling it proves the declarations; check_materials.py checks the scale matches the
+	# generator.
+	"res://includes/water_base.gdshader",
 ]
 
 # Each wrapper exercises its include the way the game will: the wind include from vertex(),
@@ -75,6 +80,9 @@ const EXPECTED_UNIFORMS := {
 	# being resolved, these disappear and the probe fails, which is the point.
 	"surface_base.gdshader": ["albedo_tex", "normal_tex", "orm_tex", "moss_mask_tex", "puddle_mask_tex", "wetness_darken"],
 	"foliage_base.gdshader": ["albedo_tex", "normal_tex", "alpha_cutoff", "translucency", "wind_noise", "wetness_darken"],
+	# The globals are deliberately not listed: Godot does not promise to surface them here, and the
+	# probe's own comment says so. These are the uniforms that prove the fog/water body parsed.
+	"water_base.gdshader": ["hydrology_tex", "shore_tex", "depth_scale_m", "shallow_color", "deep_color", "min_alpha", "max_alpha"],
 }
 
 var _failures := 0

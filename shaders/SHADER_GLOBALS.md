@@ -42,8 +42,14 @@ should catch it rather than the device.
 |---|---|
 | `surface_base.gdshader` (ground, rock, wood, buildings) | `global_wetness`, `puddle_amount` — via the wetness include |
 | `foliage_base.gdshader` (leaves, ferns, grass, ivy) | `wind_time`, `wind_strength`, `wind_gust` via the wind include; `global_wetness` via the wetness include |
+| `water_base.gdshader` (lake, river, standing water) | `wind_time`, `wind_strength`, `wind_gust`, declared directly rather than through the wind include |
 | `tech_wind_include.gdshaderinc` | `wind_time`, `wind_strength`, `wind_gust` |
 | `tech_wetness_include.gdshaderinc` | `global_wetness`, `puddle_amount` |
+
+The water shader declares the three wind globals itself instead of including the wind file. The
+include's helpers take a vertex-colour mask and displace along the surface normal — right for a leaf,
+wrong for a lake — and two shaders declaring the same *global* is not a clash: a global is one value
+for the whole scene, which is the point of it.
 
 `puddle_amount` is read by `surface_base` only: a leaf does not hold a puddle, and applying the
 puddle pass to foliage would flatten a crown's roughness for no visible gain.

@@ -370,9 +370,33 @@ Mobile.
 The sky is procedural for now. `PanoramaSkyMaterial` needs the panorama textures that are still on
 the Phase 2 list, so swapping them in is a one-line change per preset when they exist.
 
+## Water surface
+
+`shaders/water_base.gdshader` draws the lake, the river and every pocket of standing water, and it
+takes its shape from the terrain rather than from an artist: it samples `terrain_hydrology_mask` and
+decodes the contract the generator wrote — **R is depth over `MAX_MASK_DEPTH_M` metres, G and B are
+the flow direction as a unit vector, 128 neutral**. Depth drives the shallow-to-deep colour, the
+alpha and the foam band; flow drives the direction the ripples travel, which is what makes a river's
+surface read as moving rather than as a still sheet. The shore mask gives the foam a band instead of
+a cut line.
+
+The one number that could silently ruin it is the mask's scale. A shader that decoded 0..1 over 4 m
+while the generator stored 0..1 over 8 m would render every lake at half its depth and no check
+would notice — the mask is valid and the shader compiles. So `check_materials.py` reads
+`MAX_MASK_DEPTH_M` out of `hydrology.py`, reads `depth_scale_m` out of the shader, and fails the
+build if they differ, and it requires the shader to read `.r` for depth and `.gb` for flow. That is
+the same argument `terrain_meta.json` makes for the heightmap, applied to the GPU consumer.
+
+Water is the one surface that writes `ALPHA` on purpose; `surface_base` must not, and the two rules
+are asserted separately in `test_tools.py` so neither can be "fixed" into the other. The shader is
+compiled by the Phase 0 Godot gate alongside the other two, with its own expected uniforms.
+
+Not done: the water mesh itself, which needs Blender, and the material that will name the river's and
+the lake's depth ramps. The shader is the contract those will be authored against.
+
 ## Not yet done in Phase 2
 
-- rocks, water surfaces, sky panoramas
+- rocks, sky panoramas, and the water mesh and material
 - the terrain mesh itself: the heightmap is data, and nothing yet turns it into geometry. This is
   the first asset that needs Blender, and would be the first binary committed.
 - **regenerate and re-record the terrain maps.** Every generator changed again this round —
