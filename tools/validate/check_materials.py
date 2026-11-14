@@ -22,6 +22,8 @@ What it checks:
     exists and is not retired, tiling inside the clamp, every range inside the shader's hint range
   * foliage materials use the foliage shader and declare the wind amplitudes; opaque ones do not
   * every opaque surface has at least one material
+  * water_bodies: one row per body, naming the water ids it draws and the parameters that make a
+    river look different from a lake; every water id must be drawn by at least one body
   * no shader redeclares a uniform that an include it uses already declares
 """
 
@@ -266,6 +268,107 @@ def check_fx_table(fx, surfaces_doc, by_id, problems):
     print("surface fx: %d rows for %d live surfaces" % (len(table), len(wanted)))
 
 
+WATER_RANGES = {
+    "flow_strength": (0.0, 1.0),
+    "ripple_strength": (0.0, 1.0),
+    "wave_height_m": (0.0, 0.5),
+    "min_alpha": (0.0, 1.0),
+    "max_alpha": (0.0, 1.0),
+}
+WATER_COLOURS = ("shallow_color", "deep_color")
+
+
+def check_water_bodies(doc, water, problems):
+    """The river and the lake are parameter sets for the water shader, not material rows.
+
+    Water has no `surface_id` of its own to name: ids 8 and 9 are *depth* — shallow and deep —
+    inside whichever body the player is standing in. So a water body names both ids and carries the
+    parameters that differ between a fast channel and a still lake, the same way a material row
+    carries the parameters that differ between two soils.
+
+    Without a body, the two surfaces fall back to the shader's defaults, which is one look for two
+    very different places: the river's flow can raise the ripple and lower the transparency while
+    the lake stays still and deep, and both are still water from the same shader.
+    """
+    bodies = doc.get("water_bodies")
+    if not isinstance(bodies, list) or not bodies:
+        problems.append("%s: no water_bodies list, so the river and the lake share the shader's defaults" % MATERIALS)
+        return 0
+
+    names = set()
+    covered = set()
+    for row in bodies:
+        if not isinstance(row, dict):
+            problems.append("%s: a water body is not an object" % MATERIALS)
+            continue
+        name = row.get("name", "<unnamed>")
+        if not re.match(r"^water_[a-z_]+$", str(name)):
+            problems.append("%s: %r does not follow water_<name>" % (MATERIALS, name))
+        if name in names:
+            problems.append("%s: duplicate water body %r" % (MATERIALS, name))
+        names.add(name)
+
+        ids = row.get("surface_ids")
+        if not isinstance(ids, list) or not ids:
+            problems.append("%s: %s has no surface_ids list" % (MATERIALS, name))
+        else:
+            unknown = [value for value in ids if value not in water]
+            if unknown:
+                problems.append(
+                    "%s: %s names surface id(s) %s, which surface_ids.json does not mark as water"
+                    % (MATERIALS, name, unknown)
+                )
+            covered |= {value for value in ids if value in water}
+
+        for field in WATER_COLOURS:
+            colour = row.get(field)
+            if (
+                not isinstance(colour, list)
+                or len(colour) != 3
+                or any(
+                    not isinstance(channel, (int, float))
+                    or isinstance(channel, bool)
+                    or not 0.0 <= channel <= 1.0
+                    for channel in colour
+                )
+            ):
+                problems.append(
+                    "%s: %s %s is not three channels in 0..1" % (MATERIALS, name, field)
+                )
+
+        for field, (low_bound, high_bound) in WATER_RANGES.items():
+            value = row.get(field)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                problems.append("%s: %s %s is not a number" % (MATERIALS, name, field))
+                continue
+            if not low_bound <= value <= high_bound:
+                problems.append(
+                    "%s: %s %s is %s, outside the shader's hint range %s..%s"
+                    % (MATERIALS, name, field, value, low_bound, high_bound)
+                )
+
+        minimum, maximum = row.get("min_alpha"), row.get("max_alpha")
+        if (
+            isinstance(minimum, (int, float))
+            and isinstance(maximum, (int, float))
+            and minimum > maximum
+        ):
+            problems.append(
+                "%s: %s has min_alpha %s above max_alpha %s, so the clamp inverts"
+                % (MATERIALS, name, minimum, maximum)
+            )
+
+        if not isinstance(row.get("note"), str) or not row.get("note"):
+            problems.append("%s: %s has no note saying what makes it different" % (MATERIALS, name))
+
+    missing = sorted(water - covered)
+    if missing:
+        problems.append(
+            "%s: no water body draws surface id(s) %s" % (MATERIALS, missing)
+        )
+    return len(bodies)
+
+
 def check_materials(doc, by_id, surfaces_doc, problems):
     if not isinstance(doc, dict):
         problems.append("%s: not an object" % MATERIALS)
@@ -427,6 +530,7 @@ def check_materials(doc, by_id, surfaces_doc, problems):
         if not isinstance(row.get("used_by"), list) or not row.get("used_by"):
             problems.append("%s: %s has no used_by list" % (MATERIALS, name))
 
+    bodies = check_water_bodies(doc, water, problems)
     missing_materials = sorted(set(by_id) - retired - water - covered)
     if missing_materials:
         problems.append(
@@ -435,8 +539,14 @@ def check_materials(doc, by_id, surfaces_doc, problems):
         )
 
     print(
-        "materials: %d rows, %d shaders, %d of %d opaque surfaces covered"
-        % (len(rows), len(declared_shaders), len(covered), len(set(by_id) - retired - water))
+        "materials: %d rows, %d shaders, %d water bodies, %d of %d opaque surfaces covered"
+        % (
+            len(rows),
+            len(declared_shaders),
+            bodies,
+            len(covered),
+            len(set(by_id) - retired - water),
+        )
     )
 
 

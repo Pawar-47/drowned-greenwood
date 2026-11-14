@@ -63,6 +63,9 @@ check_packs = load_module("check_packs", os.path.join("tools", "validate", "chec
 check_environment = load_module(
     "check_environment", os.path.join("tools", "validate", "check_environment.py")
 )
+check_materials = load_module(
+    "check_materials", os.path.join("tools", "validate", "check_materials.py")
+)
 
 
 def manifest_with(**categories):
@@ -1128,6 +1131,42 @@ def test_a_weather_preset_cannot_name_a_property_godot_does_not_have():
     assert sections["resource"]["background_mode"][0] == "2", "the preset does not draw its sky"
 
 
+def test_a_water_surface_no_body_draws_is_reported():
+    """Ids 8 and 9 are depth, not a body: the river and the lake both draw them.
+
+    A water body names the ids it covers, so a body that covers neither is dead and an id no body
+    names would fall back to the shader's defaults — one look for a fast channel and a still lake.
+    """
+    doc = {
+        "water_bodies": [
+            {
+                "name": "water_river",
+                "surface_ids": [8],
+                "shallow_color": [0.2, 0.3, 0.25],
+                "deep_color": [0.0, 0.1, 0.1],
+                "flow_strength": 0.5,
+                "ripple_strength": 0.5,
+                "wave_height_m": 0.05,
+                "min_alpha": 0.3,
+                "max_alpha": 0.9,
+                "note": "the moving body",
+            }
+        ]
+    }
+    problems = []
+    check_materials.check_water_bodies(doc, {8, 9}, problems)
+    assert any("no water body draws" in problem for problem in problems), problems
+
+    problems = []
+    incomplete = {
+        "water_bodies": [
+            dict(doc["water_bodies"][0], surface_ids=[8, 9], name="water_lake", max_alpha=0.2)
+        ]
+    }
+    check_materials.check_water_bodies(incomplete, {8, 9}, problems)
+    assert any("min_alpha" in problem and "max_alpha" in problem for problem in problems), problems
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -1195,6 +1234,10 @@ TESTS = [
     (
         "weather: a preset cannot name a property Godot does not have",
         test_a_weather_preset_cannot_name_a_property_godot_does_not_have,
+    ),
+    (
+        "water: a surface no body draws is reported",
+        test_a_water_surface_no_body_draws_is_reported,
     ),
 ]
 

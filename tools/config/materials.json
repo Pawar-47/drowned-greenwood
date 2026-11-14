@@ -278,6 +278,32 @@
       "used_by": ["ivy", "vine", "epiphyte"]
     }
   ],
+  "water_bodies": [
+    {
+      "name": "water_river",
+      "surface_ids": [8, 9],
+      "shallow_color": [0.21, 0.29, 0.25],
+      "deep_color": [0.04, 0.12, 0.13],
+      "flow_strength": 0.55,
+      "ripple_strength": 0.6,
+      "wave_height_m": 0.05,
+      "min_alpha": 0.3,
+      "max_alpha": 0.88,
+      "note": "the moving body: a stronger flow read, more ripple and slightly more transparency, so the riverbed greys through the water. The fall from 34.0 m to 26.6 m over its 340 m is what gives the flow direction in the mask something to point down."
+    },
+    {
+      "name": "water_lake",
+      "surface_ids": [8, 9],
+      "shallow_color": [0.19, 0.27, 0.23],
+      "deep_color": [0.03, 0.1, 0.12],
+      "flow_strength": 0.0,
+      "ripple_strength": 0.25,
+      "wave_height_m": 0.02,
+      "min_alpha": 0.42,
+      "max_alpha": 0.95,
+      "note": "the still body: no flow read, slower ripple and a deeper alpha floor, because the bog basin is 4.4 m deep and should not look like a flooded field."
+    }
+  ],
   "rules": [
     "A material is a row, not a shader. Adding a shader needs a reason that cannot be a uniform.",
     "Every material names a surface_id from assets/surface_ids.json, so footsteps and VFX work on it without a second lookup.",

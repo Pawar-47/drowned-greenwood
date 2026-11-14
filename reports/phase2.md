@@ -391,8 +391,16 @@ Water is the one surface that writes `ALPHA` on purpose; `surface_base` must not
 are asserted separately in `test_tools.py` so neither can be "fixed" into the other. The shader is
 compiled by the Phase 0 Godot gate alongside the other two, with its own expected uniforms.
 
-Not done: the water mesh itself, which needs Blender, and the material that will name the river's and
-the lake's depth ramps. The shader is the contract those will be authored against.
+The river and the lake are separate **parameter sets** — `water_river` and `water_lake` in
+`tools/config/materials.json` — for the same reason the terrain treats them as two bodies rather than
+one waterline. The river reads its flow: stronger ripples, more transparency, a 5 cm swell. The lake
+does not: no flow read, a slower ripple, a higher alpha floor, because the bog basin is 4.4 m deep and
+should not look like a flooded field. A water body names both water ids (8 and 9 are *depth*, not a
+body), and `check_materials.py` fails if an id is drawn by no body or a body names an id that is not
+water.
+
+Not done: the water mesh itself, which needs Blender. The shader and the bodies are the contract it
+will be authored against.
 
 ## Not yet done in Phase 2
 
