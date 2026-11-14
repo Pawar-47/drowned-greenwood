@@ -42,7 +42,8 @@ LICENCE_BY_TOOL = {
     # An asset with no recorded tool. This says nothing about who owns it, so it is recorded as
     # unknown rather than as ours.
     #
-    # This used to map to `project-original`, which was wrong for 1,110 of 1,954 records: `custom`
+    # This used to map to `project-original`, which was wrong for 1,110 of the then-current
+    # 1,954 records: `custom`
     # means "one of our scripts will produce this", and today those scripts exist for terrain and
     # hydrology only. Fonts, music and audio in that set are not project-original by any reading —
     # nobody has recorded where they come from. Calling them ours moved the blanket-CC0 problem

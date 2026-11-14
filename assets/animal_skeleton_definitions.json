@@ -106,7 +106,7 @@
         "animal_badger", "animal_otter", "animal_beaver", "animal_pine_marten",
         "animal_stoat", "animal_dormouse", "animal_vole_mouse", "animal_mole"
       ],
-      "bone_count": 24,
+      "bone_count": 25,
       "bones": [
         "Root", "Hips", "Spine", "Chest", "Neck", "Head", "Jaw",
         "Tail1", "Tail2",
@@ -114,7 +114,7 @@
         "RightUpperLeg_F", "RightLowerLeg_F", "RightPaw_F",
         "LeftUpperLeg_B", "LeftLowerLeg_B", "LeftPaw_B",
         "RightUpperLeg_B", "RightLowerLeg_B", "RightPaw_B",
-        "LeftEar", "RightEar", "LeftEye"
+        "LeftEar", "RightEar", "LeftEye", "RightEye"
       ],
       "parents": {
         "Hips": "Root", "Spine": "Hips", "Chest": "Spine", "Neck": "Chest", "Head": "Neck", "Jaw": "Head",
@@ -123,9 +123,9 @@
         "RightUpperLeg_F": "Chest", "RightLowerLeg_F": "RightUpperLeg_F", "RightPaw_F": "RightLowerLeg_F",
         "LeftUpperLeg_B": "Hips", "LeftLowerLeg_B": "LeftUpperLeg_B", "LeftPaw_B": "LeftLowerLeg_B",
         "RightUpperLeg_B": "Hips", "RightLowerLeg_B": "RightUpperLeg_B", "RightPaw_B": "RightLowerLeg_B",
-        "LeftEar": "Head", "RightEar": "Head", "LeftEye": "Head"
+        "LeftEar": "Head", "RightEar": "Head", "LeftEye": "Head", "RightEye": "Head"
       },
-      "note": "Small mammals are seen at a distance and mostly move as silhouettes; 24 bones is deliberately lean."
+      "note": "Small mammals are seen at a distance and mostly move as silhouettes; 25 bones is deliberately lean."
     },
     {
       "name": "animal_skeleton_bird",

@@ -26,7 +26,11 @@ import zlib
 # Bumped when a generator's output changes for the same inputs. It is recorded in every asset's
 # tool_version, so a rebuild that produces different bytes is visible as a version change rather
 # than as an unexplained difference in the hash.
-GENERATOR_VERSION = "1.0.0"
+#
+# 1.1.0 — sample coordinates are x/CELLS in terrain_maps (they were x/(CELLS-1)); hydrology fills
+#         depressions and takes its outlet from the map boundary; the splat anchor is averaged over
+#         the 3x3 neighbourhood instead of being a per-texel one-hot. Every terrain byte changes.
+GENERATOR_VERSION = "1.1.0"
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 

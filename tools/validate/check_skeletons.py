@@ -20,8 +20,8 @@ Checks, in the order the brief states the limits:
   * the cloth chains a character may wear fit in the spare bones, computed from the bone list
   * the retarget map's source names all exist in its own recorded joint list, and no
     recorded joint vanishes: it is mapped, a documented finger chain, or a *_leaf helper
-  * animal families do not exceed the cap, carry a parent map with one root, no orphans
-    and no cycles, and every species in the asset list is covered
+  * animal families do not exceed the cap, reach one Root through known parents without cycles,
+    have complete left/right pairs, and cover every species in the asset list
 """
 
 import json
@@ -392,6 +392,71 @@ def check_retarget(problems, skeleton):
     )
 
 
+def animal_hierarchy_problems(family):
+    """Return structural defects in an animal family without relying on its written count."""
+    label = family.get("name", "animal skeleton")
+    bones = family.get("bones", [])
+    parents = family.get("parents") or {}
+    known = set(bones)
+    problems = []
+
+    if "Root" not in known:
+        problems.append("%s: bone list has no Root" % label)
+    if "Root" in parents:
+        problems.append("%s: Root must have no parent entry" % label)
+
+    roots = sorted(bone for bone in bones if bone == "Root" or parents.get(bone) is None)
+    if roots != ["Root"]:
+        problems.append("%s: expected exactly one root named Root, found %s" % (label, roots))
+
+    missing = [bone for bone in bones if bone != "Root" and bone not in parents]
+    if missing:
+        problems.append("%s: %d bones have no parent: %s" % (label, len(missing), missing[:5]))
+
+    unknown_keys = sorted(set(parents) - known)
+    if unknown_keys:
+        problems.append("%s: parent map keys name unknown bones: %s" % (label, unknown_keys[:5]))
+    unknown_parents = sorted(
+        {parent for parent in parents.values() if parent is not None and parent not in known}
+    )
+    if unknown_parents:
+        problems.append("%s: parent values name unknown bones: %s" % (label, unknown_parents[:5]))
+
+    reported_cycles = set()
+    for bone in bones:
+        seen = set()
+        current = bone
+        reached_root = False
+        while current is not None:
+            if current == "Root":
+                reached_root = True
+                break
+            if current in seen:
+                if current not in reported_cycles:
+                    problems.append("%s: cycle in the hierarchy through %s" % (label, current))
+                    reported_cycles.add(current)
+                break
+            seen.add(current)
+            parent = parents.get(current)
+            if parent is None or parent not in known:
+                break
+            current = parent
+        if not reached_root:
+            problems.append("%s: %s does not reach Root" % (label, bone))
+
+    for bone in bones:
+        if bone.startswith("Left"):
+            mirror = "Right" + bone[len("Left"):]
+        elif bone.startswith("Right"):
+            mirror = "Left" + bone[len("Right"):]
+        else:
+            continue
+        if mirror not in known:
+            problems.append("%s: %s has no bilateral partner %s" % (label, bone, mirror))
+
+    return problems
+
+
 def check_animals(problems):
     data = load(ANIMALS)
     families = data["families"]
@@ -419,38 +484,18 @@ def check_animals(problems):
 
     check_bilateral_optional(families, problems)
 
-    # Every family now carries an explicit parent map, so its hierarchy is checked the same way the
-    # humanoid one is. Before that the families were flat bone lists and the only honest thing to
-    # print was "hierarchy NOT validated" — which meant Phase 4 would have built eight rigs from
-    # names with no structure behind them.
+    # Every family has an explicit hierarchy. Check parent values as well as keys, exactly one
+    # root, cycle freedom, and bilateral completeness before saying the hierarchy passed.
+    hierarchy_errors = 0
     for family in families:
-        label = family["name"]
-        bones = family["bones"]
-        parents = family.get("parents") or {}
-        if not parents:
-            problems.append("%s: no parents map, so this rig cannot be built or validated" % label)
-            continue
-        if "Root" in parents:
-            problems.append("%s: Root must have no parent entry" % label)
-        missing = [bone for bone in bones if bone != "Root" and parents.get(bone) is None]
-        if missing:
-            problems.append(
-                "%s: %d bones have no parent: %s" % (label, len(missing), missing[:5])
-            )
-        unknown = sorted(set(parents) - set(bones))
-        if unknown:
-            problems.append("%s: parents reference unknown bones: %s" % (label, unknown[:5]))
-        for bone in bones:
-            seen = set()
-            current = bone
-            while current and current != "Root":
-                if current in seen:
-                    problems.append("%s: cycle in the hierarchy through %s" % (label, bone))
-                    break
-                seen.add(current)
-                current = parents.get(current)
+        family_problems = animal_hierarchy_problems(family)
+        problems.extend(family_problems)
+        hierarchy_errors += len(family_problems)
 
-    print("animals: bone hierarchies validated — single root, no orphans, no cycles")
+    if hierarchy_errors:
+        print("animals: hierarchy validation found %d problem(s)" % hierarchy_errors)
+    else:
+        print("animals: bone hierarchies validated — single root, no orphans, no cycles, bilateral pairs")
 
     for family in families:
         label = family["name"]

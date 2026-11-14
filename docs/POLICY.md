@@ -29,8 +29,10 @@ happens when it is broken, because a rule with no consequence is a comment.
 7. **A probe that reports and then crashes is a failure.** The bare `<name>_exit` row is no
    longer discarded: a non-zero exit after a result means the result may be partial.
 8. **A check that cannot be enforced must say what it does not cover.** The animal skeleton
-   validator prints "hierarchy NOT validated"; the shader gate records that it compiles under
-   Compatibility and not Mobile. Silence has read as coverage twice in this project.
+   validator checks parent-map structure — one `Root`, resolved parents, root reachability, no cycles
+   and bilateral pairs — but not rest poses or deformation, because the definitions contain no
+   transforms or generated rigs. The shader gate records that it compiles under Compatibility and
+   not Mobile. Silence has read as coverage twice in this project.
 
 ### Concurrency
 
@@ -52,7 +54,8 @@ happens when it is broken, because a rule with no consequence is a comment.
     field, checked against the same allowlist.
     **`source_tool: custom` maps to `UNVERIFIED`, not to `project-original`.** `custom` says a
     script will make the asset, which is true for terrain and hydrology and says nothing about the
-    fonts, music and audio that share the label — 1,110 of 1,954 records. `UNVERIFIED` may be
+    fonts, music and audio that share the label — 1,110 of the then-current 1,954 records.
+    `UNVERIFIED` may be
     planned and may never be built, so `check_manifest.py` reports the count on every run and fails
     the moment one of them claims to be built. Calling them ours was the blanket CC0 problem with
     a different word.
@@ -103,12 +106,11 @@ still lands.
 
 ## Not adopted, with reasons
 
-**Sparse checkout.** Deferred because the asset directory layout does not exist yet, so any
-`sparse-checkout` pattern today would be a guess that silently omits a directory later — and a
-checkout that omits files makes a validator pass by finding nothing, which is the failure mode
-this repository keeps having to remove. The trigger is the first committed binary: at that point
-the layout is known and the pattern can be written from it. Until then every job checks out the
-whole tree, which is currently about 0.4 MB.
+**Sparse checkout.** The first committed terrain products have made the asset layout known, so the
+original trigger has occurred. Sparse checkout remains deferred until a measured checkout cost
+justifies maintaining patterns that could omit files and make a validator pass by finding nothing.
+The full repository is currently about 11 MB; the existing workflow cost does not yet justify that
+added risk.
 
 ## Deferred, and tracked
 
@@ -116,8 +118,8 @@ These are real and unfixed. They are listed so they are not rediscovered as surp
 
 | Item | Why deferred |
 |---|---|
-| Manifest checks that open the file: hash, size, triangles, LODs, materials | impossible until an asset exists; writing them now produces a validator that passes by finding nothing |
-| Animal bone hierarchies and rest poses | Phase 4; inventing rest poses with no generator to test them against produces data that looks complete and is not |
+| Generic model-quality checks: triangles, LODs, UV density, materials, weights and collision proxies | no production GLB models are committed yet (Phase 0 probe outputs are not production assets); terrain data has its own file-evidence and content checks, and model checks need actual models to measure |
+| Animal rest-pose validation | Phase 4, when generated animal rigs or measured transforms exist; parent-map structure is validated now, but names alone cannot establish a rest pose |
 | Humanoid rig remapping (137 bones → 56) and decimation (36,972 → 12k–18k) | Phase 5 |
 | Tree decimation, leaf cards, LODs, impostors | Phase 3, the largest single piece |
 | Retargeting actually run on a clip | Phase 5. The map is now diffed against real joints and that diff is gated, which is the prerequisite; running a clip is the next step |
@@ -125,6 +127,6 @@ These are real and unfixed. They are listed so they are not rediscovered as surp
 | Blender 4.2 LTS end of life | 4.2 is pinned because MPFB2 requires ≥ 4.2. Revisit when MPFB2 supports 4.5 and drop to one Blender for every job |
 | Play Asset Delivery | only relevant if published to Google Play, which is not planned yet |
 | Texture compression for Android (ETC2 / ASTC) | no Godot export preset or import setting exists yet, so there is nothing to gate. The trigger is the first export preset; the gate is then a check that every texture set declares its target format and that its compressed size is counted against the budget |
-| Sparse checkout | see above; trigger is the first committed binary |
+| Sparse checkout | see above; layout is known from committed terrain products, but defer until a measured checkout cost justifies the maintenance and omission risk |
 | 1,110 assets with `source custom` | the largest open question in the manifest. `tools/generators/` now exists but covers terrain and hydrology only; the rest are `UNVERIFIED` — planned, never shippable — until each entry records where it comes from. Phase 2 onward |
 | Generator performance: 1,025² grids in pure stdlib Python | the three generator steps share a 10-minute job and finish in seconds today. Pinned numpy would remove the ceiling but adds the first third-party dependency to the generators. Revisit when a generator run approaches the limit, and record wall time at that point |

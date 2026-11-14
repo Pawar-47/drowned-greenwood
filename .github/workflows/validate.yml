@@ -293,6 +293,32 @@ jobs:
                   "main stem" % len(spline)
               )
 
+          # "Every segment descends" is satisfied by a gully running down a hillside, which is
+          # what the published centreline was: it began on the eastern rim at 105 m and ended in a
+          # sink in the middle of the map at 52 m, 21 m above the lake, while the river the terrain
+          # generator had carved sat elsewhere in the channel at 29-30 m. Every gate passed. These
+          # three are the ones that would not have.
+          if not coverage["outlet_on_boundary"]:
+              raise SystemExit(
+                  "the traced outlet is not on the map boundary, so the river does not leave the "
+                  "valley: it ends in a sink, which is what an unfilled depression field produces"
+              )
+          if coverage["river_on_water_percent"] < 90.0:
+              raise SystemExit(
+                  "only %.1f%% of the %d river points lie on water: the centreline is not on the "
+                  "river, it is a drainage line somewhere else"
+                  % (coverage["river_on_water_percent"], coverage["river_points"])
+              )
+          if coverage["outlet_flow_cells"] < coverage["river_flow_threshold_cells"]:
+              raise SystemExit(
+                  "the outlet carries only %d upstream cells, under the %d that defines a channel"
+                  % (coverage["outlet_flow_cells"], coverage["river_flow_threshold_cells"])
+              )
+          print("river: %d points, %.1f%% on water, outlet on the boundary carrying %d cells, "
+                "%d depressions filled"
+                % (coverage["river_points"], coverage["river_on_water_percent"],
+                   coverage["outlet_flow_cells"], coverage["depressions_filled_cells"]))
+
           # The water has to sit above the bed or it is inside the ground. The first version
           # subtracted the depth instead of adding it, so the upper river was invisible for 226 of
           # 655 points and no other check noticed.
@@ -371,14 +397,30 @@ jobs:
           # The splats and the surface-ID map have to agree about what a cell is, or a footstep
           # sounds like grass over visible gravel. They disagreed on 54 % of land cells while both
           # were well-formed.
+          #
+          # Two figures, because one is no longer enough to be honest. An earlier version of this
+          # gate demanded 95 % overall and got 100 % — by anchoring 85 % of every texel's weight to
+          # its own one-hot id, which put a one-texel seam along every material boundary in the
+          # world. The gate was grading the artefact it caused. The anchor now ramps over the 3x3
+          # neighbourhood, so boundary texels are allowed to disagree; interior texels cannot,
+          # because all nine of their neighbours name one layer and the arithmetic is untouched
+          # for them.
           agreement = report["coverage"]["splat_id_agreement_percent"]
-          if agreement < 95.0:
+          interior = report["coverage"]["splat_id_agreement_interior_percent"]
+          if agreement < 90.0:
               raise SystemExit(
                   "the dominant splat matches the surface-ID map on only %.1f%% of land cells; "
                   "they are two classifications of one cell and must be one" % agreement
               )
-          print("splats: %.1f%% agreement with the surface-ID map over %d land cells"
-                % (agreement, report["coverage"]["land_cells_compared"]))
+          if interior < 99.5:
+              raise SystemExit(
+                  "the dominant splat matches the surface-ID map on only %.1f%% of the land cells "
+                  "whose whole neighbourhood is one surface; those are exactly the texels the "
+                  "anchor cannot soften, so this is a real disagreement" % interior
+              )
+          print("splats: %.1f%% agreement over %d land cells, %.1f%% over the %d interior cells"
+                % (agreement, report["coverage"]["land_cells_compared"], interior,
+                   report["coverage"]["interior_land_cells"]))
           PY
 
       # "Deterministic from the seed" was a claim in reports/phase2.md with nothing behind it. Two
@@ -541,6 +583,7 @@ jobs:
           python tools/build_manifest.py
           python tools/validate/check_manifest.py
           python tools/validate/check_docs.py
+          python tools/validate/check_assets.py --require-terrain-evidence
 
       - name: Push to staging
         run: |

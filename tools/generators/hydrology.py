@@ -11,12 +11,21 @@ was built from, so the water is where gravity puts it by construction rather tha
 
 The method is D8 flow accumulation, the standard approach and the reason it is standard:
 
-  1. For each cell, find the steepest of its eight neighbours that is lower.
-  2. Process cells from highest to lowest, adding each cell's accumulated area to the cell it
+  1. Fill the depressions. D8 follows only a strictly lower neighbour, so a level surface has no
+     drainage at all; the bog basin and the near-level channel both needed raising to their spill
+     level before anything could be routed across them. Skip this and the highest-flow cell is a
+     sink in the middle of the map rather than an outlet — which is exactly what the first
+     published river was.
+  2. For each cell, find the steepest of its eight neighbours that is lower.
+  3. Process cells from highest to lowest, adding each cell's accumulated area to the cell it
      drains into. Because every upstream cell is higher, it has already been processed by the time
      a cell is reached, so one pass gives the full upstream area.
-  3. Where the accumulated area is large, there is a channel. Where the height is below the water
+  4. Where the accumulated area is large, there is a channel. Where the height is below the water
      level, there is standing water.
+
+The outlet is the boundary cell that collects the most water, and the centreline is walked
+upstream from it. Both halves matter: "highest flow anywhere" and "where the water leaves the map"
+are the same cell only when the field has no sinks.
 
 Outputs:
   terrain_hydrology_mask   RGB8, 1025², R = water depth (0..8 m), G,B = flow direction as a unit
@@ -33,6 +42,7 @@ Outputs:
 
 import argparse
 import collections
+import heapq
 import json
 import math
 import os
@@ -200,6 +210,87 @@ def accumulate(heights, downhill, samples=SAMPLES):
     return flow
 
 
+def fill_depressions(heights, samples=SAMPLES):
+    """Raise every enclosed pit to the level at which its water can escape.
+
+    D8 can only follow a neighbour that is strictly lower, so a perfectly flat surface has no
+    downhill direction at all. This terrain contains two of them by construction: the bog basin,
+    which is deliberately level so it can hold water, and the carved river bed, which descends
+    about a metre over the whole valley — well under one 16-bit step every other row, and rounded
+    to nothing at all by the 3x3 smoothing pass in terrain_maps.py. Both were pit fields.
+
+    The consequence was not subtle once it was looked for. With every flat area a pit, the cell
+    that collects the most water is a *sink*, not an outlet: the published centreline ran from the
+    eastern rim at 105 m to a hole in the middle of the map at 52 m and stopped there, and the
+    water level table duly reported a river surface 21 m above the lake. The real river sits at
+    29-30 m in the channel the terrain generator carved. Every gate passed, because each one asked
+    whether the line descended and whether the water sat above its bed, and it did both.
+
+    Priority-flood: seed the boundary — the only place water can leave the map — and visit cells
+    in order of the level water would have to reach to get there. A cell lower than its own escape
+    level is raised to that level plus one step, which is the smallest amount that opens a
+    downstream neighbour, so the drainage direction is unchanged wherever the ground was already
+    descending.
+
+    One step is one 16-bit count — 3 mm — because the fill is a device for finding the channel,
+    not a claim about the bog's depth. Every consumer of the real heights (the depth mask, the
+    shore mask, the water level table) keeps using the unfilled field.
+    """
+    filled = list(heights)
+    closed = [False] * len(heights)
+    heap = []
+    for cell in range(len(heights)):
+        x = cell % samples
+        y = cell // samples
+        if x == 0 or y == 0 or x == samples - 1 or y == samples - 1:
+            closed[cell] = True
+            heap.append((filled[cell], cell))
+    # A sorted list is already a valid heap, so this seeds the queue without a heapify pass.
+    heap.sort()
+
+    while heap:
+        level, cell = heapq.heappop(heap)
+        x = cell % samples
+        y = cell // samples
+        for dx, dy in NEIGHBOURS:
+            nx = x + dx
+            ny = y + dy
+            if not (0 <= nx < samples and 0 <= ny < samples):
+                continue
+            other = ny * samples + nx
+            if closed[other]:
+                continue
+            closed[other] = True
+            if filled[other] <= level:
+                # Clamped because accumulate() buckets by 16-bit value, so a raised cell has to
+                # stay inside the range the heightmap can represent.
+                filled[other] = min(65535, level + 1)
+            heapq.heappush(heap, (filled[other], other))
+    return filled
+
+
+def choose_outlet(flow, samples=SAMPLES):
+    """The boundary cell that collects the most water: where the river leaves the map.
+
+    The outlet used to be the highest-flow cell anywhere. That is only the same thing when the
+    field has no sinks, and when it has one the answer is the sink — a cell in the middle of the
+    map with no way out, which is not an outlet and cannot serve as one. A river that ends inland
+    has not left the valley, so "on the boundary" is part of the definition of an outlet rather
+    than a lucky property of the terrain.
+    """
+    best = -1
+    best_flow = -1.0
+    for cell, flow_cells in enumerate(flow):
+        x = cell % samples
+        y = cell // samples
+        if x != 0 and y != 0 and x != samples - 1 and y != samples - 1:
+            continue
+        if flow_cells > best_flow:
+            best_flow = flow_cells
+            best = cell
+    return best
+
+
 def shore_distance(water, samples=SAMPLES):
     """Cells to the nearest water cell, capped. A BFS, so the falloff is exact rather than a blur."""
     limit = int(SHORE_FALLOFF_M / CELL_SPACING_M) + 1
@@ -250,8 +341,11 @@ def main():
     heights = read_heightmap(args.heightmap)
     metres = [h / 65535.0 * max_height_m for h in heights]
 
-    downhill = compute_downhill(heights)
-    flow = accumulate(heights, downhill)
+    # Filled first, then routed. Without the fill the bog and the carved channel are pit fields
+    # and the highest-flow cell is a sink; see fill_depressions for what that produced.
+    filled = fill_depressions(heights)
+    downhill = compute_downhill(filled)
+    flow = accumulate(filled, downhill)
 
     # Water: standing where the land is below the waterline, and a channel where enough ground
     # drains through. Both are needed — a bog is standing water in a flat bowl with almost no
@@ -348,12 +442,7 @@ def main():
     # repeatedly taking the neighbour that drains into the current cell with the most flow. That
     # finds the main stem by construction, and reversing it gives a path that descends at every
     # step.
-    outlet = -1
-    best_flow = -1.0
-    for cell, flow_cells in enumerate(flow):
-        if flow_cells > best_flow:
-            best_flow = flow_cells
-            outlet = cell
+    outlet = choose_outlet(flow, SAMPLES)
 
     path = []
     if outlet >= 0:
@@ -377,6 +466,16 @@ def main():
             cell = upstream
         path.reverse()
 
+    # How much of the traced channel is actually wet. This is the number the old gates were
+    # missing: a centreline can descend perfectly, carry plenty of points and still run up a
+    # hillside, because "descends" says nothing about whether it is on the river. Measured on the
+    # published maps before the fill was added, this was 0.0 % of 321 points.
+    on_water = sum(1 for cell in path if water[cell])
+    above_waterline = len(path) - on_water
+    outlet_on_boundary = outlet >= 0 and (
+        outlet % SAMPLES in (0, SAMPLES - 1) or outlet // SAMPLES in (0, SAMPLES - 1)
+    )
+
     spline = []
     for cell in path:
         x = cell % SAMPLES
@@ -397,9 +496,11 @@ def main():
         json.dump(
             {
                 "name": "terrain_river_splines",
-                "note": "The main stem: the highest-flow cell's upstream chain, reversed, so it "
-                "runs from headwater to outlet and descends at every step. Flow is in upstream "
-                "cells.",
+                "note": "The main stem: the highest-flow boundary cell's upstream chain, reversed, "
+                "so it runs from headwater to outlet and descends at every step. Flow is in "
+                "upstream cells. The depressions were filled before the routing, so the chain can "
+                "cross the level bog and the near-level channel instead of dying in the first "
+                "pit it meets.",
                 "samples": SAMPLES,
                 "flow_threshold_cells": int(RIVER_FLOW_CELLS),
                 "points": spline,
@@ -433,9 +534,11 @@ def main():
         json.dump(
             {
                 "name": "terrain_water_level_table",
-                "note": "The water surface at each river centreline point. A single lake level "
-                "plus a carved channel, so the surface is level across the bog and steps down "
-                "the river.",
+                "note": "The water surface at each river centreline point. The carved bed sits "
+                "below the lake level along the whole channel, so max(lake, bed + depth) is the "
+                "lake level at every point: one flat water surface, not a river stepping down "
+                "its bed. Whether the channel should instead sit above the lake is an open "
+                "design question, recorded in reports/phase2.md.",
                 "lake_level_m": water_level_m,
                 "levels": levels,
             },
@@ -471,6 +574,18 @@ def main():
             "river_points": len(spline),
             "max_flow_cells": int(max(flow)),
             "shore_cells": sum(1 for d in distance if 0 < d <= limit),
+            # The three numbers that decide whether the traced line is a river at all. "Every
+            # segment descends" is true of a gully on a hillside, so it was never sufficient.
+            "river_on_water_percent": round(100.0 * on_water / len(spline), 2) if spline else 0.0,
+            "river_points_above_waterline": above_waterline,
+            "outlet_on_boundary": outlet_on_boundary,
+            "outlet_flow_cells": int(flow[outlet]) if outlet >= 0 else 0,
+            "river_flow_threshold_cells": int(RIVER_FLOW_CELLS),
+            "depressions_filled_cells": sum(1 for a, b in zip(heights, filled) if b != a),
+            "filled_rise_max_m": round(
+                max((b - a for a, b in zip(heights, filled)), default=0) / 65535.0 * max_height_m,
+                3,
+            ),
         },
         "assets": [],
     }
@@ -493,12 +608,18 @@ def main():
             handle.write(text + "\n")
 
     print(
-        "hydrology: %.2f%% water, %d river points, max flow %d cells, %d shore cells"
+        "hydrology: %.2f%% water, %d river points (%.1f%% on water, %d above the waterline), "
+        "outlet %s with %d cells, max flow %d, %d shore cells, %d depressions filled"
         % (
             report["coverage"]["water_percent"],
             report["coverage"]["river_points"],
+            report["coverage"]["river_on_water_percent"],
+            report["coverage"]["river_points_above_waterline"],
+            "on the boundary" if report["coverage"]["outlet_on_boundary"] else "INLAND",
+            report["coverage"]["outlet_flow_cells"],
             report["coverage"]["max_flow_cells"],
             report["coverage"]["shore_cells"],
+            report["coverage"]["depressions_filled_cells"],
         )
     )
     for asset in report["assets"]:

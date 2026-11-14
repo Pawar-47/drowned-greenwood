@@ -19,8 +19,18 @@ Outputs, all lossless and all deterministic from the seed:
   terrain_biome_mask            R8,  1025², bit field: 1 bog, 2 forest, 4 ridge, 8 riverbed, 16 clearing
   terrain_surface_id_map        R8,  1025², ids from assets/surface_ids.json
 
+The biome mask is a BIT FIELD, not a palette of levels, and that is a sampling constraint, not
+just a format note: bilinear filtering or a mipmap chain averages neighbouring bits together and
+invents surfaces — a texel halfway between bog (1) and forest (2) decodes as 1.5, which is neither
+and sets both. Anything that samples it must use `filter_nearest` and no mipmaps, which is the
+opposite of the rule every other sampler in this project follows. The surface-ID map has the same
+constraint for the same reason; the splat weights, the depth mask and the normal map are the
+continuous ones and are meant to be filtered.
+
 1025² rather than 1024² so texel centres land on grid vertices: a 1024-cell terrain needs 1025
-height samples, and using 1024 makes the last row of cells share the edge sample.
+height samples, and using 1024 makes the last row of cells share the edge sample. Sample x sits at
+x/1024 of the way across the kilometre, which is the convention hydrology and terrain_surfaces
+share.
 """
 
 import argparse
@@ -98,10 +108,11 @@ SURFACE = {
 WATER_LEVEL_M = 32.0
 DEEP_WATER_M = 22.0
 
-# How the height field is composed, in normalised units. The floor sits at 0.22 (44 m) and the
-# noise moves it by 0.14 (28 m), so the valley is 44..72 m — comfortably above the waterline, and
-# the bog and river are carved below it deliberately. The rim contributes the remaining 0.50
-# (100 m), concentrated at the edge by RIM_POWER.
+# How the height field is composed, in normalised units. The floor sits at 0.20 (40 m) and the
+# noise moves it by 0.11 (22 m), so the valley is 40..62 m — comfortably above the waterline, and
+# the bog and river are carved below it deliberately. The rim contributes the remaining 0.40
+# (80 m), concentrated at the edge by RIM_POWER. Each figure below is the constant it describes;
+# an earlier version of this comment quoted the round-2 values and had drifted from the code.
 #
 # These are tuned against measured output, in two rounds, and both numbers are recorded because
 # the first two attempts were wrong in an instructive way:
@@ -115,8 +126,8 @@ DEEP_WATER_M = 22.0
 # ground than that. The threshold is now 35°, and the rim is a little gentler again.
 #
 # The rim gradient is RIM_AMPLITUDE · RIM_POWER · r^(RIM_POWER-1) · MAX_HEIGHT_M / 500. At
-# 0.45 / 2.6 that peaks at 0.47 — a ridge you can walk up, well below the 35° rock threshold, so
-# bare rock appears only where the noise adds enough on top of it.
+# 0.40 / 2.4 that peaks at 0.38 — a ridge you can walk up, well below the 0.70 (35°) rock
+# threshold, so bare rock appears only where the noise adds enough on top of it.
 FLOOR = 0.20
 NOISE_AMPLITUDE = 0.11
 # A valley needs a rim: the ridges are what make it read as a bowl rather than a plate, and they
@@ -133,14 +144,18 @@ RIM_POWER = 2.4
 # dry. A river a hunter can step over is 8 m wide, cut a few metres into the valley floor, and it
 # descends from the bog to the outlet so the water on it can actually flow.
 RIVER_HALF_WIDTH_M = 8.0
-# The bank is a floodplain, not a wall. The valley floor sits at 44-72 m and the waterline at 32 m,
-# so the channel is necessarily cut 20-40 m down; over a 24 m bank that is a 50 degree wall for the
-# half-kilometre of its length, which alone put the walkable fraction under the gate.
+# The bank is a floodplain, not a wall. The valley floor sits at 40-62 m and the waterline at 32 m,
+# so the channel is necessarily cut 8-30 m down; over the 24 m bank the first version used, that
+# is a 50 degree wall for the half-kilometre of its length, which alone put the walkable fraction
+# under the gate.
 RIVER_BANK_M = 80.0
 # How wide the rim opens to let the river out. The notch is deliberately much wider than the
 # channel: a rim 100 m high that drops over the 32 m of the bank is a wall, and measured as one.
 RIVER_NOTCH_M = 200.0
-RIVER_DEPTH_M = 1.4
+# The river's water depth above its bed is NOT defined here. hydrology.py owns it (RIVER_DEPTH_M
+# there) because that is the module that writes the water-level table. A second copy here read 1.4
+# against hydrology's 1.2 and nothing consumed it, which is exactly the drift the sidecar exists
+# to prevent: two numbers with one name, one of them dead.
 # Bed height at the bog and at the northern edge, in metres. Both end below the waterline on
 # purpose: a river whose bed is above lake level is a dry channel, which is what the first
 # published terrain had — a carved trench with a floor 13 m above the water and nothing in it.
@@ -226,10 +241,16 @@ def shape_height(base, valley):
     """
     field = []
     for y in range(SAMPLES):
-        v = y / (CELLS - 1)
+        # Divide by CELLS, not CELLS - 1. There are CELLS cells across and SAMPLES = CELLS + 1
+        # samples, so sample x sits at x/1024 of the way across the kilometre. Dividing by 1023
+        # put the last sample 0.1 % past the edge and, worse, disagreed with the convention every
+        # other file uses: hydrology divides the same x by CELLS, so two generators were
+        # describing one texel with two different coordinates. Found by reading, not by a gate — a
+        # tenth of a percent is invisible in a hillshade and quite capable of moving a river.
+        v = y / CELLS
         row = [0.0] * SAMPLES
         for x in range(SAMPLES):
-            u = x / (CELLS - 1)
+            u = x / CELLS
 
             # The river channel, computed before the rim because the rim has to open for it. A
             # river leaves a valley through a notch; cutting a slot straight through the rim
@@ -355,7 +376,7 @@ def classify_surface(height_m, gradient, biome, noise):
     if biome & BIOME_RIVERBED:
         return SURFACE["wet_stone"] if gradient > SLOPE_RIVER_STONE else SURFACE["gravel"]
 
-    # Steep ground is bare rock whatever grows around it; a 29° slope does not hold soil.
+    # Steep ground is bare rock whatever grows around it; a 35° slope does not hold soil.
     if gradient > SLOPE_ROCK:
         return SURFACE["wet_stone"]
     if gradient > SLOPE_SCREE:
@@ -428,9 +449,9 @@ def main():
         height_row = []
         biome_row = []
         surface_row = []
-        v = y / (CELLS - 1)
+        v = y / CELLS
         for x in range(SAMPLES):
-            u = x / (CELLS - 1)
+            u = x / CELLS
             h_m = height_metres(field[y][x])
             height_row.append(int(round(field[y][x] * 65535)))
             heights.append(h_m)

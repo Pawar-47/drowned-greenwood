@@ -7,7 +7,9 @@ Run:
 Why this exists: every stale figure in this repository was a number written once in prose and then
 changed in the code. The README said "15 unit tests" while the suite had 35. `ADDITIONS.md` said
 the surface-ID map was 1024² while every generator wrote 1025² — twice, in two different files, and
-both times the contradiction was found by a human reading, not by a check.
+both times the contradiction was found by a human reading, not by a check. Then `reports/phase2.md`
+described a 24 m river bank while the generator carved an 80 m one, and that file had never been
+checked at all.
 
 A number in prose is a claim about the code. This makes it one that can fail.
 """
@@ -144,6 +146,24 @@ def main():
             "assets/surface_ids.json no longer explains why the grid is %s" % quoted
         )
 
+    # The river's shape is described in prose in reports/phase2.md and implemented as constants in
+    # terrain_maps.py, and the two had drifted: the report described a 24 m bank and a bed falling
+    # from 33.5 to 30.5 m while the generator carved an 80 m bank toward 30.0 then 29.0 m. The
+    # numbers were checked by nobody, because "a number in prose is a claim about the code" was a
+    # rule this file applied to the README only. Deriving the sentence from the constants is the
+    # one version of the check that cannot go stale.
+    phase2 = read(os.path.join("reports", "phase2.md"))
+    for phrase in (
+        "%.0f m bank" % terrain_maps.RIVER_BANK_M,
+        "%.1f → %.1f m" % (terrain_maps.RIVER_BED_SOURCE_M, terrain_maps.RIVER_BED_OUTLET_M),
+        "%.1f m water level" % terrain_maps.WATER_LEVEL_M,
+    ):
+        if phrase not in phase2:
+            problems.append(
+                "reports/phase2.md no longer states %r, which is what terrain_maps.py carves — "
+                "either the prose drifted from the constants or the constants moved" % phrase
+            )
+
     # The exact wrong figure, caught by name. If this string ever comes back, it is the same
     # contradiction a reader has had to find by hand twice.
     additions = read(os.path.join("assets", "ADDITIONS.md"))
@@ -168,8 +188,8 @@ def main():
         return 1
 
     print(
-        "docs: %d assets, %d materials, %d unit tests, %s grid all match their documents, and "
-        "every markdown table is rectangular"
+        "docs: %d assets, %d materials, %d unit tests, %s grid all match their documents, the "
+        "river constants match reports/phase2.md, and every markdown table is rectangular"
         % (expected_assets, expected_materials, expected_tests, quoted)
     )
     return 0

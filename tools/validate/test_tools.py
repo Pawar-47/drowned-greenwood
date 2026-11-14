@@ -23,6 +23,7 @@ before deleting it.
 
 import importlib.util
 import os
+import re
 import sys
 import tempfile
 
@@ -52,6 +53,9 @@ terrain_surfaces = load_module(
 )
 check_scripts = load_module(
     "check_scripts", os.path.join("tools", "validate", "check_scripts.py")
+)
+check_skeletons = load_module(
+    "check_skeletons", os.path.join("tools", "validate", "check_skeletons.py")
 )
 
 
@@ -128,7 +132,8 @@ def test_custom_source_is_unverified_not_project_original():
     """`custom` says a script will make it, not that anyone checked who owns it.
 
     This mapping used to be `project-original`, which was true for terrain and hydrology and false
-    for the fonts, music and audio that share the same `source_tool` — 1,110 of 1,954 records. The
+    for the fonts, music and audio that share the same `source_tool` — 1,110 of the then-current
+    1,954 records. The
     blanket CC0 default had been replaced by a blanket "ours", which is the same mistake wearing a
     different word. `UNVERIFIED` may be planned and may not be built; check_manifest.py enforces
     the second half.
@@ -453,31 +458,22 @@ def test_smoothstep_is_clamped_and_monotonic():
 def test_splat_weights_sum_to_one():
     """Every texel's weights must sum to 1, or the terrain shader darkens or brightens it.
 
-    Reproduces the layer arithmetic the generator uses, for a spread of slopes and heights.
+    Calls the generator's own `splat_weights`. The first version of this test reproduced the layer
+    arithmetic inline instead, so it would have kept passing while the generator drifted away from
+    the copy — which is the same silent-lie pattern as a validator that checks a re-derivation
+    rather than the file.
     """
     for gradient in (0.0, 0.1, 0.3, 0.5, 0.7, 0.9):
         for above_water in (-5.0, 0.0, 2.0, 5.0, 20.0):
-            rock = terrain_surfaces.smoothstep(terrain_surfaces.SLOPE_SCREE,
-                                               terrain_surfaces.SLOPE_ROCK, gradient)
-            loose = (terrain_surfaces.smoothstep(terrain_surfaces.SLOPE_MOSS_EDGE,
-                                                 terrain_surfaces.SLOPE_SCREE, gradient)
-                     * (1.0 - rock))
-            soil = (1.0 - rock) * (1.0 - loose)
-            bog = (1.0 - terrain_surfaces.smoothstep(0.0, terrain_surfaces.BOG_BAND_M,
-                                                     above_water)) * (1.0 - rock)
-            shore = (1.0 - terrain_surfaces.smoothstep(0.0, terrain_surfaces.SHORE_BAND_M,
-                                                       above_water)) * (1.0 - rock) * soil
-            green = soil * (1.0 - bog) * (1.0 - shore)
-            moss = green * 0.5
-            grass = green * 0.5
-            weights = [grass + loose * 0.2, moss, rock, shore * 0.55 + loose * 0.8,
-                       bog * 0.75, shore * 0.45, bog * 0.25, 0.0]
-            total = sum(weights)
-            assert total > 0.0, "all weights are zero at gradient %r height %r" % (
-                gradient, above_water)
-            normalised = [w / total for w in weights]
-            assert abs(sum(normalised) - 1.0) < 1e-9, "weights sum to %r" % sum(normalised)
-            assert all(w >= 0.0 for w in normalised), "a negative weight: %r" % normalised
+            for patchiness in (0.0, 0.45, 1.0):
+                weights = terrain_surfaces.splat_weights(gradient, above_water, patchiness)
+                assert len(weights) == 8, "expected eight layers, got %d" % len(weights)
+                total = sum(weights)
+                assert abs(total - 1.0) < 1e-9, (
+                    "weights at gradient %r, height %r, patchiness %r sum to %r"
+                    % (gradient, above_water, patchiness, total)
+                )
+                assert all(w >= 0.0 for w in weights), "a negative weight: %r" % weights
 
 
 
@@ -644,10 +640,10 @@ def test_wind_lean_is_taken_into_model_space():
         os.path.join(ROOT, "shaders", "tech_wind_include.gdshaderinc"), encoding="utf-8"
     ).read()
     code = re.sub(r"//[^\n]*", "", source)
-    assert "transpose(mat3(model))" in code, (
-        "the gust lean is added in model space without being taken back from world space, so "
-        "every yawed instance leans its own way instead of the forest leaning together. Wind "
-        "the lean through transpose(mat3(model)) before adding it to VERTEX"
+    assert "inverse(mat3(model))" in code, (
+        "the gust lean is added in model space without being taken back from world space and "
+        "instance scale is not removed, so yawed or scaled trees will lean the wrong way or by "
+        "the wrong amount. Convert with inverse(mat3(model)) before adding it to VERTEX"
     )
 
 
@@ -737,6 +733,130 @@ def test_flow_direction_reserves_zero_for_no_flow():
             assert 1 <= encoded <= 255, "direction %r encodes to %d" % ((dx, dy), encoded)
 
 
+def test_current_animal_hierarchies_are_valid():
+    """Every authored animal family must reach its single Root and have complete bilateral bones."""
+    path = os.path.join(ROOT, "assets", "animal_skeleton_definitions.json")
+    families = check_skeletons.load(path)["families"]
+    problems = [
+        problem
+        for family in families
+        for problem in check_skeletons.animal_hierarchy_problems(family)
+    ]
+    assert not problems, "current animal hierarchies are invalid: %r" % problems
+
+
+def test_animal_hierarchy_rejects_unknown_parent_and_missing_mirror():
+    """An unknown parent and an unpaired eye must not pass as a valid rig hierarchy."""
+    family = {
+        "name": "broken animal skeleton",
+        "bones": ["Root", "LeftEye"],
+        "parents": {"LeftEye": "UnknownBone", "Orphan": "Root"},
+    }
+    problems = check_skeletons.animal_hierarchy_problems(family)
+    assert any("unknown bones" in problem for problem in problems), problems
+    assert any("does not reach Root" in problem for problem in problems), problems
+    assert any("no bilateral partner RightEye" in problem for problem in problems), problems
+
+
+def test_depression_fill_opens_a_closed_bowl():
+    """Without filling, the highest-flow cell is a sink and the centreline dies in the middle.
+
+    This is the published failure in miniature. The bowl is level and the rim is high everywhere
+    except one notch, which is what the bog and the carved channel are: a river nine and a half
+    kilometres of valley later descends one metre, which is nothing after 16-bit rounding. D8
+    cannot cross a flat surface at all, so flow accumulates into a single interior cell and stops
+    — and every existing gate passes, because the line it produces does descend and the water
+    level table does sit above the bed.
+    """
+    samples = 7
+    heights = []
+    for y in range(samples):
+        for x in range(samples):
+            if x in (0, samples - 1) or y in (0, samples - 1):
+                # The rim, with the one low notch the river would leave through.
+                heights.append(1000 if (x == 3 and y == 0) else 20000)
+            else:
+                heights.append(1000)
+
+    filled = hydrology.fill_depressions(heights, samples)
+
+    assert all(f >= h for f, h in zip(filled, heights)), "filling lowered a cell"
+    assert filled[3] == 1000, "the outlet notch was raised; it has a way out already"
+    centre = 3 * samples + 3
+    assert filled[centre] > heights[centre], (
+        "the bowl floor was left at its own level, so every cell in it still drains nowhere"
+    )
+
+    downhill = hydrology.compute_downhill(filled, samples)
+    interior_pits = [
+        index
+        for index in range(len(filled))
+        if downhill[index] < 0
+        and (index % samples) not in (0, samples - 1)
+        and (index // samples) not in (0, samples - 1)
+    ]
+    assert not interior_pits, (
+        "cells with no downhill neighbour survived filling: %r" % interior_pits
+    )
+
+
+def test_the_outlet_must_leave_the_map():
+    """The outlet is where the river leaves the world, so it cannot be an inland sink.
+
+    The trace used to start from the highest-flow cell anywhere, which on the published terrain
+    was a hole in the middle of the map collecting 55,733 cells. That is a sink, not an outlet,
+    and a river that ends inland has not left the valley.
+    """
+    samples = 5
+    flow = [1.0] * (samples * samples)
+    sink = 2 * samples + 2
+    flow[sink] = 500.0       # an interior cell that collects almost everything
+    flow[2] = 7.0            # an edge cell with far less water
+
+    outlet = hydrology.choose_outlet(flow, samples)
+
+    assert outlet != sink, "the inland sink was chosen as the outlet again"
+    assert outlet == 2, "expected the highest-flow boundary cell, got %r" % outlet
+    assert (
+        outlet // samples in (0, samples - 1) or outlet % samples in (0, samples - 1)
+    ), "the outlet is not on the boundary"
+
+
+def test_the_splat_anchor_ramps_instead_of_stepping():
+    """A per-texel anchor made every material boundary exactly one texel wide.
+
+    Two adjacent texels whose surface ids differed produced 0.85 against 0.15 for the same layer,
+    so the moss-to-grass gradient the classifier builds over twenty metres became a hard edge, and
+    the agreement gate read higher the sharper it got. The anchor is the map averaged over 3x3, so
+    a boundary texel sees a mixed anchor while an interior texel is untouched.
+    """
+    samples = 7
+    # Columns 0-2 carry layer 0, columns 3-6 carry layer 1: one straight boundary at x = 3.
+    layer_map = [0 if (index % samples) < 3 else 1 for index in range(samples * samples)]
+
+    interior, neighbours_same = terrain_surfaces.anchor_field(layer_map, 1, 3, samples)
+    assert neighbours_same == 8, (
+        "a texel surrounded by its own layer reported %d like neighbours" % neighbours_same
+    )
+    assert abs(interior[0] - 1.0) < 1e-9 and abs(interior[1]) < 1e-9, (
+        "an interior texel no longer anchors entirely to its own layer: %r" % interior
+    )
+
+    left, _ = terrain_surfaces.anchor_field(layer_map, 2, 3, samples)
+    right, _ = terrain_surfaces.anchor_field(layer_map, 3, 3, samples)
+    assert left[0] < 0.999, (
+        "a texel beside a different surface still takes all of its own layer (%r), so the "
+        "boundary is one texel wide again" % (left,)
+    )
+    assert right[0] > 0.001, (
+        "the anchor falls to zero across the boundary (%r): that is the hard step this replaced"
+        % (right,)
+    )
+    assert abs(left[0] + left[1] - 1.0) < 1e-9, (
+        "the anchor over land no longer sums to 1: %r" % (left,)
+    )
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -775,10 +895,18 @@ TESTS = [
     ("generators: PNG rejects 16-bit colour", test_png_rejects_sixteen_bit_colour),
     ("terrain surfaces: smoothstep is clamped", test_smoothstep_is_clamped_and_monotonic),
     ("terrain surfaces: splat weights sum to one", test_splat_weights_sum_to_one),
+    ("terrain surfaces: the anchor ramps not steps", test_the_splat_anchor_ramps_instead_of_stepping),
     ("hydrology: flow accumulates upstream", test_flow_accumulation_counts_upstream_area),
     ("hydrology: downhill picks the steepest", test_compute_downhill_picks_the_steepest_lower_neighbour),
     ("hydrology: flow conserves cells", test_flow_accumulation_conserves_cells),
     ("hydrology: direction reserves zero", test_flow_direction_reserves_zero_for_no_flow),
+    ("hydrology: a closed bowl is filled", test_depression_fill_opens_a_closed_bowl),
+    ("hydrology: the outlet leaves the map", test_the_outlet_must_leave_the_map),
+    ("animals: current hierarchies are valid", test_current_animal_hierarchies_are_valid),
+    (
+        "animals: unknown parent and missing mirror fail",
+        test_animal_hierarchy_rejects_unknown_parent_and_missing_mirror,
+    ),
 ]
 
 

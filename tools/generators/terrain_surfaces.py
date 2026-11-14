@@ -12,6 +12,12 @@ sharp. Instead the weights are continuous functions of the same quantities the c
 slope and height — so they blend smoothly by construction and sharply where the terrain itself is
 sharp. A rock face and a meadow meet along a slope threshold, not along a Gaussian.
 
+The surface-ID map then anchors those weights, because the map is the authority for which surface
+a cell is — a footstep should not sound like grass over visible gravel. The anchor is that map's
+own layer averaged over the 3x3 neighbourhood, so it ramps across a boundary instead of stepping
+across one texel; a per-texel one-hot anchor is what made the first version a hard-edged
+patchwork, and it is why the agreement figure was 100 % and the terrain still looked wrong.
+
 Outputs:
   terrain_normalmap_master   RGB8, 1025², tangent-space normals from the heightmap
   terrain_splat_0            RGBA8, 1025², weights for grass, moss, rock, gravel
@@ -70,6 +76,9 @@ BOG_BAND_M = 6.0
 # The macro-noise map is tiled, so it is a power of two rather than one texel wider than one: a
 # 1025-wide tile repeats its first column at the seam and doubles a texel wherever it wraps.
 MACRO_SIZE = 1024
+# One share of a 3x3 neighbourhood. The anchor below is an average over nine texels, so each
+# contributes exactly this much; spelling it out keeps the anchor's total provable at 1.0.
+ONE_NINTH = 1.0 / 9.0
 
 
 def smoothstep(edge0, edge1, x):
@@ -122,6 +131,80 @@ def gradient_at(metres, x, y):
     dx = metres[y * SAMPLES + x1] - metres[y * SAMPLES + x0]
     dy = metres[y1 * SAMPLES + x] - metres[y0 * SAMPLES + x]
     return (dx / run_x if run_x else 0.0), (dy / run_y if run_y else 0.0)
+
+
+def splat_weights(gradient, above_water, patchiness):
+    """The eight layer weights for one texel, before the surface-ID map has its say.
+
+    Continuous in every input, which is the whole point: a rock face and a meadow meet along a
+    slope threshold, not along a Gaussian, so the weights ramp smoothly and stay sharp exactly
+    where the terrain itself is sharp.
+
+    Split out of the pixel loop so the test suite exercises this function rather than a copy of
+    it. The first version of the test reproduced the arithmetic inline, which would have kept
+    passing if the generator drifted underneath it — the same silent-lie pattern the rest of the
+    validators exist to stop.
+    """
+    # Rock where it is steep. This is the sharp edge in the map, and it is sharp because the
+    # terrain is: a cliff face does not have a soft border.
+    rock = smoothstep(SLOPE_SCREE, SLOPE_ROCK, gradient)
+    loose = smoothstep(SLOPE_MOSS_EDGE, SLOPE_SCREE, gradient) * (1.0 - rock)
+    soil = (1.0 - rock) * (1.0 - loose)
+
+    # Mud in the bog, fading out above the waterline.
+    bog = (1.0 - smoothstep(0.0, BOG_BAND_M, above_water)) * (1.0 - rock)
+    # Sand and gravel on the shore band, above the waterline.
+    shore = (1.0 - smoothstep(0.0, SHORE_BAND_M, above_water)) * (1.0 - rock) * soil
+
+    # What is left over is moss or grass, split by the patchiness field rather than by height, so
+    # the boundary wanders.
+    green = soil * (1.0 - bog) * (1.0 - shore)
+    moss_share = smoothstep(0.35, 0.65, patchiness)
+
+    weights = [
+        green * (1.0 - moss_share) + loose * 0.2,
+        green * moss_share,
+        rock,
+        shore * 0.55 + loose * 0.8,
+        bog * 0.75,
+        shore * 0.45,
+        bog * 0.25,
+        0.0,
+    ]
+    total = sum(weights)
+    if total <= 0.0:
+        return [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    return [w / total for w in weights]
+
+
+def anchor_field(layer_map, x, y, samples=SAMPLES):
+    """The surface-ID map's own layer, averaged over the 3x3 neighbourhood around one texel.
+
+    Returns (anchor, neighbours_same): the eight-entry average, and how many of the eight
+    surrounding texels carry this texel's own layer.
+
+    `layer_map` holds a splat channel index per cell, or None where the surface has no layer of
+    its own (water and paths), so water never drags an anchor onto the ground beside it.
+    """
+    anchor = [0.0] * 8
+    own = layer_map[y * samples + x]
+    neighbours_same = 0
+    for offset_y in (-1, 0, 1):
+        near_y = y + offset_y
+        if not 0 <= near_y < samples:
+            continue
+        base = near_y * samples
+        for offset_x in (-1, 0, 1):
+            near_x = x + offset_x
+            if not 0 <= near_x < samples:
+                continue
+            near = layer_map[base + near_x]
+            if near is None:
+                continue
+            anchor[near] += ONE_NINTH
+            if near == own and (offset_x or offset_y):
+                neighbours_same += 1
+    return anchor, neighbours_same
 
 
 def main():
@@ -178,6 +261,9 @@ def main():
         for index, (_name, surface_id) in enumerate(SPLAT_LAYERS)
         if surface_id != 0
     }
+    # The same decision, one entry per cell, so the anchor can be averaged over a neighbourhood
+    # without re-reading the texture for every texel.
+    layer_map = [LAYER_FOR_ID.get(surface_id) for surface_id in surface_ids]
 
     # Large-scale variation, so the terrain does not read as one uniform material at distance.
     # Generated at 256 and upsampled: macro noise is by definition low frequency.
@@ -197,6 +283,11 @@ def main():
     splat1_rows = []
     land_agreed = 0
     land_total = 0
+    # Agreement measured over land cells whose whole 3x3 neighbourhood carries one layer. Those
+    # texels are untouched by the change above and must still agree with the map 100 % of the
+    # time, so a regression in the anchoring cannot hide inside the boundary band.
+    interior_agreed = 0
+    interior_total = 0
     for y in range(SAMPLES):
         normal_row = []
         splat0 = []
@@ -221,51 +312,34 @@ def main():
 
             gradient = math.hypot(gx, gy)
             above_water = metres[cell] - water_level_m
+            weights = splat_weights(gradient, above_water, patchiness[y][x])
 
-            # Rock where it is steep. This is the sharp edge in the map, and it is sharp because
-            # the terrain is: a cliff face does not have a soft border.
-            rock = smoothstep(SLOPE_SCREE, SLOPE_ROCK, gradient)
-            loose = smoothstep(SLOPE_MOSS_EDGE, SLOPE_SCREE, gradient) * (1.0 - rock)
-            soil = (1.0 - rock) * (1.0 - loose)
-
-            # Mud in the bog, fading out above the waterline.
-            bog = (1.0 - smoothstep(0.0, BOG_BAND_M, above_water)) * (1.0 - rock)
-            # Sand and gravel on the shore band, above the waterline.
-            shore = (1.0 - smoothstep(0.0, SHORE_BAND_M, above_water)) * (1.0 - rock) * soil
-
-            # What is left over is moss or grass, split by the patchiness field rather than by
-            # height, so the boundary wanders.
-            green = soil * (1.0 - bog) * (1.0 - shore)
-            moss_share = smoothstep(0.35, 0.65, patchiness[y][x])
-            moss = green * moss_share
-            grass = green * (1.0 - moss_share)
-
-            mud = bog * 0.75
-            clay = bog * 0.25
-            sand = shore * 0.45
-            gravel = shore * 0.55 + loose * 0.8
-            # `loose` ground that is not gravel still needs to be assigned somewhere.
-            grass += loose * 0.2
-
-            weights = [grass, moss, rock, gravel, mud, sand, clay, 0.0]
-            total = sum(weights)
-            if total <= 0.0:
-                weights = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            else:
-                weights = [w / total for w in weights]
-
-            # Anchor the smooth weights to the surface-ID map. The map is the decision; this is its
-            # rendering. 85 % of the weight goes to the map's own layer, so the dominant splat is
-            # the surface the map names, and the remaining 15 % keeps the boundary soft.
-            layer = LAYER_FOR_ID.get(surface_ids[cell])
+            # Anchor the smooth weights to the surface-ID map. The map is the decision; this is
+            # its rendering.
+            #
+            # The anchor is the map's own layer AVERAGED over the 3x3 neighbourhood, not a one-hot
+            # per texel. The one-hot version added 0.85 of a cell's weight to whichever layer that
+            # single texel named, so two adjacent texels with different ids produced 0.85 against
+            # 0.15 for the same layer: a one-texel seam along every material boundary in the
+            # world, which is a hard-edged patchwork at the 20 m feature scale the classifier
+            # actually works at. It was also self-reinforcing, because the agreement gate read
+            # higher the sharper the seam got. Averaging first means the anchor ramps across the
+            # boundary, while a texel surrounded by its own layer still gets exactly the weights
+            # it had before — so the interior of every patch is unchanged and only its edge moves.
+            layer = layer_map[cell]
+            anchor, neighbours_same = anchor_field(layer_map, x, y)
             if layer is not None:
-                weights = [w * 0.15 for w in weights]
-                weights[layer] += 0.85
+                weights = [w * 0.15 + 0.85 * a for w, a in zip(weights, anchor)]
                 total = sum(weights)
                 weights = [w / total for w in weights]
                 land_total += 1
+                interior = neighbours_same == 8
+                if interior:
+                    interior_total += 1
                 if max(range(8), key=lambda i: weights[i]) == layer:
                     land_agreed += 1
+                    if interior:
+                        interior_agreed += 1
 
             # Bytes have to sum to 255 exactly. They summed to 253-258 because each channel was
             # rounded on its own after normalising in floats; the residual goes on the dominant
@@ -389,7 +463,16 @@ def main():
         "splat_id_agreement_percent": round(100.0 * land_agreed / land_total, 2)
         if land_total
         else 0.0,
+        # Interior cells are the ones the anchor cannot soften, because all nine texels of the
+        # neighbourhood name one layer. They must agree with the map every time; if this figure
+        # drops, the anchoring or the layer mapping is broken rather than merely smooth.
+        "splat_id_agreement_interior_percent": round(
+            100.0 * interior_agreed / interior_total, 2
+        )
+        if interior_total
+        else 0.0,
         "land_cells_compared": land_total,
+        "interior_land_cells": interior_total,
         "splat_sum": 255,
     }
 

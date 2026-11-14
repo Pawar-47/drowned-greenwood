@@ -101,11 +101,10 @@ vec3 wind_offset(vec3 vertex, vec4 vertex_color, mat4 model) {
 	// The lean is a WORLD-space direction — the flowmap is sampled with world XZ — but it is
 	// added to VERTEX, which is model space. An instance yawed by the scatter would otherwise
 	// rotate its lean with itself, and the forest, which leans one way here, would lean in
-	// every direction at once. transpose(mat3(model)) is the inverse of the rotation part for
-	// any rotation+scale matrix, which is all a direction needs; non-uniform scale would bend
-	// the lean slightly, which is invisible in wind.
+	// every direction at once. The full inverse basis converts world displacement back to model
+	// space and removes instance scale too: transpose(model) is only correct for pure rotation.
 	vec3 lean_world = vec3(gust_dir.x, 0.0, gust_dir.y);
-	vec3 offset = (transpose(mat3(model)) * lean_world) * (sway * trunk + branch_move * branch);
+	vec3 offset = (inverse(mat3(model)) * lean_world) * (sway * trunk + branch_move * branch);
 	// Leaf flutter is perpendicular and vertical, which is what makes leaves shimmer rather
 	// than slide sideways.
 	offset += vec3(flutter, flutter * 0.6, flutter * 0.4) * leaf;

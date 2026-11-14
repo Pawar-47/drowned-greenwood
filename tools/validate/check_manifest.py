@@ -239,21 +239,42 @@ def main():
                 % (record["name"], record["status"], ", ".join(missing))
             )
 
-    # How much of the plan depends on generators that do not exist yet.
+    # How much of the plan depends on a generator that has not been written.
     #
-    # `source_tool: custom` means "one of our own scripts makes this". No script in
-    # tools/generators/ exists — that directory is planned, not present — and Phase 0 tested no
-    # tool that could produce these assets. So every custom asset is unbuildable today, and the
-    # number is large enough that it should be visible on every run rather than discovered in
-    # Phase 2. Not a failure: a plan may schedule work that is not written yet. A failure only
-    # if one of them claims to be built, which the evidence check above already catches.
+    # `source_tool: custom` means "one of our own scripts makes this". Three scripts do exist now
+    # — terrain_maps, hydrology and terrain_surfaces — and between them they produce every one of
+    # the twelve terrain products. The rest of that set — fonts, music, audio, and all the Phase
+    # 3-9 geometry — has no generator at all, which is a schedule rather than a defect: a plan may
+    # queue work that is not written yet.
+    #
+    # This used to be gated on `not os.path.isdir(tools/generators)`, with a comment asserting the
+    # directory was "planned, not present". It is present, the warning had therefore never fired,
+    # and the comment was describing a repository two phases out of date. Counting what is
+    # actually there keeps the ratio visible on every run, and the evidence check above is what
+    # turns it into a failure the moment one of these claims to be built.
     generators_dir = os.path.join("tools", "generators")
+    generators = sorted(
+        name
+        for name in os.listdir(generators_dir)
+        if name.endswith(".py") and name != "common.py"
+    ) if os.path.isdir(generators_dir) else []
     custom = [r["name"] for r in assets if r.get("source_tool") == "custom"]
-    if custom and not os.path.isdir(generators_dir):
+    if custom:
+        shipped = [
+            r["name"] for r in assets
+            if r.get("source_tool") == "custom" and r.get("status") != "pending"
+        ]
         print(
-            "warning: %d of %d assets (%.0f%%) are `source custom` and no generator exists yet "
-            "(%s is not present), so none of them can be built today"
-            % (len(custom), len(assets), 100.0 * len(custom) / len(assets), generators_dir),
+            "warning: %d of %d assets (%.0f%%) are `source custom`; %d have a built record, and "
+            "%d generator(s) exist (%s) for the rest of the plan"
+            % (
+                len(custom),
+                len(assets),
+                100.0 * len(custom) / len(assets),
+                len(shipped),
+                len(generators),
+                ", ".join(generators) if generators else "none",
+            ),
             file=sys.stderr,
         )
 

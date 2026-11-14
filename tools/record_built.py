@@ -114,12 +114,8 @@ def main():
         for asset in report.get("assets", []):
             name = asset["name"]
             if declared is not None and name not in declared:
-                # A generator may emit more than the plan names — the two splat maps are files of
-                # the `terrain_splat_map_set` record rather than records of their own. Say so
-                # every run instead of writing evidence the manifest would then reject.
-                print(
-                    "not declared in the manifest, so no built evidence recorded: %s" % name,
-                    file=sys.stderr,
+                problems.append(
+                    "%s: generator report names an asset the manifest does not declare" % name
                 )
                 continue
             path = find_file(args.dir, name)
