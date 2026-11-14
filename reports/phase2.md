@@ -324,6 +324,16 @@ Two more findings from the same review, both visual rather than structural:
 None of that has been measured yet: 1.3.0 is the version the next publish run exercises, and the
 gates above are what will say whether the numbers are right.
 
+The first 1.3.0 publish run got further than any before it. The generators ran, the river gates
+passed, the manifest and the docs passed, and it failed on the last pair check instead: **113 texels
+of 1,050,625** were water in the surface-ID map and dry in the depth mask, first at x=306 y=11. Both
+files obeyed their own rule. Zero in the depth channel means "no water" to every reader, and over
+255 counts of an 8 m range one count is 3 cm — so a shoreline texel 4 mm deep rounded to dry. The
+encoder now guarantees a wet texel takes at least one count, so the two files agree by construction,
+and a unit test holds it. It is worth saying plainly what this run did and did not prove: it proved
+the river model and the gates work, and it did not prove the maps are committed yet, because the job
+stopped before the push to `staging`.
+
 `hydrology.py` and `terrain_surfaces.py` import the water rule from `terrain_maps.py` rather than
 restating it, so the depth mask, the surface-ID map and the splat shore band cannot disagree — the
 same argument `terrain_meta.json` makes for the heightmap's scale.

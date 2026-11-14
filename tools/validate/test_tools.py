@@ -968,6 +968,21 @@ def test_the_river_leaves_the_lake_at_the_lake_level():
     assert terrain.river_surface_m(0.0) < lake - 2.0
 
 
+def test_a_wet_texel_never_encodes_as_dry():
+    """R = 0 means "no water"; a shoreline texel must not round down to it.
+
+    The depth range is 0..8 m over 255 counts, so one count is 3 cm. A texel 4 mm deep rounds to
+    zero and reads as dry, which made the surface-ID map and this mask disagree about 113 edge
+    texels on the first 1.3.0 publish run — both files were right by their own rule, and the pair
+    was not.
+    """
+    assert hydrology.encode_depth(False, 4.0) == 0, "a dry texel encoded as wet"
+    assert hydrology.encode_depth(True, 0.0) == 1, "a wet texel encoded as dry"
+    assert hydrology.encode_depth(True, 0.004) == 1, "a shallow shoreline texel encoded as dry"
+    assert hydrology.encode_depth(True, 4.0) == 128, "half the depth range should be half a count"
+    assert hydrology.encode_depth(True, 100.0) == 255, "a depth past the range should clamp"
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -1013,6 +1028,7 @@ TESTS = [
     ("hydrology: direction reserves zero", test_flow_direction_reserves_zero_for_no_flow),
     ("hydrology: a closed bowl is filled", test_depression_fill_opens_a_closed_bowl),
     ("hydrology: the outlet leaves the map", test_the_outlet_must_leave_the_map),
+    ("hydrology: a wet texel never encodes as dry", test_a_wet_texel_never_encodes_as_dry),
     ("animals: current hierarchies are valid", test_current_animal_hierarchies_are_valid),
     (
         "animals: unknown parent and missing mirror fail",

@@ -32,7 +32,8 @@ real channel's flow.
 
 Outputs:
   terrain_hydrology_mask   RGB8, 1025², R = water depth (0..8 m), G,B = flow direction as a unit
-                           vector (0..255 mapped to -1..1). A vector rather than an angle so that
+                           vector (0..255 mapped to -1..1). R > 0 exactly where there is water: a wet
+                           texel never rounds down to 0, which is what "dry" means to every reader. A vector rather than an angle so that
                            bilinear filtering between neighbouring texels is meaningful.
                            AXIS CONVENTION: G is the east component (cos of the angle, so +G points
                            towards increasing x) and B is the south component (sin, so +B points
@@ -106,6 +107,20 @@ RIVER_FLOW_CELLS = 1200.0
 # what the 1.4-versus-1.2 pair was before they were merged.
 
 SHORE_FALLOFF_M = 4.0
+
+
+def encode_depth(is_water, depth_m, max_depth_m=MAX_MASK_DEPTH_M):
+    """The depth channel's value, with one guarantee: a wet texel never encodes as dry.
+
+    Zero means "no water here" to every reader of this mask — the validator, the water shader, the
+    swimming check — so a shoreline texel 4 mm deep must not round down to it. Plain rounding did
+    exactly that: 113 edge texels came out wet in the surface-ID map and dry in this mask, and the
+    publish gate caught the pair disagreeing. One count out of 255 is 3 cm of depth, which is the
+    finest this encoding can say and still finer than anything that reads it needs.
+    """
+    if not is_water:
+        return 0
+    return max(1, int(round(min(1.0, depth_m / max_depth_m) * 255)))
 
 
 def index(x, y):
@@ -407,7 +422,7 @@ def main():
         row = []
         for x in range(SAMPLES):
             cell = index(x, y)
-            encoded_depth = int(round(min(1.0, depth[cell] / MAX_MASK_DEPTH_M) * 255))
+            encoded_depth = encode_depth(water[cell], depth[cell])
             # Direction as a unit VECTOR in two channels, not an angle in one.
             #
             # An angle does not interpolate: a texel at 10 degrees and one at 350 average to 180,
