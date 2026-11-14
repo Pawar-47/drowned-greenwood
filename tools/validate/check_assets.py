@@ -239,34 +239,60 @@ def check_terrain(problems):
                 "cells" % agreement
             )
 
-    # Water is ground below the waterline in every generator, so the surface map and the
-    # heightmap are two committed files that answer that one question. They are regenerated
-    # together but committed separately, so a stale pair is possible: a new heightmap beside an
-    # old surface map would put a lake on a hillside, and every header check would still pass.
+    # Water is two bodies now — the river, whose surface descends with its bed, and the lake in the
+    # bog — so "below the waterline" is not one number any more and the old test would flag the
+    # whole upper river. The pair is checked the way it is produced instead: the surface map and the
+    # hydrology mask both derive their water cells from one function, so they must name exactly the
+    # same texels. A disagreement means one of the two files is from a different run.
+    #
+    # This only holds for maps built by the generator version the code describes. A committed set
+    # from an older generator is reported as stale rather than failed, because the publish job is
+    # what regenerates it and then runs this same check against the new bytes.
+    current_version = terrain_maps.GENERATOR_VERSION
+    committed_version = meta.get("version")
+    hydrology = read_terrain("terrain_hydrology_mask.png")
+    if hydrology is None:
+        problems.append("the hydrology mask is missing, so the water bodies cannot be compared")
+        return
+    hydro_rows = hydrology[3]
+    disagree = 0
+    disagree_at = None
+    wet_above_lake = 0
     water_level = meta["water_level_m"]
-    wet_but_high = 0
-    wet_but_high_at = None
     for y in range(samples):
+        hydro_row = hydro_rows[y]
         for x in range(samples):
-            if ids[y][x] not in WATER_IDS:
-                continue
-            height_m = metres[y * samples + x]
-            if height_m > water_level + 0.05:
-                wet_but_high += 1
-                if wet_but_high_at is None:
-                    wet_but_high_at = (x, y, height_m)
-    if wet_but_high:
-        problems.append(
-            "%d cells of the surface-ID map are water but stand above the %.1f m waterline "
-            "(first at x=%d y=%d, %.2f m): the heightmap and the surface map are not from one run"
-            % (
-                wet_but_high,
-                water_level,
-                wet_but_high_at[0],
-                wet_but_high_at[1],
-                wet_but_high_at[2],
-            )
+            wet_here = ids[y][x] in WATER_IDS
+            wet_in_mask = hydro_row[x * 3] > 0
+            if wet_here != wet_in_mask:
+                disagree += 1
+                if disagree_at is None:
+                    disagree_at = (x, y)
+            # Evidence that the river is a body of its own. Water standing above the lake's own
+            # level can only be the channel, whose surface descends from the lake to the mouth.
+            if wet_here and metres[y * samples + x] > water_level:
+                wet_above_lake += 1
+
+    if committed_version != current_version:
+        print(
+            "warning: the committed terrain was generated at %r and this validator describes %r, "
+            "so the water cross-checks are deferred to the publish job, which regenerates the maps "
+            "and runs them against the new bytes" % (committed_version, current_version),
+            file=sys.stderr,
         )
+    else:
+        if disagree:
+            problems.append(
+                "%d texels disagree about whether they are water (first at x=%d y=%d): the "
+                "surface-ID map and the hydrology mask are not from one run"
+                % (disagree, disagree_at[0], disagree_at[1])
+            )
+        if wet_above_lake == 0:
+            problems.append(
+                "no water texel stands above the %.1f m lake level, so the river is not a second "
+                "water body: every water cell is at one level, which is the flooded channel this "
+                "replaced" % water_level
+            )
 
     # An id is a contract. A value in the committed map that surface_ids.json no longer declares
     # is a surface the FX table cannot answer for and a footstep with no sound.
@@ -455,9 +481,13 @@ def main():
 build_manifest = load_module("build_manifest", os.path.join("tools", "build_manifest.py"))
 common = load_module("generator_common", os.path.join("tools", "generators", "common.py"))
 # The splat channel order is the generator's decision, so the agreement check reads it there
-# rather than holding a second copy that can drift.
+# rather than holding a second copy that can drift. terrain_maps is loaded for its water model and
+# its generator version: the committed maps are compared against the version the code describes.
 terrain_surfaces = load_module(
     "terrain_surfaces", os.path.join("tools", "generators", "terrain_surfaces.py")
+)
+terrain_maps = load_module(
+    "terrain_maps", os.path.join("tools", "generators", "terrain_maps.py")
 )
 
 

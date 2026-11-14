@@ -99,14 +99,20 @@ SURFACE = {
     "clay": 13,
 }
 
-# Where the water sits. A single level keeps the hydrology honest: a river cannot run uphill, and
-# a basin cannot hold water below the level it drains at.
+# The lake in the bog bowl. This is the surface of ONE water body, not a waterline for the whole
+# map: a river that flows has a surface that descends, and no single level can express one.
 #
-# The valley floor is deliberately ABOVE this level and only the carved river and bog bowl go
-# below it. That is what makes water read as a feature in the land rather than as a sea the land
-# pokes out of.
-WATER_LEVEL_M = 32.0
-DEEP_WATER_M = 22.0
+# Treating it as a global level was the defect the published maps shipped. The carved channel floor
+# lies below the lake — it has to, or the lake could not drain — so "ground below the level" filled
+# the entire channel to one flat sheet. The result was a flooded trench that every gate passed,
+# because each gate asked whether the line descended and whether water sat above its bed.
+#
+# Water is decided per body by water_surface() below. The valley floor (40-62 m) is deliberately
+# ABOVE this level, so the lake cannot spill onto the land.
+WATER_LEVEL_M = 34.0
+# Deep water is a DEPTH, not an absolute height. It was 22 m above sea level, which no texel can
+# reach once the lake sits at 34, so the water_deep surface id was unreachable and dead.
+DEEP_WATER_DEPTH_M = 2.0
 
 # How the height field is composed, in normalised units. The floor sits at 0.20 (40 m) and the
 # noise moves it by 0.11 (22 m), so the valley is 40..62 m — comfortably above the waterline, and
@@ -138,29 +144,34 @@ NOISE_AMPLITUDE = 0.11
 RIM_AMPLITUDE = 0.40
 RIM_POWER = 2.4
 
-# The river. The first version carved a band 0.09 of the map wide — 90 m either side — down by
-# 70 % of the terrain's own height, which is a canyon, not a stream: the measured channel was about
-# 200 m across and ~100 m deep and its floor sat 13 m above the waterline, so most of the river was
-# dry. A river a hunter can step over is 8 m wide, cut a few metres into the valley floor, and it
-# descends from the bog to the outlet so the water on it can actually flow.
-RIVER_HALF_WIDTH_M = 8.0
-# The bank is a floodplain, not a wall. The valley floor sits at 40-62 m and the waterline at 32 m,
-# so the channel is necessarily cut 8-30 m down; over the 24 m bank the first version used, that
-# is a 50 degree wall for the half-kilometre of its length, which alone put the walkable fraction
-# under the gate.
-RIVER_BANK_M = 80.0
+# The river. It has to read as a river at a kilometre across, so it is 44 m wide inside a 140 m
+# floodplain rather than the 16 m stream the first version cut.
+RIVER_HALF_WIDTH_M = 22.0
+# The bank is a floodplain, not a wall: the ground rises from the bed to the valley floor over
+# 140 m, which is what puts the river in a broad valley instead of a slot.
+RIVER_BANK_M = 140.0
 # How wide the rim opens to let the river out. The notch is deliberately much wider than the
-# channel: a rim 100 m high that drops over the 32 m of the bank is a wall, and measured as one.
+# channel: a rim 100 m high that drops over the bank is a wall, and measured as one.
 RIVER_NOTCH_M = 200.0
-# The river's water depth above its bed is NOT defined here. hydrology.py owns it (RIVER_DEPTH_M
-# there) because that is the module that writes the water-level table. A second copy here read 1.4
-# against hydrology's 1.2 and nothing consumed it, which is exactly the drift the sidecar exists
-# to prevent: two numbers with one name, one of them dead.
-# Bed height at the bog and at the northern edge, in metres. Both end below the waterline on
-# purpose: a river whose bed is above lake level is a dry channel, which is what the first
-# published terrain had — a carved trench with a floor 13 m above the water and nothing in it.
-RIVER_BED_SOURCE_M = 30.0
-RIVER_BED_OUTLET_M = 29.0
+
+# The water on the river, and how far it falls. THESE are what make it flow:
+#
+#   * the surface is bed + depth, so it descends with the bed;
+#   * the bed drops 8.4 m from the lake to the mouth — about 12 mm per texel, four 16-bit steps,
+#     which is what D8 needs to find a strictly lower neighbour down the channel.
+#
+# The previous bed fell 1 m over the same valley: 1.4 mm per texel, under one 3 mm step, so the
+# channel was FLAT in the stored heightfield. D8 could not route it, the depression fill raised
+# 696,054 cells (66 % of the map) to the spill level, and the traced centreline came out 1.4 % on
+# water with 361 of 970 segments climbing. Those figures are from the CI run on 1baa3aa, not an
+# estimate: a river's slope is a sampling-rate question as much as a design one.
+RIVER_DEPTH_M = 1.6
+# Just under the lake surface minus the depth, so the river leaves the lake continuously rather
+# than starting above it at a waterfall.
+RIVER_BED_SOURCE_M = 32.4
+# The mouth, on the northern edge, well below the lake: the water falls from the bog to the edge
+# the way a river draining a lake does.
+RIVER_BED_OUTLET_M = 24.0
 
 # The bog bowl, as a radius in u/v units (1.0 is the whole map across).
 BOG_CENTRE_U = 0.30
@@ -193,9 +204,73 @@ def river_centre_u(v):
 
 
 def river_bed_m(v):
-    """Bed height along the river, descending from the bog to the outlet."""
-    t = max(0.0, min(1.0, (BOG_CENTRE_V - v) / BOG_CENTRE_V))
-    return RIVER_BED_SOURCE_M + (RIVER_BED_OUTLET_M - RIVER_BED_SOURCE_M) * t
+    """Bed height along the river, descending from the lake in the bog to the mouth.
+
+    t is 0 at the northern edge and 1 at the bog, so the river runs downhill towards v = 0 and
+    leaves the map there. It used to run the other way across 1 m, which is the flat channel
+    described above the constants.
+    """
+    t = max(0.0, min(1.0, v / BOG_CENTRE_V))
+    return RIVER_BED_OUTLET_M + (RIVER_BED_SOURCE_M - RIVER_BED_OUTLET_M) * t
+
+
+def river_surface_m(v):
+    """The river's water surface: the bed plus its depth. Descending, so the water flows."""
+    return river_bed_m(v) + RIVER_DEPTH_M
+
+
+def river_taper(v):
+    """How much of the channel exists at this v.
+
+    Full strength all the way to the northern edge, so the river reaches the map boundary and
+    leaves through the notch. An earlier version also faded the channel IN over the first 10 % of
+    v, which left the mouth high and dry and made the outlet a cell on the rim instead of the
+    river. The southern end still fades, so the headwater does not end in a wall.
+    """
+    return 1.0 - smoothstep(BOG_CENTRE_V, BOG_CENTRE_V + 0.10, v)
+
+
+def channel_weight(u, v):
+    """How strongly the river carve applies here: 1 on the centreline, 0 outside the floodplain."""
+    taper = river_taper(v)
+    if taper <= 0.0:
+        return 0.0
+    distance_m = abs(u - river_centre_u(v)) * 1000.0
+    return taper * (
+        1.0 - smoothstep(RIVER_HALF_WIDTH_M, RIVER_HALF_WIDTH_M + RIVER_BANK_M, distance_m)
+    )
+
+
+def notch_weight(u, v):
+    """How far the rim drops away along the channel, so the river leaves through a gap."""
+    taper = river_taper(v)
+    if taper <= 0.0:
+        return 0.0
+    distance_m = abs(u - river_centre_u(v)) * 1000.0
+    return taper * (1.0 - smoothstep(0.0, RIVER_NOTCH_M, distance_m))
+
+
+def water_surface(u, v, channel, ground_m):
+    """The height of the water body at this point, or None where there is no water.
+
+    Two bodies, each with its own surface, decided in this order:
+
+      1. The river. Tested first because its floor is BELOW the lake — that is how a lake drains —
+         so a plain height test would call the whole channel "lake" and flatten it to one level,
+         which is exactly what the published maps did.
+      2. The lake in the bog, wherever the ground is below its surface. The valley floor sits
+         well above it, so this cannot spill onto the land.
+
+    Water is a body, not a waterline. Everything that needs to know where the water is — the
+    surface classifier, hydrology's depth mask, the splat shore band — calls this one function
+    rather than keeping its own rule, so they cannot disagree.
+    """
+    if channel > 0.0:
+        surface = river_surface_m(v)
+        return surface if ground_m < surface else None
+    if ground_m < WATER_LEVEL_M:
+        return WATER_LEVEL_M
+    return None
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -240,6 +315,10 @@ def shape_height(base, valley):
     rim" makes each one tunable and the arithmetic visible.
     """
     field = []
+    # Where the river carve reaches, kept beside the height. Hydrology and terrain_surfaces need
+    # the same weights to decide where the water is, and recomputing them from the helpers keeps
+    # the three files in step; carrying them here keeps the generator from doing it twice.
+    channel_field = []
     for y in range(SAMPLES):
         # Divide by CELLS, not CELLS - 1. There are CELLS cells across and SAMPLES = CELLS + 1
         # samples, so sample x sits at x/1024 of the way across the kilometre. Dividing by 1023
@@ -249,32 +328,21 @@ def shape_height(base, valley):
         # tenth of a percent is invisible in a hillshade and quite capable of moving a river.
         v = y / CELLS
         row = [0.0] * SAMPLES
+        channel_row = [0.0] * SAMPLES
         for x in range(SAMPLES):
             u = x / CELLS
 
-            # The river channel, computed before the rim because the rim has to open for it. A
-            # river leaves a valley through a notch; cutting a slot straight through the rim
-            # instead put a 150 m wall either side of the water at the map edge, which is exactly
-            # what the measured 13.3 m neighbour step was.
+            # The channel and the notch come from the shared helpers, because hydrology and
+            # terrain_surfaces have to reach the same answer about where the water is. A second
+            # copy of this arithmetic here is how two files end up describing one river differently.
             #
-            # `taper` fades the channel in and out along v rather than switching it on at a row.
-            # Both previous versions ended the carve with an `if` on v, and each one left a cliff
-            # at that row: that is the same fault twice, so the boundary is a smoothstep now.
-            taper = smoothstep(0.0, 0.10, v) * (1.0 - smoothstep(BOG_CENTRE_V, BOG_CENTRE_V + 0.10, v))
-            channel = 0.0
-            notch = 0.0
-            bed_norm = 0.0
-            if taper > 0.0:
-                distance_m = abs(u - river_centre_u(v)) * 1000.0
-                channel = taper * (
-                    1.0 - smoothstep(RIVER_HALF_WIDTH_M, RIVER_HALF_WIDTH_M + RIVER_BANK_M, distance_m)
-                )
-                # The notch is much wider than the channel on purpose. The rim is 70-150 m high,
-                # so scaling it by a weight that changes over the 32 m of the bank put an 8 m step
-                # per texel into the map — measured at x=299, y=99, 91.9 m against 99.9 m. The
-                # valley opens over 200 m, which is a slope rather than a wall.
-                notch = taper * (1.0 - smoothstep(0.0, RIVER_NOTCH_M, distance_m))
-                bed_norm = river_bed_m(v) / MAX_HEIGHT_M
+            # Both are computed before the rim, because the rim has to open for the channel: a
+            # river leaves a valley through a notch, and cutting a slot straight through the rim
+            # instead put a 150 m wall either side of the water at the map edge.
+            channel = channel_weight(u, v)
+            notch = notch_weight(u, v)
+            bed_norm = river_bed_m(v) / MAX_HEIGHT_M
+            channel_row[x] = channel
 
             # Distance from the centre, 0 at the middle and 1 at the edge. The world is a valley,
             # so height rises towards the rim. The power concentrates the rise near the edge and
@@ -315,6 +383,7 @@ def shape_height(base, valley):
 
             row[x] = max(0.0, min(1.0, h))
         field.append(row)
+        channel_field.append(channel_row)
 
     # One 3x3 smoothing pass, and the reason is measurable. The fractal noise is generated at 256
     # and upsampled bilinearly, so its gradient is piecewise constant: two adjacent texels a metre
@@ -333,7 +402,7 @@ def shape_height(base, valley):
                 for xx in (x0, x, x1):
                     total += field[yy][xx]
             smoothed[y][x] = total / 9.0
-    return smoothed
+    return smoothed, channel_field
 
 
 def height_metres(normalised):
@@ -359,15 +428,22 @@ def slope(field, x, y):
     return (gx * gx + gy * gy) ** 0.5
 
 
-def classify_surface(height_m, gradient, biome, noise):
-    """One surface id per cell. Ordered: water wins, then the shore, then what grows there."""
-    if height_m < DEEP_WATER_M:
-        return SURFACE["water_deep"]
-    if height_m < WATER_LEVEL_M:
-        return SURFACE["water_shallow"]
+def classify_surface(height_m, gradient, biome, noise, surface_m, above_water_m):
+    """One surface id per cell. Ordered: water wins, then the shore, then what grows there.
+
+    `surface_m` is the water body's height here, or None where there is no water. `above_water_m`
+    is how far this ground stands above the body it belongs to. Both are passed in because there
+    are two bodies now, and one map-wide waterline cannot describe either of them.
+    """
+    if surface_m is not None:
+        return (
+            SURFACE["water_deep"]
+            if surface_m - height_m > DEEP_WATER_DEPTH_M
+            else SURFACE["water_shallow"]
+        )
 
     # The shoreline is sand or gravel, decided by noise so it is not a uniform ring.
-    if height_m < WATER_LEVEL_M + 1.5:
+    if above_water_m < 1.5:
         return SURFACE["sand"] if noise < 0.6 else SURFACE["gravel"]
 
     if biome & BIOME_BOG:
@@ -389,19 +465,24 @@ def classify_surface(height_m, gradient, biome, noise):
     return SURFACE["grass"]
 
 
-def classify_biome(height_m, gradient, bog_distance, forest_noise):
+def classify_biome(gradient, bog_distance, forest_noise, above_water_m):
+    """The bit field for a cell, measured against the water body it belongs to.
+
+    It used to take the absolute height and compare it with one waterline. With two bodies that
+    would have marked the whole upper river as underwater and put a forest on the lake.
+    """
     bits = 0
-    if bog_distance < BOG_RADIUS_U * 2.0 and height_m < WATER_LEVEL_M + 6.0:
+    if bog_distance < BOG_RADIUS_U * 2.0 and above_water_m < 6.0:
         bits |= BIOME_BOG
-    if height_m >= WATER_LEVEL_M and forest_noise > 0.45:
+    if above_water_m >= 0.0 and forest_noise > 0.45:
         bits |= BIOME_FOREST
     if gradient > SLOPE_ROCK:
         bits |= BIOME_RIDGE
-    if height_m < WATER_LEVEL_M + 2.0:
+    if above_water_m < 2.0:
         bits |= BIOME_RIVERBED
     # Clearings are where the forest noise dips: gaps in the canopy, which is what a hunting game
     # needs to be readable from a distance.
-    if height_m >= WATER_LEVEL_M + 2.0 and forest_noise < 0.28:
+    if above_water_m >= 2.0 and forest_noise < 0.28:
         bits |= BIOME_CLEARING
     return bits
 
@@ -432,7 +513,7 @@ def main():
     forest = bilinear_upsample(forest, SAMPLES)
     detail = bilinear_upsample(detail, SAMPLES)
 
-    field = shape_height(base, valley)
+    field, channel_field = shape_height(base, valley)
 
     height_rows = []
     biome_rows = []
@@ -452,8 +533,12 @@ def main():
         v = y / CELLS
         for x in range(SAMPLES):
             u = x / CELLS
-            h_m = height_metres(field[y][x])
-            height_row.append(int(round(field[y][x] * 65535)))
+            # Classify from the QUANTISED height, not the float. The heightmap is what hydrology
+            # reads, so deciding water from a value no other file can see would let the two
+            # generators disagree by a fraction of a texel along every shoreline.
+            stored = int(round(field[y][x] * 65535))
+            h_m = stored / 65535.0 * MAX_HEIGHT_M
+            height_row.append(stored)
             heights.append(h_m)
 
             gradient = slope(field, x, y)
@@ -461,9 +546,19 @@ def main():
             bog_dy = (v - BOG_CENTRE_V) * 2.0
             bog_distance = (bog_dx * bog_dx + bog_dy * bog_dy) ** 0.5
 
-            biome = classify_biome(h_m, gradient, bog_distance, forest[y][x])
+            channel = channel_field[y][x]
+            surface_m = water_surface(u, v, channel, h_m)
+            # How far this ground stands above the body it belongs to: the river where the carve
+            # reaches, the lake everywhere else. The shore band and the biome bits both need this,
+            # and neither can use one map-wide level any more.
+            reference_m = river_surface_m(v) if channel > 0.0 else WATER_LEVEL_M
+            above_water_m = h_m - reference_m
+
+            biome = classify_biome(gradient, bog_distance, forest[y][x], above_water_m)
             biome_row.append(biome)
-            surface_row.append(classify_surface(h_m, gradient, biome, detail[y][x]))
+            surface_row.append(
+                classify_surface(h_m, gradient, biome, detail[y][x], surface_m, above_water_m)
+            )
 
             # Shape metrics. A format gate passes a terrain with a cliff across it, which is what
             # happened: every check was about bit depth and value ranges, and the hillshade showed
@@ -479,7 +574,7 @@ def main():
                 if step > max_step:
                     max_step = step
                     max_step_at = (x, y, round(h_m, 2), round(heights[(y - 1) * SAMPLES + x], 2))
-            if h_m >= WATER_LEVEL_M:
+            if surface_m is None:
                 land_cells += 1
                 if gradient < math.tan(math.radians(30.0)):
                     land_under_30 += 1
@@ -523,7 +618,12 @@ def main():
             "cells": CELLS,
             "max_height_m": MAX_HEIGHT_M,
             "water_level_m": WATER_LEVEL_M,
-            "deep_water_m": DEEP_WATER_M,
+            "deep_water_depth_m": DEEP_WATER_DEPTH_M,
+            "river_depth_m": RIVER_DEPTH_M,
+            "river_bed_source_m": RIVER_BED_SOURCE_M,
+            "river_bed_outlet_m": RIVER_BED_OUTLET_M,
+            "river_half_width_m": RIVER_HALF_WIDTH_M,
+            "river_bank_m": RIVER_BANK_M,
             "surface_ids": SURFACE,
         }
     )
@@ -547,7 +647,10 @@ def main():
                 "cell_spacing_m": CELL_SPACING_M,
                 "max_height_m": MAX_HEIGHT_M,
                 "water_level_m": WATER_LEVEL_M,
-                "deep_water_m": DEEP_WATER_M,
+                "deep_water_depth_m": DEEP_WATER_DEPTH_M,
+                "river_depth_m": RIVER_DEPTH_M,
+                "river_bed_source_m": RIVER_BED_SOURCE_M,
+                "river_bed_outlet_m": RIVER_BED_OUTLET_M,
                 "heightmap_sha256": sha256_file(height_path),
                 "input_hash": in_hash,
             },
@@ -620,6 +723,12 @@ def main():
             / total,
             2,
         ),
+        # The river's own numbers: a run should say whether it made a river or a trench. The fall
+        # is the drop of the water SURFACE from the lake to the mouth, which is what "flowing"
+        # means here — a flat surface over a sloping bed is a flooded channel, not a river.
+        "river_surface_at_lake_m": round(river_surface_m(BOG_CENTRE_V), 2),
+        "river_surface_at_mouth_m": round(river_surface_m(0.0), 2),
+        "river_fall_m": round(river_surface_m(BOG_CENTRE_V) - river_surface_m(0.0), 2),
     }
 
     text = json.dumps(report, indent=2, sort_keys=True)

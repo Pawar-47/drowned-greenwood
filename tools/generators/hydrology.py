@@ -60,6 +60,19 @@ from common import (  # noqa: E402
     write_png,
 )
 
+# The water itself is terrain_maps' decision: it shapes the channel and sets both water surfaces.
+# Hydrology imports them rather than restating them, so the depth mask, the surface-ID map and the
+# splat shore band cannot disagree about where the water is. This is the argument the sidecar
+# already makes for the heightmap's scale, applied to the water; keeping a second copy of the rule
+# is what let one version call the same texel both water and dry land.
+from terrain_maps import (  # noqa: E402
+    BOG_CENTRE_V,
+    RIVER_DEPTH_M,
+    channel_weight,
+    river_surface_m,
+    water_surface,
+)
+
 CELLS = 1024
 SAMPLES = CELLS + 1
 CELL_SPACING_M = 1000.0 / CELLS
@@ -84,10 +97,9 @@ NEIGHBOURS = (
 # point: about 1,200 m² of catchment, which is a stream rather than a wet patch.
 RIVER_FLOW_CELLS = 1200.0
 
-# A river cell that is above the waterline still holds water, to this depth. Without it the river
-# would appear only where the land happened to dip below the lake level, and the channel carved
-# into the terrain would read as a dry gully.
-RIVER_DEPTH_M = 1.2
+# RIVER_DEPTH_M is terrain_maps' constant and is imported above. It decides the river's surface in
+# both generators, so a second copy here would be two answers to one question — which is exactly
+# what the 1.4-versus-1.2 pair was before they were merged.
 
 SHORE_FALLOFF_M = 4.0
 
@@ -347,19 +359,26 @@ def main():
     downhill = compute_downhill(filled)
     flow = accumulate(filled, downhill)
 
-    # Water: standing where the land is below the waterline, and a channel where enough ground
-    # drains through. Both are needed — a bog is standing water in a flat bowl with almost no
-    # catchment, and a river is a channel that is usually above the lake level.
+    # Water comes from the one function terrain_maps also classifies with, so this mask and the
+    # surface-ID map name the same cells by construction rather than by care. Two bodies: the
+    # river, whose surface descends with its bed, and the lake in the bog, which is level.
+    #
+    # This used to be `ground < water_level_m` — one map-wide waterline. Because the channel floor
+    # has to lie below the lake for the lake to drain at all, that rule flooded the entire channel
+    # to a single flat height. The result was a river that could not flow: its surface was level
+    # for its whole length while its bed descended underneath it.
     water = [False] * len(metres)
     depth = [0.0] * len(metres)
+    surfaces = [None] * len(metres)
     for cell, h_m in enumerate(metres):
-        # Water is defined here by exactly the rule the surface-ID map uses: ground below the
-        # waterline. It used to also count every high-flow cell as water, which reported 5.80 %
-        # water against the surface map's 4.53 % — two answers to one question, which is the same
-        # class of disagreement as two classifications for one cell.
-        if h_m < water_level_m:
+        y, x = divmod(cell, SAMPLES)
+        u = x / CELLS
+        v = y / CELLS
+        cell_surface = water_surface(u, v, channel_weight(u, v), h_m)
+        if cell_surface is not None:
+            surfaces[cell] = cell_surface
             water[cell] = True
-            depth[cell] = min(MAX_MASK_DEPTH_M, water_level_m - h_m)
+            depth[cell] = min(MAX_MASK_DEPTH_M, cell_surface - h_m)
 
     # Flow direction as an angle, quantised to 8 bits. 0 means "no flow" — a pit or a cell that
     # holds water flows nowhere — so the angle is encoded 1..255 to keep 0 free. The first version
@@ -522,11 +541,18 @@ def main():
             "v": point["v"],
             "bed_height_m": point["height_m"],
             # The surface must sit ABOVE the bed, or the water is inside the ground and invisible.
-            # This read `height_m - RIVER_DEPTH_M`, which is a sign error: for the first 226 of
-            # 655 points the surface was 1.2 m below the riverbed and the upper river did not
-            # exist. Where the bed is below the lake level the lake level wins, because the river
-            # is then part of the lake.
-            "water_surface_m": round(max(water_level_m, point["height_m"] + RIVER_DEPTH_M), 2),
+            # It comes from the same function the masks use, so the table cannot describe a river
+            # the terrain does not have. A point whose ground is above its channel's surface — the
+            # trace occasionally leaves the water — falls back to the bed plus the depth, which is
+            # what that reach would hold if it were in the channel.
+            # This read `height_m - RIVER_DEPTH_M` once, a sign error that put the surface 1.2 m
+            # under the riverbed for the first 226 of 655 points.
+            "water_surface_m": round(
+                surfaces[point["y"] * SAMPLES + point["x"]]
+                if surfaces[point["y"] * SAMPLES + point["x"]] is not None
+                else point["height_m"] + RIVER_DEPTH_M,
+                2,
+            ),
         }
         for point in spline
     ]
@@ -582,6 +608,11 @@ def main():
             "outlet_flow_cells": int(flow[outlet]) if outlet >= 0 else 0,
             "river_flow_threshold_cells": int(RIVER_FLOW_CELLS),
             "depressions_filled_cells": sum(1 for a, b in zip(heights, filled) if b != a),
+            # The river's own numbers. A run should say whether it made a river or a flooded
+            # trench: the fall is the drop of the water surface from the lake to the mouth.
+            "river_surface_at_lake_m": round(river_surface_m(BOG_CENTRE_V), 2),
+            "river_surface_at_mouth_m": round(river_surface_m(0.0), 2),
+            "river_fall_m": round(river_surface_m(BOG_CENTRE_V) - river_surface_m(0.0), 2),
             "filled_rise_max_m": round(
                 max((b - a for a, b in zip(heights, filled)), default=0) / 65535.0 * max_height_m,
                 3,

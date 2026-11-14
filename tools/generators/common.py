@@ -30,7 +30,12 @@ import zlib
 # 1.1.0 — sample coordinates are x/CELLS in terrain_maps (they were x/(CELLS-1)); hydrology fills
 #         depressions and takes its outlet from the map boundary; the splat anchor is averaged over
 #         the 3x3 neighbourhood instead of being a per-texel one-hot. Every terrain byte changes.
-GENERATOR_VERSION = "1.1.0"
+# 1.2.0 — water is two bodies with their own surfaces, not one map-wide waterline. The river's bed
+#         falls 8.4 m from the lake to its mouth so the surface descends and the channel survives
+#         16-bit quantisation, which is what D8 needs to route it; the lake in the bog is level.
+#         hydrology and terrain_surfaces import the water rule from terrain_maps rather than
+#         restating it. Every terrain byte changes again.
+GENERATOR_VERSION = "1.2.0"
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 

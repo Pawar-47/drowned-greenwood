@@ -51,7 +51,7 @@ hashes and value ranges — and a cliff can be perfectly well-formed.
 |---|---|---|
 | A 14–23 m height jump across the map at row 736 | the river carve was cut off by `if v < 0.72`, so the carving stopped and left a wall across its whole width | the carve runs the length of the river through a `smoothstep` bank, tapering at the ends |
 | Hard-edged circles | the rim and bog were discs with threshold edges, and the surface map painted a rock and gravel ring along each | the rim radius and the bog radius are warped by the noise field and blended with a `smoothstep` |
-| A 200 m wide, 100 m deep trench with a dry floor | the channel was `0.09` of the map either side and removed 70 % of the local height | 8 m half-width plus an 80 m bank, blended toward a bed height of 30.0 → 29.0 m, against a 32.0 m water level |
+| A 200 m wide, 100 m deep trench with a dry floor | the channel was `0.09` of the map either side and removed 70 % of the local height | 44 m channel in a 140 m bank, blended toward a bed height of 32.4 → 24.0 m, against a 34.0 m water level at the lake |
 | Water 1.2 m below the riverbed for 226 of 655 points | a sign error: `bed - depth` instead of `bed + depth` | `max(water_level, bed + depth)` |
 | The dominant splat matched the surface map on 46 % of land | slope-and-height weights were computed independently of the ID map | the splats read the ID map and 85 % of each cell's weight goes to its layer; CI gates ≥ 90 % of land — see "The splat seam" below for why that is not 95 % any more |
 | Water counted two ways (5.80 % vs 4.53 %) | hydrology also counted high-flow cells as water | water is ground below the waterline, in both generators |
@@ -62,12 +62,14 @@ Also fixed: the docstring said 0–600 m while the code has always used 200; the
 is 1024 rather than 1025, so it no longer repeats a texel when tiled; and the hydrology header now
 states the axis convention (G is east, B is south, neutral is 128,128).
 
-**Seven shape and consistency gates now run**, because the review was right that CI could not see shape: the largest
+**Nine shape and consistency gates now run**, because the review was right that CI could not see shape: the largest
 height step between neighbouring texels (≤ 6 m), at least 80 % of land under 30°, at least 92 % of
-the inner valley under 30°, the water surface above its bed at every river point, the outlet on the
-map boundary, at least 90 % of the centreline lying on water, and splat/ID agreement over both all
-land (≥ 90 %) and the interior texels whose neighbourhood is one surface (≥ 99.5 %). The inner-valley
-test lets the ridge rim stay steep without flattening the floor the player walks.
+the inner valley under 30°, the water surface above its bed at every river point, the water surface
+falling at least 2 m from the lake to the mouth, the depression fill raising no more than 25 % of the
+map, the outlet on the map boundary, at least 90 % of the centreline lying on water, and splat/ID
+agreement over both all land (≥ 90 %) and the interior texels whose neighbourhood is one surface
+(≥ 99.5 %). The inner-valley test lets the ridge rim stay steep without flattening the floor the
+player walks; the last two river gates are new and both fail on the pre-fix terrain.
 
 
 
@@ -259,13 +261,48 @@ the waterline in the heightmap beside it, every value must be an id `surface_ids
 declares, and every normal-map texel must decode to a unit vector — the contract the flow vectors
 have met since the mask was made RGB, and which the normal map had never been held to.
 
+## The river is a river now
+
+Making the centreline follow the flow was not enough: the maps still showed a flooded trench. The
+reason is a sampling question as much as a design one, and the CI run on `1baa3aa` measured it.
+
+| What that run reported | What it means |
+|---|---|
+| 1.4 % of 971 centreline points on water | the traced line was not on the river |
+| the river climbs at 361 of 970 segments | it followed a filled plateau, not a channel |
+| 696,054 cells filled — 66 % of the map | D8 found no lower neighbour anywhere in the valley |
+
+The bed fell 1 m across the whole valley: **1.4 mm per texel, against the heightmap's 3 mm 16-bit
+step.** The channel's slope did not exist in the stored file. D8 follows only a strictly lower
+neighbour, so a channel that is flat once quantised drains nowhere; the priority-flood then raised
+the interior to the rim's spill level and the trace wandered across that plateau.
+
+Two changes, and for the player they are one:
+
+- **The bed falls 8.4 m** — 32.4 m at the lake to 24.0 m at the mouth, about 12 mm per texel, four
+  stored steps. The channel drains, the fill has almost nothing to do, and the trace follows it.
+- **Water is two bodies, not one waterline.** The river's surface is its bed plus its depth, so it
+  descends from 34.0 m at the lake to 25.6 m at the mouth, while the lake stays level at 34.0 m. A
+  single level could not express both: because the channel floor must lie below the lake for the
+  lake to drain at all, "ground below the level" flooded the channel to one flat sheet.
+
+`hydrology.py` and `terrain_surfaces.py` import the water rule from `terrain_maps.py` rather than
+restating it, so the depth mask, the surface-ID map and the splat shore band cannot disagree — the
+same argument `terrain_meta.json` makes for the heightmap's scale.
+
+Two gates were added for the properties that were missing: the surface must fall at least 2 m from
+the lake to the mouth, and the depression fill must not have to raise more than 25 % of the map.
+Either one fails on the pre-fix terrain, which is the point of adding them after the fact.
+
 ## Not yet done in Phase 2
 
 - `env_weather_<state>` presets and `env_transition_curves.json`
 - rocks, water surfaces, sky panoramas
 - the terrain mesh itself: the heightmap is data, and nothing yet turns it into geometry. This is
   the first asset that needs Blender, and would be the first binary committed.
-- **regenerate and re-record the terrain maps.** Every generator changed in this round —
-  `terrain_maps.py` (sample coordinates), `hydrology.py` (fill and outlet), `terrain_surfaces.py`
-  (the anchor) — so all twelve products' bytes will change, and `GENERATOR_VERSION` is 1.1.0 to say
-  so. Nothing here has been run; the first publish run after this lands is what proves it.
+- **regenerate and re-record the terrain maps.** Every generator changed again this round —
+  `terrain_maps.py` (the river's bed and the two water bodies), and `hydrology.py` and
+  `terrain_surfaces.py`, which now import that rule instead of restating it — so all twelve
+  products' bytes will change and `GENERATOR_VERSION` is 1.2.0 to say so. The 1.1.0 plumbing was
+  measured and it failed (`1baa3aa`: 1.4 % of the centreline on water, 66 % of the map filled);
+  1.2.0 has not been run at all. The publish job's own gates are what will say whether it worked.

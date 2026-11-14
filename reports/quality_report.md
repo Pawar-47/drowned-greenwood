@@ -50,10 +50,12 @@ walkability, river length and splat/ID agreement. These checks validate the gene
 they do not measure model geometry, visual quality on device or every `[HARD-TECH]` criterion in
 section 2A.
 
-The last measurements recorded in `reports/phase2.md` are 43.8 % grass, 21.3 % moss, 17.3 % bare
-rock, 6.3 % water, a 29.1–135.1 m height range, a 321-point descending river centreline, and
-100 % splat/ID agreement over 984,212 land cells. These are report values from the prior generator
-run, not a verification of the unrun changes in this working tree.
+The last measurements recorded in `reports/phase2.md` — 43.8 % grass, 21.3 % moss, 17.3 % bare
+rock, 6.3 % water, a 29.1–135.1 m height range, a 321-point descending centreline and 100 %
+splat/ID agreement — describe generator 1.0.0. Generator 1.1.0 was measured and its river failed:
+1.4 % of 971 centreline points on water, 66 % of the map raised by the depression fill. Generator
+1.2.0, which gives the river its own descending surface, has not been run, so there are no current
+measurements to quote and none are quoted here.
 
 ## Checks that are weaker than they look
 

@@ -46,6 +46,13 @@ from common import (  # noqa: E402
     write_png,
 )
 
+# The water bodies are terrain_maps' decision, imported for the same reason hydrology imports them:
+# the shore band the splats paint has to follow the same river the masks describe.
+from terrain_maps import (  # noqa: E402
+    channel_weight,
+    river_surface_m,
+)
+
 CELLS = 1024
 SAMPLES = CELLS + 1
 CELL_SPACING_M = 1000.0 / CELLS
@@ -292,7 +299,9 @@ def main():
         normal_row = []
         splat0 = []
         splat1 = []
+        v = y / CELLS
         for x in range(SAMPLES):
+            u = x / CELLS
             cell = y * SAMPLES + x
             gx, gy = gradient_at(metres, x, y)
 
@@ -311,7 +320,12 @@ def main():
             )
 
             gradient = math.hypot(gx, gy)
-            above_water = metres[cell] - water_level_m
+            # Height above the water BODY this ground belongs to, not above one map-wide waterline.
+            # The river's surface descends with its bed now, so a single level would call the whole
+            # upper river underwater and paint a mud band along a flowing channel.
+            channel = channel_weight(u, v)
+            reference_m = river_surface_m(v) if channel > 0.0 else water_level_m
+            above_water = metres[cell] - reference_m
             weights = splat_weights(gradient, above_water, patchiness[y][x])
 
             # Anchor the smooth weights to the surface-ID map. The map is the decision; this is

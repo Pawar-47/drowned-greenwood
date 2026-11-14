@@ -319,6 +319,35 @@ jobs:
                 % (coverage["river_points"], coverage["river_on_water_percent"],
                    coverage["outlet_flow_cells"], coverage["depressions_filled_cells"]))
 
+          # The river has to be a river, not a flooded trench. Two numbers decide that, and
+          # neither existed when this defect shipped:
+          #
+          #   * `river_fall_m` is the drop of the water SURFACE from the lake to the mouth. A flat
+          #     surface over a sloping bed is the flooded channel; a falling surface is a river.
+          #   * `depressions_filled_cells` counts what the priority-flood had to raise. When the
+          #     channel's slope is smaller than one 16-bit step per texel it is flat in the stored
+          #     heightmap, D8 cannot route it, and the fill raises most of the map to the spill
+          #     level — 696,054 cells, 66 %, on the run that produced the broken centreline.
+          cells = coverage["samples"] * coverage["samples"]
+          if coverage["river_fall_m"] < 2.0:
+              raise SystemExit(
+                  "the river's surface falls only %.2f m from the lake to its mouth: it is a flat "
+                  "sheet over a sloping bed, which is a flooded channel rather than a flowing river"
+                  % coverage["river_fall_m"]
+              )
+          filled_percent = 100.0 * coverage["depressions_filled_cells"] / cells
+          if filled_percent > 25.0:
+              raise SystemExit(
+                  "%.1f%% of the map (%d of %d cells) had to be filled before flow could be routed: "
+                  "the channel is flatter than the heightmap can store, so D8 finds no lower "
+                  "neighbour and the fill raises the valley to the spill level"
+                  % (filled_percent, coverage["depressions_filled_cells"], cells)
+              )
+          print("river: surface falls %.2f m from the lake (%.2f m) to the mouth (%.2f m), "
+                "%.1f%% of cells filled"
+                % (coverage["river_fall_m"], coverage["river_surface_at_lake_m"],
+                   coverage["river_surface_at_mouth_m"], filled_percent))
+
           # The water has to sit above the bed or it is inside the ground. The first version
           # subtracted the depth instead of adding it, so the upper river was invisible for 226 of
           # 655 points and no other check noticed.

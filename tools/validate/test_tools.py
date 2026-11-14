@@ -857,6 +857,75 @@ def test_the_splat_anchor_ramps_instead_of_stepping():
     )
 
 
+def test_the_river_surface_descends_and_the_lake_does_not():
+    """A river that flows has a surface that falls. A lake's does not.
+
+    The published maps had one waterline, so the channel — whose floor has to lie below the lake
+    for the lake to drain at all — was flooded to a single height. Its surface was level for the
+    whole valley while its bed descended underneath it: a flooded trench, not a river.
+
+    The bed also fell under one 16-bit step per texel, so the slope did not exist in the stored
+    heightmap. D8 found no lower neighbour down the channel, the depression fill raised two thirds
+    of the map, and the traced centreline came out 1.4 % on water. CI run 1baa3aa measured it.
+    """
+    lake = terrain.WATER_LEVEL_M
+    head = terrain.river_surface_m(terrain.BOG_CENTRE_V)
+    mouth = terrain.river_surface_m(0.0)
+
+    assert abs(head - lake) < 1e-9, (
+        "the river starts at %.2f m against a %.2f m lake: a river leaving a lake starts AT the "
+        "lake, or it starts at a waterfall" % (head, lake)
+    )
+    assert head - mouth >= 2.0, (
+        "the surface falls only %.2f m from the lake to the mouth, which is a flat sheet over a "
+        "sloping bed rather than a river" % (head - mouth)
+    )
+
+    previous = None
+    for step in range(0, 101):
+        v = step / 100.0
+        surface = terrain.river_surface_m(v)
+        if previous is not None:
+            assert surface <= previous + 1e-9, (
+                "the river surface rises between v=%.2f and v=%.2f, so it runs uphill"
+                % ((step - 1) / 100.0, v)
+            )
+        previous = surface
+
+    # And the slope has to survive being stored as 16 bits, or D8 cannot see it.
+    texels = terrain.BOG_CENTRE_V * terrain.CELLS
+    per_texel_mm = (head - mouth) / texels * 1000.0
+    stored_step_mm = terrain.MAX_HEIGHT_M * 1000.0 / 65535.0
+    assert per_texel_mm > stored_step_mm, (
+        "the channel falls %.2f mm per texel and the heightmap's smallest step is %.2f mm, so the "
+        "bed is flat once stored and flow cannot be routed down it"
+        % (per_texel_mm, stored_step_mm)
+    )
+
+
+def test_water_is_a_body_not_a_waterline():
+    """Water is decided per body: the channel where the river runs, the lake where the land is low.
+
+    A single waterline cannot express both. It either floods the channel to the lake's level, which
+    is what shipped, or it leaves the lake dry.
+    """
+    lake = terrain.WATER_LEVEL_M
+
+    # Deep in the bog, away from the channel: the lake.
+    assert terrain.water_surface(0.10, 0.68, 0.0, lake - 1.0) == lake
+    # Ordinary valley floor, above the lake: no water, however the lake is set.
+    assert terrain.water_surface(0.10, 0.30, 0.0, lake + 5.0) is None
+
+    # On the channel: the river's own surface, which downstream is well below the lake.
+    v = 0.30
+    river = terrain.river_surface_m(v)
+    assert river < lake, "the river surface is not distinct from the lake at v=%.2f" % v
+    u = terrain.river_centre_u(v)
+    assert terrain.water_surface(u, v, 1.0, river - 0.5) == river
+    # On the channel footprint but above its surface: the bank, and dry.
+    assert terrain.water_surface(u, v, 1.0, river + 0.5) is None
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -907,6 +976,8 @@ TESTS = [
         "animals: unknown parent and missing mirror fail",
         test_animal_hierarchy_rejects_unknown_parent_and_missing_mirror,
     ),
+    ("terrain: the river surface descends", test_the_river_surface_descends_and_the_lake_does_not),
+    ("terrain: water is a body not a waterline", test_water_is_a_body_not_a_waterline),
 ]
 
 
