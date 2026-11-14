@@ -66,30 +66,44 @@ happens when it is broken, because a rule with no consequence is a comment.
 ### Size and history
 
 12. **No file over 20 MB is committed**, and `.blend`, `.hdr` and `.exr` never are. Enforced in
-    `check_scripts.py` on every run, not by habit.
-13. **Binaries reach `main` only through the staging branch after the gates pass.** History
-    rewriting is a last resort with a documented manual path.
-14. **A purge backup never contains a credential.** The token-bearing clone URL is rewritten
+    `check_scripts.py` on every run, not by habit. `main` as a whole stays under 800 MB, against a
+    700 MB target.
+13. **A binary never enters git. Finished categories are versioned ZIP packs on a GitHub Release,
+    and the repository carries the catalogue.** `assets/packs.json` holds each pack's link, the
+    archive's SHA-256 and size, and a hash and size for every file inside it.
+    `tools/fetch_packs.py` downloads and verifies them into the paths `built.json` names, and every
+    CI job runs it before it checks anything; `tools/pack_release.py` builds a deterministic
+    archive. The publish job uploads a pack, **downloads it again and compares the hash**, and only
+    then removes the files from the index — with `check_packs.py --require-untracked` failing the
+    build if a packed file is also tracked. A tag is immutable: re-publishing different bytes under
+    an existing tag fails rather than replacing it. This replaced "binaries reach main only through
+    the staging branch", which was true and not enough — staging still put the bytes in history.
+14. **An asset's path does not depend on where its bytes came from.** A packed asset and a committed
+    one are the same path to every consumer, so moving a category to a pack is a `git rm --cached`
+    and a catalogue entry, not a change to `built.json` or to whatever reads it.
+15. **Removing a committed binary needs a purge, not a delete.** Deleting the file in a later commit
+    leaves the blob in history. `docs/HISTORY_PURGE.md` is the only route, and it is manual.
+16. **A purge backup never contains a credential.** The token-bearing clone URL is rewritten
     before the archive is made, and the archive is scanned before upload.
 
 ### Assets
 
-15. **A definition is not an asset, and an asset is not a shipped asset.** The manifest records
+17. **A definition is not an asset, and an asset is not a shipped asset.** The manifest records
     the plan; the build fills paths, hashes and gate results. "Built" requires a path, a hash,
     an input hash, a tool version and gate results.
-16. **A tool that runs is not a tool that produces usable output.** MTree registering nine
+18. **A tool that runs is not a tool that produces usable output.** MTree registering nine
     operators was not success; generating a tree Godot loads was.
-17. **A mapping written from a convention is a guess until it is diffed against the data.** The
+19. **A mapping written from a convention is a guess until it is diffed against the data.** The
     retarget map was written from Mixamo-style names and is now diffed against the pack's real
     skin joints on every run, as a required probe.
-18. **A third-party action is referenced by commit SHA, never by tag.** A tag is mutable, so `@v4`
+20. **A third-party action is referenced by commit SHA, never by tag.** A tag is mutable, so `@v4`
     is code nobody reviewed running with this repository's token. `check_scripts.py` fails on a
     bare tag.
-19. **A green row must not contain an error.** A probe that falls back to a working path used to
+21. **A green row must not contain an error.** A probe that falls back to a working path used to
     report the failed first attempt's traceback in a PASS row, so `ModuleNotFoundError` appeared
     next to PASS. Detail fields are cleared when they no longer apply.
 
-20. **An audit is answered by a ledger, not from memory.** Every finding an audit makes goes into
+22. **An audit is answered by a ledger, not from memory.** Every finding an audit makes goes into
     `reports/audit_ledger.json` with a state and evidence, or a reason, before any code changes.
     `check_audit_ledger.py` fails the build on a clause with no state or no evidence, so "I dealt
     with that" is a row rather than a recollection. `docs/AUDIT_PROTOCOL.md` states the protocol.

@@ -10,6 +10,14 @@ combined entry. The authored manifest now declares them separately, and the publ
 to require evidence for all 12. That pipeline change has not run yet, so the two splat records remain
 unverified here.
 
+Terrain is also the first category to move to a **release pack** (`docs/RELEASES.md`). The pack is
+cut by the publish job and listed in `assets/packs.json`, with the archive's SHA-256 and every file's;
+`tools/fetch_packs.py` puts the bytes back into `assets/terrain/` before any check or build runs, and
+the publish job removes them from the git index only after the upload has been verified by
+downloading it again. Until that run lands, `main` still carries the twelve products as committed
+files from the 1.0.0 generator, and everything below describes `main` rather than what the generator
+now produces.
+
 Terrain products are not a substitute for the asset classes and quality metrics in section 2A.
 No production GLB models, characters, animation clips or collision meshes are committed under
 `assets/`; Phase 0 probe outputs are not production assets. There is therefore no committed model

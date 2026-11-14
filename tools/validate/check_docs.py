@@ -173,6 +173,16 @@ def main():
             "assets/ADDITIONS.md says 1024², but every terrain map is %s" % quoted
         )
 
+    # Release packs keep binaries out of history, which only works while the documents say what the
+    # mechanism is. A policy with no entry point is how a rule quietly stops being followed.
+    if not os.path.exists(os.path.join(ROOT, "docs", "RELEASES.md")):
+        problems.append("docs/RELEASES.md is missing: nothing describes the release-pack policy")
+    for phrase in ("assets/packs.json", "tools/fetch_packs.py", "tools/pack_release.py"):
+        if phrase not in readme:
+            problems.append(
+                "README.md no longer mentions %s, which is the release-pack mechanism" % phrase
+            )
+
     for directory, _dirs, files in os.walk(ROOT):
         if ".git" in directory:
             continue

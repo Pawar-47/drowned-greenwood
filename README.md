@@ -17,20 +17,24 @@ What exists now, and what is planned. Anything marked *planned* does not exist y
 listed so the intended shape is visible without being mistaken for present.
 
 ```
-assets/          manifest.json (authored list), built.json (built evidence), LICENSES.md, ADDITIONS.md,
-                 skeleton definitions, surface_ids.json, surface_fx_table.json, terrain/ (the maps)
-tools/           build_manifest.py, TOOLS.md, config/materials.json, generators/, phase0/
-                 (probes), validate/ (checks)
+assets/          manifest.json (authored list), built.json (built evidence), packs.json (release
+                 packs), LICENSES.md, ADDITIONS.md, skeleton definitions, surface_ids.json,
+                 surface_fx_table.json, terrain/ (the maps, downloaded from their pack)
+tools/           build_manifest.py, pack_release.py, fetch_packs.py, TOOLS.md,
+                 config/materials.json, generators/, phase0/ (probes), validate/ (checks)
 shaders/         surface_base.gdshader, foliage_base.gdshader, shared includes, SHADER_GLOBALS.md
-docs/            HISTORY_PURGE.md, LESSONS.md, POLICY.md, AUDIT_PROTOCOL.md
+docs/            RELEASES.md, HISTORY_PURGE.md, LESSONS.md, POLICY.md, AUDIT_PROTOCOL.md
 reports/         tool_evaluation.md, quality_report.md, below_target.md, phase2.md
 .github/workflows/  phase0-tool-evaluation, validate, history-purge
 ```
 
 Planned, not present: an APK build workflow (Phase 9). The `staging` branch now exists: the publish
-job in `validate.yml` regenerates the terrain maps on each push to `main`, commits them to `staging`
-only when the bytes changed, and they reach `main` by merging it. The repository is about 11 MB,
-most of it the twelve committed terrain maps in `assets/terrain/`.
+job in `validate.yml` regenerates the terrain maps on each push to `main`, uploads them as one
+versioned pack on a GitHub Release, and commits the catalogue entry and the built evidence to
+`staging` only when the bytes changed; they reach `main` by merging it. The repository is about
+11 MB, and after the first pack it carries no terrain binary at all — only the catalogue that says
+where they are and what they should hash to. `tools/fetch_packs.py` puts them back on disk for any
+job that needs them.
 
 `tools/generators/` holds the asset generators. They are pure standard-library Python — no numpy,
 no Pillow — so there is no third-party dependency to pin, and a heightmap is written by a PNG
@@ -60,6 +64,9 @@ python tools/validate/check_manifest.py   # structure, budgets, licences
 python tools/validate/check_skeletons.py  # bone caps, humanoid hierarchy and left/right symmetry, retarget-map evidence, LOD and cloth budgets, animal hierarchies and coverage
 python tools/validate/check_materials.py  # materials, surface ids, FX table, duplicate shader uniforms
 python tools/validate/check_action_pins.py  # every pinned action SHA resolves through the GitHub API (needs network)
+python tools/fetch_packs.py               # download and verify the packed asset categories from their Releases
+python tools/pack_release.py              # build a deterministic ZIP pack and record it in assets/packs.json
+python tools/validate/check_packs.py      # the pack catalogue: links, hashes, sizes, destinations, no tracked duplicates
 python tools/validate/check_docs.py        # numbers quoted in the docs, the river constants, and markdown table shapes
 python tools/validate/check_audit_ledger.py  # every audit clause has a state and something behind it
 python tools/validate/check_assets.py       # committed assets: FX contract, built hashes and sizes, terrain consistency, normal-map and biome-mask ranges
@@ -96,20 +103,31 @@ The three inputs that make it coherent:
 `main` stays under 800 MB, the absolute cap. The plan's category budgets total **790 MB** against
 a **700 MB** target, so the headroom is 10 MB and it is meant to be visible: `check_manifest.py`
 warns above the target and fails above the cap, rather than letting the overrun be discovered when
-a category overflows. Binaries reach `main` only by merging
-the staging branch after the gates pass. A category that overflows its budget moves to a
-GitHub Release, one tag per category, and every affected asset records its `pack` and
-`sha256`. Prevention first: if history ever has to be rewritten, `docs/HISTORY_PURGE.md` has
-the manual steps, and `.github/workflows/history-purge.yml` is the manual-only equivalent —
-dry-run by default, inputs never interpolated into shell, backup uploaded before anything is
-pushed.
+a category overflows.
+
+**A binary never enters git.** Finished asset categories are published as versioned ZIP packs on
+GitHub Releases, and the repository carries only `assets/packs.json`: the link, the archive's
+SHA-256 and size, and a hash and size for every file inside it. `tools/fetch_packs.py` downloads
+and verifies them into the paths `assets/built.json` already names, and every CI job does that
+before it checks or builds anything, so a packed asset and a committed one are the same path to
+every consumer. `tools/pack_release.py` builds a deterministic archive — sorted entries, fixed
+timestamps — and records it; the publish job uploads it, **downloads it again and compares the
+hash**, and only then removes the files from the git index. A version is immutable: re-running the
+publish job with changed bytes under an existing tag fails rather than replacing it, because a
+version that means two byte sets is worse than a red build. See `docs/RELEASES.md`.
+
+That is also the answer to history: a binary that was never committed cannot need a purge. If one
+does land, `docs/HISTORY_PURGE.md` has the manual steps, and
+`.github/workflows/history-purge.yml` is the manual-only equivalent — dry-run by default, inputs
+never interpolated into shell, backup uploaded before anything is pushed, and `--path` takes the
+files out of every commit rather than only the latest one.
 
 ## Phases (stop and report after each)
 
 | Phase | Content | Status |
 |---|---|---|
 | 0 | Tool smoke tests | **CLOSED — 0 defects, every pin enforced.** Last run on `c179cac`: **60 probes: 59 passed, 1 negative control holding, 0 defects.** Verified end to end: Blender 4.2.23 and 4.5.16 (SHA-256 checked on every job, cache hit or miss), all three renderers, Godot import/load (archive SHA-256 verified), both shader includes compile, **MTree generates a tree that Godot loads**, **MPFB2 builds and rigs a human that Godot loads** (commit-pinned, not tag-pinned), gltfpack `-noq` (archive SHA-256 verified), Infinigen, glTF-Transform, Poly Haven, Quaternius (archive verified; **retarget map measured against the pack: 23 of 23 names match, no unmatched entries**; **rest pose measured from the GLB's own transforms: T-pose, arm elevation −0.0° on both sides**), the **hydrology mask loaded in Godot** (format RGB8, 1025², every direction texel decodes to unit length), and the report gate (it fails the job on a defect). GitHub Actions are pinned to commit SHAs and the static gate refuses a tag. **Two findings the new vertex-colour control produced, both Phase 3 blockers for foliage:** the sphere arrives with `vertex_colours=1223, wind_mask_vertices=0`, so Blender's exporter keeps the RGB channels and drops the ALPHA that carries the wind flag; and the gltfpack `-noq` output arrives with `vertex_colours=0`, so gltfpack drops the attribute entirely and foliage LODs cannot carry a mask. **Carried into later phases, all measured and all over budget:** MTree's raw tree is hundreds of thousands of triangles and tens of MB against a 10k–16k tri hero budget and a 1.5 MB per-species cap (the exact count varies per generated seed — 1,091,354 / 1,228,966 / 1,840,066 have all been measured — so the current figure lives in `reports/tool_evaluation.md` rather than here); MPFB2's human is **36,972 tris / 137 bones** against 12k–18k and 65. Decimation and bone reduction are Phase 3 and Phase 5 work. Quaternius supplies 43 clips and its rig is **Unreal-mannequin named**, not Mixamo; family coverage is **14 of 41** by clip-name token matching, and that figure is wrong in both directions (a false positive on `anim_bow`, a false negative on `anim_run`). See `reports/tool_evaluation.md` |
-| 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | **in progress — material system done.** Done: repo structure, the 1,955-asset manifest, three workflows with enforced concurrency and SHA-pinned actions, eight validator scripts and 47 unit tests, the shared skeleton (56 bones, cloth budget checked) and the verified retarget map, the surface-ID contract and FX table, and the **shared PBR material system**: two shaders, 19 materials, both shaders compiled by the Phase 0 gate. Remaining: nothing named — Phase 1's list is complete, and the open items below are Phase 2+ work |
+| 1 | Repo structure, manifest, workflows, validators, shared PBR material system, **skeleton and retarget definitions** | **in progress — material system done.** Done: repo structure, the 1,955-asset manifest, three workflows with enforced concurrency and SHA-pinned actions, nine validator scripts and 51 unit tests, the shared skeleton (56 bones, cloth budget checked) and the verified retarget map, the surface-ID contract and FX table, and the **shared PBR material system**: two shaders, 19 materials, both shaders compiled by the Phase 0 gate. Remaining: nothing named — Phase 1's list is complete, and the open items below are Phase 2+ work |
 | 2 | Ground/terrain, rocks, water, sky/atmosphere/weather, **weather env presets, hydrology, surface-ID map** | **in progress.** 12 terrain products are present; built.json records 10 of 12 until the next publish run writes both splat records. The 1 km heightmap, biome mask and surface-ID map come from one height field (1025² each, so the three cannot disagree). **Water is two bodies**: a lake in the bog at 34.0 m, and a river 80 m wide and 2.6 m deep whose surface falls from that lake to 26.6 m at its mouth, so it flows — the first version had one flat waterline, which flooded the whole channel to a single level. The two meet at one height by construction: the river's bed holds one depth below the lake from the lake's outlet upwards, so the seam is continuous rather than a 2 m step. Hydrology derives the depth/flow mask, the shore mask, the centreline and the water level table from the heightmap. `validate.yml` runs all three generators and gates composition, the river's descent, the fall of the water surface, the head of the centreline reaching the lake's outlet, the river's wet width against the channel it fills, both water ids existing, the fraction of the map the depression fill had to raise, the river lying on water, the outlet leaving the map, channel counts, the blend-rule contract, the largest height step between neighbouring texels, walkability of the valley floor, and splat/ID agreement over both all land and the texels whose neighbourhood is one surface. Remaining: weather presets, rocks and water surfaces, and the terrain mesh. See `reports/phase2.md` |
 | 3 | Flora: trees, dead wood, shrubs, ferns, ground cover, fungi, crops | pending |
 | 4 | Fauna, hunting loot, animal sign | pending |

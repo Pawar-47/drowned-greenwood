@@ -427,12 +427,12 @@ def check_shader(path):
 
 
 def check_repo_hygiene():
-    """Guard the two limits git itself enforces, before a push discovers them.
+    """Guard the limits git and the brief impose, before a push discovers them.
 
     GitHub blocks a file over 100 MB outright and warns at 50 MB, and the brief sets 20 MB as
-    this project's own ceiling. A binary that slips in is also permanent: it stays in history
-    after a later commit deletes it. Catching it here costs a second; catching it after the push
-    costs a history rewrite.
+    this project's own ceiling and 800 MB for the tracked tree. A binary that slips in is also
+    permanent: it stays in history after a later commit deletes it. Catching it here costs a
+    second; catching it after the push costs a history rewrite.
 
     The source-artifact extensions are here because they must never be committed at all: a
     `.blend` is the authoring file, and `.hdr`/`.exr` are the pre-bake sources. The pipeline
@@ -440,6 +440,8 @@ def check_repo_hygiene():
     """
     problems = []
     max_file = 20 * 1024 * 1024
+    max_total = 800 * 1024 * 1024
+    warn_total = 700 * 1024 * 1024
     forbidden = (".blend", ".blend1", ".blend2", ".hdr", ".exr")
     largest = (0, "")
     total = 0
@@ -467,9 +469,47 @@ def check_repo_hygiene():
                     "%s is a source artifact that must never be committed" % path
                 )
 
+    # The 800 MB cap is on the repository git carries, not on the working tree: a packed asset is
+    # downloaded into the tree by tools/fetch_packs.py and must not count against it, or the gate
+    # would fail for exactly the thing it is asking for. So the cap is measured over `git ls-files`
+    # and the walk total is printed beside it. When git cannot answer, the walk is the only number
+    # there is, and it is used rather than silently skipped.
+    tracked_total = total
+    try:
+        listing = subprocess.run(
+            ["git", "ls-files", "-z"], capture_output=True, text=True, timeout=60
+        )
+    except (OSError, subprocess.SubprocessError):
+        listing = None
+    if listing is not None and listing.returncode == 0:
+        tracked_total = 0
+        for relative in listing.stdout.split("\0"):
+            if not relative:
+                continue
+            try:
+                tracked_total += os.path.getsize(relative)
+            except OSError:
+                pass
+    if tracked_total > max_total:
+        problems.append(
+            "the tracked tree is %.1f MB, over the 800 MB cap; move a completed category to a "
+            "Release pack (docs/RELEASES.md)" % (tracked_total / (1024 * 1024))
+        )
+    elif tracked_total > warn_total:
+        print(
+            "warning: the tracked tree is %.1f MB, above the 700 MB target"
+            % (tracked_total / (1024 * 1024))
+        )
+
     print(
-        "repository: %d files, %.1f MB total, largest %.1f MB (%s)"
-        % (count, total / (1024 * 1024), largest[0] / (1024 * 1024), largest[1] or "none")
+        "repository: %d files, %.1f MB on disk, %.1f MB tracked, largest %.1f MB (%s)"
+        % (
+            count,
+            total / (1024 * 1024),
+            tracked_total / (1024 * 1024),
+            largest[0] / (1024 * 1024),
+            largest[1] or "none",
+        )
     )
     return problems
 

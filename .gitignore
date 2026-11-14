@@ -35,6 +35,12 @@ tools/vendor/
 *.tar.gz
 *.zip
 
+# Packed assets, downloaded from a GitHub Release by tools/fetch_packs.py and listed in
+# assets/packs.json. A binary in git is permanent — deleting it later leaves the blob in history —
+# so the terrain maps are not tracked at all. assets/built.json still names these exact paths, and
+# fetch_packs.py puts the bytes back before any check or build needs them.
+assets/terrain/
+
 # Python
 __pycache__/
 *.py[cod]

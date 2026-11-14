@@ -57,6 +57,9 @@ check_scripts = load_module(
 check_skeletons = load_module(
     "check_skeletons", os.path.join("tools", "validate", "check_skeletons.py")
 )
+pack_release = load_module("pack_release", os.path.join("tools", "pack_release.py"))
+fetch_packs = load_module("fetch_packs", os.path.join("tools", "fetch_packs.py"))
+check_packs = load_module("check_packs", os.path.join("tools", "validate", "check_packs.py"))
 
 
 def manifest_with(**categories):
@@ -983,6 +986,102 @@ def test_a_wet_texel_never_encodes_as_dry():
     assert hydrology.encode_depth(True, 100.0) == 255, "a depth past the range should clamp"
 
 
+def test_the_pack_archive_is_deterministic():
+    """Two runs over the same bytes must produce the same archive, or the hash means nothing.
+
+    A ZIP carries the modification time of every member. Taking that from the filesystem makes the
+    archive differ between two runs, which makes the catalogue's SHA-256 a statement about when it
+    was written rather than about what it holds — and "did this change?" unanswerable.
+    """
+    with tempfile.TemporaryDirectory() as work:
+        source = os.path.join(work, "src")
+        os.makedirs(source)
+        with open(os.path.join(source, "b.txt"), "w", encoding="utf-8") as handle:
+            handle.write("second\n")
+        with open(os.path.join(source, "a.bin"), "wb") as handle:
+            handle.write(b"\x00\x01\x02")
+
+        names = pack_release.collect(source)
+        assert names == ["a.bin", "b.txt"], "the pack did not sort its entries: %r" % (names,)
+
+        one = os.path.join(work, "one.zip")
+        two = os.path.join(work, "two.zip")
+        pack_release.write_zip(source, names, one)
+        pack_release.write_zip(source, names, two)
+        assert pack_release.sha256_file(one) == pack_release.sha256_file(two), (
+            "two packs of the same bytes hashed differently, so the recorded hash is a timestamp"
+        )
+
+        entry = pack_release.build_entry(
+            source, names, "flora", "1.0.0", "assets/flora", "https://example.test/download", one
+        )
+        assert set(entry["files"]) == {"a.bin", "b.txt"}, entry["files"]
+        assert entry["url"] == "https://example.test/download/assets-flora-1.0.0/flora-1.0.0.zip"
+        assert entry["size_bytes"] == os.path.getsize(one)
+
+
+def test_a_pack_whose_file_does_not_match_is_refused():
+    """A truncated archive and a corrupted member are different failures, and both must stop."""
+    with tempfile.TemporaryDirectory() as work:
+        path = os.path.join(work, "thing.bin")
+        with open(path, "wb") as handle:
+            handle.write(b"content")
+
+        pack = {"dest": ".", "files": {"thing.bin": {"sha256": "0" * 64, "size_bytes": 7}}}
+        problems = fetch_packs.verify_directory(work, pack)
+        assert problems and "hashes to" in problems[0], problems
+
+        pack["files"]["thing.bin"] = {
+            "sha256": pack_release.sha256_file(path),
+            "size_bytes": 7,
+        }
+        assert fetch_packs.verify_directory(work, pack) == [], "a matching file was reported as wrong"
+
+        pack["files"]["thing.bin"]["size_bytes"] = 8
+        problems = fetch_packs.verify_directory(work, pack)
+        assert problems and "bytes" in problems[0], problems
+
+
+def test_a_pack_cannot_escape_its_destination():
+    """The archive comes from the network; a `..` in it must not become a write outside the repo."""
+    fetch_packs.safe_members(["assets/terrain/terrain_meta.json"])
+    for unsafe in ("../etc/passwd", "/etc/passwd", "assets/../../outside.txt"):
+        try:
+            fetch_packs.safe_members([unsafe])
+        except SystemExit:
+            continue
+        raise AssertionError("%r was accepted as a safe archive member" % unsafe)
+
+
+def test_the_catalogue_rejects_a_url_that_does_not_follow_from_its_fields():
+    """The link is derived from release_base, tag and asset, so a hand-edited URL is a stale link."""
+    pack = {
+        "name": "flora-1.0.0",
+        "category": "flora",
+        "version": "1.0.0",
+        "tag": "assets-flora-1.0.0",
+        "asset": "flora-1.0.0.zip",
+        "url": "https://example.test/download/assets-flora-1.0.0/old-name.zip",
+        "sha256": "a" * 64,
+        "size_bytes": 10,
+        "dest": "assets/flora",
+        "files": {"x.png": {"sha256": "b" * 64, "size_bytes": 5}},
+    }
+    problems = []
+    check_packs.check_entry(pack, "https://example.test/download", 0, problems)
+    assert any("url is" in problem for problem in problems), problems
+
+    pack["url"] = "https://example.test/download/assets-flora-1.0.0/flora-1.0.0.zip"
+    problems = []
+    check_packs.check_entry(pack, "https://example.test/download", 0, problems)
+    assert problems == [], problems
+
+    pack["dest"] = "../outside"
+    problems = []
+    check_packs.check_entry(pack, "https://example.test/download", 0, problems)
+    assert any("outside assets/" in problem for problem in problems), problems
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -1039,6 +1138,13 @@ TESTS = [
     (
         "terrain: the river leaves the lake at the lake's level",
         test_the_river_leaves_the_lake_at_the_lake_level,
+    ),
+    ("packs: the archive is deterministic", test_the_pack_archive_is_deterministic),
+    ("packs: a mismatched file is refused", test_a_pack_whose_file_does_not_match_is_refused),
+    ("packs: an archive cannot escape its destination", test_a_pack_cannot_escape_its_destination),
+    (
+        "packs: the catalogue rejects a stale URL",
+        test_the_catalogue_rejects_a_url_that_does_not_follow_from_its_fields,
     ),
 ]
 

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "name": "packs",
+  "description": "The binary assets this repository carries as versioned ZIP packs on GitHub Releases instead of in git. Each pack records the archive's SHA-256 and size and a hash and size for every file inside it, so a download is verified twice: once as an archive and once as the files that land on disk. The paths inside `dest` are the same paths assets/built.json names, so a packed asset and a committed one are one path to every consumer — the only difference is who put the bytes there. tools/fetch_packs.py downloads and verifies; tools/pack_release.py builds a pack and records it here; tools/validate/check_packs.py holds this file to its contract.",
+  "release_base": "https://github.com/Pawar-47/drowned-greenwood/releases/download",
+  "packs": []
+}

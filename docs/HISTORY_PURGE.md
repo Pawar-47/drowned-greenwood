@@ -9,12 +9,31 @@ every clone, fork and open pull request. It is the last resort, not the first.
    and arrive on `main` only by merging the staging branch.
 2. Every binary is committed **once**. It is re-committed only when its generator script,
    config or seed changes — which is what the `input_hash` field in the manifest records.
-3. A file that would exceed 20 MB is not committed at all. It becomes a Release asset, and
-   the manifest records its `pack` and `sha256` instead.
+3. **A binary is not committed at all any more.** A finished category is a versioned ZIP pack on a
+   GitHub Release, listed in `assets/packs.json` with the archive's hash and every file's, and
+   downloaded by `tools/fetch_packs.py`. `docs/RELEASES.md` is the policy and the mechanics. The
+   terrain maps were the last binaries in the tree; the publish job removes them from the index
+   after verifying the upload by downloading it back.
 4. `git count-objects -vH` and `du -sh assets/*` are reported after every phase, against the
    budget table, so growth is visible while it is still cheap to fix.
 
 If those four hold, this document is never needed.
+
+## Located in history already
+
+Rule 3 stops new growth; it does not remove what is already there. Each terrain map was committed
+before the packs existed, so `assets/terrain/` still holds about 5 MB of blobs in history after the
+publish job deletes them from the index. That is small enough to leave, and it is not the reason
+this document exists. It becomes the reason once a category of any size lands by mistake.
+
+If you do purge them, one path per file, and the workflow refuses a directory: `git filter-repo`
+takes `--path assets/terrain/terrain_heightmap_master_1km.png` and so on for the twelve products and
+the sidecar. Purging the directory instead would also be correct and is what a manual run would
+shorten to `--path assets/terrain/`; the workflow's own path validation accepts it because it takes
+a relative path, not a glob.
+
+A purge does **not** touch the Release: the pack lives outside git, so the asset survives while its
+committed copy disappears from history. That is the point of the split.
 
 ## When it is needed
 
