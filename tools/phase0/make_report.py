@@ -153,6 +153,8 @@ FAILURE_CONSEQUENCE = {
     "shader_summary": "one or more shader includes failed to compile",
     "godot_hydrology_import": "the mask probe cannot run, so the channel contract stays unchecked in the engine",
     "godot_hydrology_mask": "Godot does not read the mask as depth plus a flow vector, so water depth and current direction are whatever the channels actually are",
+    "weather_presets": "a weather preset does not load as an Environment with a sky, fog and glow, so that state cannot be shown and the weather system has nothing to hand the renderer",
+    "weather_import": "the preset probe cannot run, so every weather state stays unloaded",
     "godot_checksum": "the Godot archive is not pinned to known bytes; a replaced download would run unchecked",
     "gltfpack_checksum": "the gltfpack archive is not pinned to known bytes; a replaced download would run unchecked",
     "quaternius_checksum": "the Quaternius release asset does not match the recorded hash; do not trust the clip inventory until it does",
@@ -262,6 +264,12 @@ REQUIRED_PROBES = {
     # MPFB2 is pinned to a commit now, and a pin nothing verifies is a comment. This fails if a
     # moved tag or a changed fetch produced different code than the commit the pipeline pinned.
     "mpfb2_pin",
+    # The weather presets are the first asset here that is a Godot resource rather than an image.
+    # check_environment.py proves the property names are ones Godot defines; this probe is what
+    # turns "the names are valid" into "the engine loads the file as an Environment". A .tres with
+    # a property Godot does not know loads without complaint, so the static check alone leaves the
+    # failure to a device.
+    "weather_presets",
 }
 
 

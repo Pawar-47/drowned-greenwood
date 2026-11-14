@@ -375,6 +375,22 @@ jobs:
           run_capture shader_compile "$GODOT" --headless --quit-after 600 \
             --path tools/phase0/godot_probe shader_probe.tscn
 
+      - name: Load every weather preset in Godot
+        timeout-minutes: 5
+        run: |
+          set -uo pipefail
+          source tools/phase0/lib.sh
+          GODOT="$PWD/tools/vendor/godot/godot"
+          # check_environment.py proves every property name is one Godot defines; only the engine
+          # can prove the files LOAD as Environments the renderer accepts, and that the profiles
+          # name exactly the presets that exist. The JSON is copied with them for that second half.
+          mkdir -p tools/phase0/godot_probe/env
+          cp assets/env/*.tres assets/env/*.json tools/phase0/godot_probe/env/
+          run_capture weather_import "$GODOT" --headless \
+            --path tools/phase0/godot_probe --import
+          run_capture weather_presets "$GODOT" --headless --quit-after 120 \
+            --path tools/phase0/godot_probe weather_probe.tscn
+
       - name: Probe the hydrology mask in Godot
         timeout-minutes: 10
         run: |

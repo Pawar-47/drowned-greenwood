@@ -23,6 +23,8 @@ export_presets.cfg.bak
 # The Phase 0 shader probe copies the real shaders in at run time and rewrites their include
 # paths; these are generated, never committed.
 tools/phase0/godot_probe/includes/
+# The weather probe copies the presets and the profiles in at run time for the same reason.
+tools/phase0/godot_probe/env/
 tools/phase0/godot_probe/terrain_hydrology_mask.png
 tools/phase0/godot_probe_*/
 
