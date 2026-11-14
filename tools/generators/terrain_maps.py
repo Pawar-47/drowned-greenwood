@@ -144,31 +144,64 @@ NOISE_AMPLITUDE = 0.11
 RIM_AMPLITUDE = 0.40
 RIM_POWER = 2.4
 
-# The river. It has to read as a river at a kilometre across, so it is 44 m wide inside a 140 m
-# floodplain rather than the 16 m stream the first version cut.
-RIVER_HALF_WIDTH_M = 22.0
+# The river. It has to read as a river at a kilometre across — the shape a player names, not a
+# stream they step over — so the channel is 80 m wide inside a 140 m floodplain. The first version
+# cut a 16 m stream, and the version after it cut 44 m, which is a creek at this scale.
+RIVER_HALF_WIDTH_M = 40.0
 # The bank is a floodplain, not a wall: the ground rises from the bed to the valley floor over
 # 140 m, which is what puts the river in a broad valley instead of a slot.
 RIVER_BANK_M = 140.0
-# How wide the rim opens to let the river out. The notch is deliberately much wider than the
-# channel: a rim 100 m high that drops over the bank is a wall, and measured as one.
+# How wide the rim opens to let the river out. It has to exceed the carve it opens for — the channel
+# plus its bank is 180 m — or the rim closes in either side of the channel at the map edge and puts
+# a wall there, which is exactly what an earlier 200 m notch against a 32 m channel was tuned for.
 RIVER_NOTCH_M = 200.0
 
 # The water on the river, and how far it falls. THESE are what make it flow:
 #
 #   * the surface is bed + depth, so it descends with the bed;
-#   * the bed drops 8.4 m from the lake to the mouth — about 12 mm per texel, four 16-bit steps,
-#     which is what D8 needs to find a strictly lower neighbour down the channel.
+#   * the bed drops 7.4 m over the 340 m from the lake's outlet to the mouth — 22 mm per texel,
+#     seven 16-bit steps — which is what D8 needs to find a strictly lower neighbour.
 #
 # The previous bed fell 1 m over the same valley: 1.4 mm per texel, under one 3 mm step, so the
 # channel was FLAT in the stored heightfield. D8 could not route it, the depression fill raised
 # 696,054 cells (66 % of the map) to the spill level, and the traced centreline came out 1.4 % on
 # water with 361 of 970 segments climbing. Those figures are from the CI run on 1baa3aa, not an
 # estimate: a river's slope is a sampling-rate question as much as a design one.
-RIVER_DEPTH_M = 1.6
-# Just under the lake surface minus the depth, so the river leaves the lake continuously rather
-# than starting above it at a waterfall.
-RIVER_BED_SOURCE_M = 32.4
+#
+# 2.6 m is deliberate, not arbitrary: DEEP_WATER_DEPTH_M is 2.0, so a river shallower than that is
+# classified as shallow water for its whole length. At 1.6 m every texel of the channel was
+# water_shallow and the water_deep id existed only in the lake — a river nobody would call deep.
+RIVER_DEPTH_M = 2.6
+
+# Where the river leaves the lake, as a v coordinate. The bowl's floor is 29.6 m and the lake's
+# surface is 34.0 m, so the water body reaches a long way up the valley — and how far depends on the
+# noise that warps the bowl's edge, measured at roughly v = 0.34 to 0.52 across the rows.
+#
+# This is the EARLIEST of those, not the average, and that is the whole point: upstream of it the
+# lake's rule decides the water, so the lake covers the whole basin however the warp falls and the
+# two bodies meet at one height. Picking a value inside the range would leave the downstream part of
+# the basin decided by the river's rule, i.e. a water surface that descends across what a player
+# sees as one lake.
+#
+# It is a design constant with gates behind it rather than a measurement: the head of the
+# centreline must lie on water, its surface must equal the lake's there, and the fall from it to the
+# mouth must be at least 2 m. Moving the bowl without moving this fails the build instead of quietly
+# changing where the lake ends.
+RIVER_HEAD_V = 0.34
+
+# The meander, in u units (1.0 is the whole kilometre across). A straight line reads as a canal, and
+# the drift is what carries the river across the valley rather than down one side of it. One and a
+# half cycles is three visible bends over the river's length — the scale of a river's own curves,
+# not a squiggle.
+RIVER_MEANDER_U = 0.05
+RIVER_MEANDER_CYCLES = 1.5
+RIVER_DRIFT_U = 0.045
+
+# The bed at the lake's outlet, one depth below the lake's surface — DERIVED, not typed, so the two
+# bodies meet at one height and the river leaves the lake at the lake's own level. As a typed 32.4
+# against a 34.0 lake it was the mistake that made the river's surface 2 m below the lake along the
+# reach they share: a groove through the water.
+RIVER_BED_SOURCE_M = WATER_LEVEL_M - RIVER_DEPTH_M
 # The mouth, on the northern edge, well below the lake: the water falls from the bog to the edge
 # the way a river draining a lake does.
 RIVER_BED_OUTLET_M = 24.0
@@ -194,23 +227,38 @@ def smoothstep(edge0, edge1, x):
 def river_centre_u(v):
     """Meandering centreline of the river, as a u coordinate for a given v.
 
-    A straight line reads as a canal. Two low-frequency sine terms make it wander the way water
-    does, and they are functions of v alone so the channel is continuous along its whole length —
-    the previous version cut the carve off at v = 0.72, which put a 14-23 m cliff straight across
-    the map where the carving stopped.
+    A straight line reads as a canal, so the line bends: t runs 0 at the lake's outlet and 1 at the
+    mouth, the sine gives one and a half full bends over that length, and the linear term carries
+    the whole river east as it runs north. The previous version had one small sine and a much
+    larger drift, so the "meander" was a gentle curve — at a kilometre across, a river needs bends
+    a player can see.
+
+    It is a function of v alone, so the channel is continuous along its whole length. An earlier
+    version cut the carve off at v = 0.72, which put a 14-23 m cliff straight across the map where
+    the carving stopped.
     """
-    t = max(0.0, min(1.0, (BOG_CENTRE_V - v) / BOG_CENTRE_V))
-    return BOG_CENTRE_U + 0.035 * math.sin(t * 6.0) + 0.055 * t
+    t = 1.0 - max(0.0, min(1.0, v / RIVER_HEAD_V))
+    return (
+        BOG_CENTRE_U
+        + RIVER_MEANDER_U * math.sin(t * RIVER_MEANDER_CYCLES * 2.0 * math.pi)
+        + RIVER_DRIFT_U * t
+    )
 
 
 def river_bed_m(v):
-    """Bed height along the river, descending from the lake in the bog to the mouth.
+    """Bed height along the river, and the lake's outlet height upstream of it.
 
-    t is 0 at the northern edge and 1 at the bog, so the river runs downhill towards v = 0 and
-    leaves the map there. It used to run the other way across 1 m, which is the flat channel
+    t is 0 at the mouth and 1 at RIVER_HEAD_V, so the bed descends towards v = 0 and the water runs
+    out of the map there. It used to run the other way across 1 m, which is the flat channel
     described above the constants.
+
+    Above RIVER_HEAD_V the bed HOLDS at RIVER_BED_SOURCE_M instead of continuing to climb. That is
+    what makes the two water bodies meet at one height: the river's surface at its outlet is
+    RIVER_BED_SOURCE_M + RIVER_DEPTH_M, which is the lake's level by construction. A bed that kept
+    rising through the bowl would put the river's surface above the lake it drains, and the lake
+    would be the lower body — a waterfall backwards.
     """
-    t = max(0.0, min(1.0, v / BOG_CENTRE_V))
+    t = max(0.0, min(1.0, v / RIVER_HEAD_V))
     return RIVER_BED_OUTLET_M + (RIVER_BED_SOURCE_M - RIVER_BED_OUTLET_M) * t
 
 
@@ -225,7 +273,13 @@ def river_taper(v):
     Full strength all the way to the northern edge, so the river reaches the map boundary and
     leaves through the notch. An earlier version also faded the channel IN over the first 10 % of
     v, which left the mouth high and dry and made the outlet a cell on the rim instead of the
-    river. The southern end still fades, so the headwater does not end in a wall.
+    river.
+
+    It fades OUT at the bowl's centre, NOT at the outlet. A taper at the outlet would raise the
+    carved channel back to the lake's natural bed over its last 50 m, which is a bar of land across
+    the water between the river and the lake — a dam the player can walk over. Running the carve on
+    through the outlet instead leaves a trench under the lake's surface, which costs nothing to look
+    at and keeps the water continuous.
     """
     return 1.0 - smoothstep(BOG_CENTRE_V, BOG_CENTRE_V + 0.10, v)
 
@@ -250,27 +304,41 @@ def notch_weight(u, v):
     return taper * (1.0 - smoothstep(0.0, RIVER_NOTCH_M, distance_m))
 
 
-def water_surface(u, v, channel, ground_m):
+def water_surface(v, channel, ground_m):
     """The height of the water body at this point, or None where there is no water.
 
-    Two bodies, each with its own surface, decided in this order:
+    Two bodies, each with its own rule:
 
-      1. The river. Tested first because its floor is BELOW the lake — that is how a lake drains —
-         so a plain height test would call the whole channel "lake" and flatten it to one level,
-         which is exactly what the published maps did.
-      2. The lake in the bog, wherever the ground is below its surface. The valley floor sits
-         well above it, so this cannot spill onto the land.
+      1. The river — downstream of the lake's outlet, where the carve reaches and the ground is
+         below the river's own surface. That surface is bed + depth, so it descends.
+      2. The lake — upstream of the outlet wherever the ground is below the lake's level. That
+         includes the channel's own outlet reach: the bed holds one depth below the lake there, so
+         the water in it IS the lake's, at the lake's level.
+
+    Where both could apply the higher one wins, which matters because the river's surface is at or
+    below the lake's everywhere.
+
+    The seam is continuous by construction — river_surface_m(RIVER_HEAD_V) == WATER_LEVEL_M — so
+    the two bodies meet at one height instead of stepping. Deciding the whole channel by the
+    river's rule instead, which is what the published maps did, cut a groove through the lake: the
+    river's surface is 2 m below the lake's along the reach the two share, and the lake on either
+    side stood above it.
 
     Water is a body, not a waterline. Everything that needs to know where the water is — the
     surface classifier, hydrology's depth mask, the splat shore band — calls this one function
     rather than keeping its own rule, so they cannot disagree.
     """
-    if channel > 0.0:
-        surface = river_surface_m(v)
-        return surface if ground_m < surface else None
-    if ground_m < WATER_LEVEL_M:
+    river_surface = None
+    if v < RIVER_HEAD_V and channel > 0.0:
+        candidate = river_surface_m(v)
+        if ground_m < candidate:
+            river_surface = candidate
+
+    lake_covers = ground_m < WATER_LEVEL_M and (channel <= 0.0 or v >= RIVER_HEAD_V)
+    if lake_covers and (river_surface is None or WATER_LEVEL_M > river_surface):
         return WATER_LEVEL_M
-    return None
+
+    return river_surface
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -525,6 +593,12 @@ def main():
     land_under_30 = 0
     inner_land = 0
     inner_under_30 = 0
+    # The wet width of the river, one row at a time, over the reach the carve owns. This is the
+    # number a player's eye actually measures: the carved channel is 2 * RIVER_HALF_WIDTH_M wide,
+    # but the water reaches further where the bank shelves below the surface, and it is the water a
+    # player sees, not the constant.
+    river_widths = []
+    river_rows = int(round(RIVER_HEAD_V * CELLS))
 
     for y in range(SAMPLES):
         height_row = []
@@ -547,11 +621,15 @@ def main():
             bog_distance = (bog_dx * bog_dx + bog_dy * bog_dy) ** 0.5
 
             channel = channel_field[y][x]
-            surface_m = water_surface(u, v, channel, h_m)
-            # How far this ground stands above the body it belongs to: the river where the carve
-            # reaches, the lake everywhere else. The shore band and the biome bits both need this,
-            # and neither can use one map-wide level any more.
-            reference_m = river_surface_m(v) if channel > 0.0 else WATER_LEVEL_M
+            surface_m = water_surface(v, channel, h_m)
+            # How far this ground stands above the body it belongs to: the river downstream of the
+            # lake's outlet, the lake from there up. The shore band and the biome bits both need
+            # this, and neither can use one map-wide level any more. A channel texel on the lake
+            # side of the outlet is lake bed, so it is measured against the lake, not against the
+            # river's surface that the lake covers.
+            reference_m = (
+                river_surface_m(v) if channel > 0.0 and v < RIVER_HEAD_V else WATER_LEVEL_M
+            )
             above_water_m = h_m - reference_m
 
             biome = classify_biome(gradient, bog_distance, forest[y][x], above_water_m)
@@ -584,6 +662,15 @@ def main():
                     inner_land += 1
                     if gradient < math.tan(math.radians(30.0)):
                         inner_under_30 += 1
+
+        if y <= river_rows:
+            wet = sum(
+                1
+                for x, value in enumerate(surface_row)
+                if channel_field[y][x] > 0.0
+                and value in (SURFACE["water_shallow"], SURFACE["water_deep"])
+            )
+            river_widths.append(wet * CELL_SPACING_M)
 
         height_rows.append(height_row)
         biome_rows.append(biome_row)
@@ -624,6 +711,11 @@ def main():
             "river_bed_outlet_m": RIVER_BED_OUTLET_M,
             "river_half_width_m": RIVER_HALF_WIDTH_M,
             "river_bank_m": RIVER_BANK_M,
+            "river_notch_m": RIVER_NOTCH_M,
+            "river_head_v": RIVER_HEAD_V,
+            "river_meander_u": RIVER_MEANDER_U,
+            "river_meander_cycles": RIVER_MEANDER_CYCLES,
+            "river_drift_u": RIVER_DRIFT_U,
             "surface_ids": SURFACE,
         }
     )
@@ -651,6 +743,8 @@ def main():
                 "river_depth_m": RIVER_DEPTH_M,
                 "river_bed_source_m": RIVER_BED_SOURCE_M,
                 "river_bed_outlet_m": RIVER_BED_OUTLET_M,
+                "river_head_v": RIVER_HEAD_V,
+                "river_half_width_m": RIVER_HALF_WIDTH_M,
                 "heightmap_sha256": sha256_file(height_path),
                 "input_hash": in_hash,
             },
@@ -687,6 +781,8 @@ def main():
         for value in row:
             surface_histogram[value] = surface_histogram.get(value, 0) + 1
     total = SAMPLES * SAMPLES
+    widths = sorted(river_widths)
+    median_width = widths[len(widths) // 2] if widths else 0.0
     report["coverage"] = {
         "samples": SAMPLES,
         "surface_histogram": {str(k): v for k, v in sorted(surface_histogram.items())},
@@ -724,11 +820,19 @@ def main():
             2,
         ),
         # The river's own numbers: a run should say whether it made a river or a trench. The fall
-        # is the drop of the water SURFACE from the lake to the mouth, which is what "flowing"
-        # means here — a flat surface over a sloping bed is a flooded channel, not a river.
-        "river_surface_at_lake_m": round(river_surface_m(BOG_CENTRE_V), 2),
+        # is the drop of the water SURFACE from the lake's outlet to the mouth, which is what
+        # "flowing" means here — a flat surface over a sloping bed is a flooded channel, not a river.
+        "river_surface_at_lake_m": round(river_surface_m(RIVER_HEAD_V), 2),
         "river_surface_at_mouth_m": round(river_surface_m(0.0), 2),
-        "river_fall_m": round(river_surface_m(BOG_CENTRE_V) - river_surface_m(0.0), 2),
+        "river_fall_m": round(river_surface_m(RIVER_HEAD_V) - river_surface_m(0.0), 2),
+        # What the water actually covers, against what was carved. A river that reads as a river
+        # from a distance is wide on the screen, and "wide" is the wet width rather than the
+        # constant: a shallow carve in a tall bank puts most of the water on a shelf.
+        "river_channel_width_m": round(2.0 * RIVER_HALF_WIDTH_M, 1),
+        "river_wet_width_median_m": round(median_width, 1),
+        "river_wet_width_min_m": round(widths[0], 1) if widths else 0.0,
+        "river_depth_m": RIVER_DEPTH_M,
+        "deep_water_depth_m": DEEP_WATER_DEPTH_M,
     }
 
     text = json.dumps(report, indent=2, sort_keys=True)
@@ -739,6 +843,15 @@ def main():
     print("terrain: %d² samples, height %.1f..%.1f m" % (
         SAMPLES, report["coverage"]["height_min_m"], report["coverage"]["height_max_m"]))
     print("water: %.2f%% of the map" % report["coverage"]["water_percent"])
+    print(
+        "river: %.1f m wet across a %.0f m channel, surface %.1f -> %.1f m"
+        % (
+            report["coverage"]["river_wet_width_median_m"],
+            report["coverage"]["river_channel_width_m"],
+            report["coverage"]["river_surface_at_lake_m"],
+            report["coverage"]["river_surface_at_mouth_m"],
+        )
+    )
     for key, value in report["coverage"]["surface_percent"].items():
         print("  surface %s: %.2f%%" % (key, value))
     for asset in report["assets"]:

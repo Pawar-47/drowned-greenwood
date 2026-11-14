@@ -869,7 +869,7 @@ def test_the_river_surface_descends_and_the_lake_does_not():
     of the map, and the traced centreline came out 1.4 % on water. CI run 1baa3aa measured it.
     """
     lake = terrain.WATER_LEVEL_M
-    head = terrain.river_surface_m(terrain.BOG_CENTRE_V)
+    head = terrain.river_surface_m(terrain.RIVER_HEAD_V)
     mouth = terrain.river_surface_m(0.0)
 
     assert abs(head - lake) < 1e-9, (
@@ -882,8 +882,9 @@ def test_the_river_surface_descends_and_the_lake_does_not():
     )
 
     # v runs from 0 at the northern edge to 1 at the southern one, and the river runs the other
-    # way: it leaves the lake at v = BOG_CENTRE_V and reaches the mouth at v = 0. So the surface
-    # must be non-decreasing in v — descending as the water travels towards the mouth.
+    # way: it leaves the lake at v = RIVER_HEAD_V and reaches the mouth at v = 0. So the surface
+    # must be non-decreasing in v — descending as the water travels towards the mouth — and flat
+    # above the outlet, where it is the lake's own level.
     previous = None
     for step in range(0, 101):
         v = step / 100.0
@@ -892,12 +893,14 @@ def test_the_river_surface_descends_and_the_lake_does_not():
             assert surface >= previous - 1e-9, (
                 "the river surface falls between v=%.2f and v=%.2f, which is the wrong way: it "
                 "must descend as the water travels from the lake at v=%.2f to the mouth at v=0"
-                % ((step - 1) / 100.0, v, terrain.BOG_CENTRE_V)
+                % ((step - 1) / 100.0, v, terrain.RIVER_HEAD_V)
             )
         previous = surface
 
-    # And the slope has to survive being stored as 16 bits, or D8 cannot see it.
-    texels = terrain.BOG_CENTRE_V * terrain.CELLS
+    # And the slope has to survive being stored as 16 bits, or D8 cannot see it. Measured over the
+    # river's own length, not over the lake — the lake's reach is flat by design, and counting it
+    # here would let a channel half as steep as it looks pass.
+    texels = terrain.RIVER_HEAD_V * terrain.CELLS
     per_texel_mm = (head - mouth) / texels * 1000.0
     stored_step_mm = terrain.MAX_HEIGHT_M * 1000.0 / 65535.0
     assert per_texel_mm > stored_step_mm, (
@@ -916,18 +919,53 @@ def test_water_is_a_body_not_a_waterline():
     lake = terrain.WATER_LEVEL_M
 
     # Deep in the bog, away from the channel: the lake.
-    assert terrain.water_surface(0.10, 0.68, 0.0, lake - 1.0) == lake
+    assert terrain.water_surface(0.68, 0.0, lake - 1.0) == lake
     # Ordinary valley floor, above the lake: no water, however the lake is set.
-    assert terrain.water_surface(0.10, 0.30, 0.0, lake + 5.0) is None
+    assert terrain.water_surface(0.30, 0.0, lake + 5.0) is None
 
     # On the channel: the river's own surface, which downstream is well below the lake.
     v = 0.30
     river = terrain.river_surface_m(v)
     assert river < lake, "the river surface is not distinct from the lake at v=%.2f" % v
-    u = terrain.river_centre_u(v)
-    assert terrain.water_surface(u, v, 1.0, river - 0.5) == river
+    assert terrain.water_surface(v, 1.0, river - 0.5) == river
     # On the channel footprint but above its surface: the bank, and dry.
-    assert terrain.water_surface(u, v, 1.0, river + 0.5) is None
+    assert terrain.water_surface(v, 1.0, river + 0.5) is None
+
+    # Upstream of the outlet the channel IS the lake: the water in it is the lake's, at the lake's
+    # level, so the reach the two bodies share cannot stand below the lake beside it.
+    assert terrain.water_surface(terrain.RIVER_HEAD_V + 0.05, 1.0, lake - 1.0) == lake, (
+        "the channel inside the lake was decided by the river's rule, so it sits below the lake "
+        "that shares the reach"
+    )
+
+
+def test_the_river_leaves_the_lake_at_the_lake_level():
+    """The two bodies must meet at one height, or the river cuts a groove through the lake.
+
+    The published maps decided the whole channel by the river's rule. The bed at the lake was
+    32.4 m against a 34.0 m lake, so the river's surface entered the water 2 m below the lake's
+    and the lake on either side stood above it: a trench across the water. The bed now holds at
+    one depth below the lake from the outlet upwards, so the surface at the outlet is the lake's
+    own level and the seam is continuous.
+    """
+    lake = terrain.WATER_LEVEL_M
+    head = terrain.river_surface_m(terrain.RIVER_HEAD_V)
+
+    assert abs(head - lake) < 1e-9, (
+        "the river enters the lake at %.3f m against a %.3f m lake: the surfaces step instead of "
+        "meeting" % (head, lake)
+    )
+
+    # Above the outlet the bed holds and the surface is the lake's, at every step into the bowl.
+    for step in range(0, 11):
+        v = terrain.RIVER_HEAD_V + (1.0 - terrain.RIVER_HEAD_V) * step / 10.0
+        assert abs(terrain.river_surface_m(v) - lake) < 1e-9, (
+            "at v=%.3f, above the outlet, the river's surface is %.3f m against a %.3f m lake"
+            % (v, terrain.river_surface_m(v), lake)
+        )
+
+    # And below the outlet it descends: the flat reach is the lake, not the whole river.
+    assert terrain.river_surface_m(0.0) < lake - 2.0
 
 
 # --------------------------------------------------------------------------------------------
@@ -982,6 +1020,10 @@ TESTS = [
     ),
     ("terrain: the river surface descends", test_the_river_surface_descends_and_the_lake_does_not),
     ("terrain: water is a body not a waterline", test_water_is_a_body_not_a_waterline),
+    (
+        "terrain: the river leaves the lake at the lake's level",
+        test_the_river_leaves_the_lake_at_the_lake_level,
+    ),
 ]
 
 

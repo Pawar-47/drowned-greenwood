@@ -24,10 +24,11 @@ The method is D8 flow accumulation, the standard approach and the reason it is s
      level, there is standing water.
 
 The outlet is the boundary cell that collects the most water. The centreline is the channel the
-terrain generator carved, sampled from the lake down to that outlet, rather than a trace through
-the flow field: on a floodplain D8 ties constantly, and three flow-derived traces each produced a
-line that was not the river. The reasoning is at the trace itself, and the gates still require the
-line to descend, lie on water, leave the map at the boundary and carry a real channel's flow.
+terrain generator carved, sampled from the lake's outlet down to the mouth, rather than a trace
+through the flow field: on a floodplain D8 ties constantly, and four flow-derived traces each
+produced a line that was not the river. The reasoning is at the trace itself, and the gates still
+require the line to descend, lie on water, reach the lake, leave the map at the boundary and carry a
+real channel's flow.
 
 Outputs:
   terrain_hydrology_mask   RGB8, 1025², R = water depth (0..8 m), G,B = flow direction as a unit
@@ -38,7 +39,7 @@ Outputs:
                            towards increasing row index, i.e. south on the map as drawn). A neutral
                            texel is (128,128): no flow, or a cell whose neighbours are all higher.
   terrain_shore_mask       R8,  1025², 255 at the waterline falling to 0 over 4 m
-  terrain_river_splines    JSON, the main stem, headwater to outlet
+  terrain_river_splines    JSON, the main stem, from the lake's outlet to the mouth
   terrain_water_level_table JSON, the water surface height and flow at each centreline point
 """
 
@@ -68,10 +69,9 @@ from common import (  # noqa: E402
 # already makes for the heightmap's scale, applied to the water; keeping a second copy of the rule
 # is what let one version call the same texel both water and dry land.
 from terrain_maps import (  # noqa: E402
-    BOG_CENTRE_V,
     RIVER_DEPTH_M,
+    RIVER_HEAD_V,
     channel_weight,
-    river_bed_m,
     river_centre_u,
     river_surface_m,
     water_surface,
@@ -378,7 +378,7 @@ def main():
         y, x = divmod(cell, SAMPLES)
         u = x / CELLS
         v = y / CELLS
-        cell_surface = water_surface(u, v, channel_weight(u, v), h_m)
+        cell_surface = water_surface(v, channel_weight(u, v), h_m)
         if cell_surface is not None:
             surfaces[cell] = cell_surface
             water[cell] = True
@@ -452,27 +452,19 @@ def main():
     products.append(("terrain_shore_mask", shore_path,
                      {"texture_sizes": {"r8": [SAMPLES, SAMPLES]}}))
 
-    # The river centreline: the main stem, from its headwater down to where it leaves the map.
+    # The river centreline: the main stem, from the lake's outlet down to where it leaves the map.
     #
-    # Two earlier attempts were wrong in instructive ways:
-    #   1. The highest-flow cell in each row. Not a centreline: where a channel runs across a row
-    #      several cells have similar flow and the winner jumps between them, so consecutive
-    #      points do not descend. Measured: "477 of 941 segments go uphill".
-    #   2. Start from the highest cell with flow above the threshold. That cell is almost always a
-    #      PIT, because flow accumulates into sinks — so the trace stopped after one point.
-    #
-    # So: find the outlet (the single cell that collects the most water), then walk UPSTREAM by
-    # repeatedly taking the neighbour that drains into the current cell with the most flow. That
-    # finds the main stem by construction, and reversing it gives a path that descends at every
-    # step.
+    # The outlet below is the boundary cell that collects the most water. It is not what the line
+    # is built from any more, but it is what says the river leaves the valley rather than ending in
+    # a sink.
     outlet = choose_outlet(flow, SAMPLES)
 
     # The centreline follows the carved channel, not the flow field.
     #
-    # Three attempts at deriving it from flow accumulation each produced a plausible line that was
+    # Four attempts at deriving it from flow accumulation each produced a plausible line that was
     # not the river: one descended but climbed 477 times in 941 segments, one stopped after a single
-    # point, and the third followed the flow correctly yet sat 1.4 % on the water and climbed 361
-    # times. After the water model was fixed it still came out 44 % on the water with 96 climbs.
+    # point, one followed the flow correctly yet sat 1.4 % on the water with 361 climbs, and one,
+    # after the water model was fixed, still came out 44 % on the water with 96 climbs.
     #
     # The reason is structural rather than a bug to chase. The channel is NOT emergent here —
     # terrain_maps carves it at river_centre_u(v) — while on a 300 m floodplain D8 ties constantly
@@ -481,26 +473,34 @@ def main():
     # up in the recorded ground.
     #
     # So the centreline is the carve, sampled. The gates keep their teeth: the line must still
-    # descend at every step, lie on water, leave the map at the boundary and carry the flow of a
-    # real channel — and a broken carve or a water model that fails to fill the channel fails all
-    # four.
+    # descend at every step, lie on water, reach the lake, leave the map at the boundary and carry
+    # the flow of a real channel — and a broken carve or a water model that fails to fill the
+    # channel fails all five.
     #
-    # v is 0 at the northern edge and the lake sits at v = BOG_CENTRE_V, so walking rows upwards
-    # walks upstream; the path is reversed to run headwater to mouth.
+    # v is 0 at the northern edge and the lake's outlet sits at RIVER_HEAD_V, so walking rows
+    # upwards walks upstream; the path is reversed to run headwater to mouth.
     #
-    # It stops where the bowl takes over from the carve. Inside the bog the ground is the bowl
-    # floor, which lies BELOW the bed — that is how a lake holds water — so the "channel" there is
-    # the lake's bed and its height is the lake's, not the river's. Walking it in produced 23 climbs
-    # in 696 segments on run 5c03e05, all of them in the bowl; this trims exactly those.
+    # Two rules stop the walk, and both are properties of the terrain rather than tolerances:
+    #
+    #   * v > RIVER_HEAD_V — beyond the outlet the channel is the LAKE's bed. Its height there is
+    #     the lake's, not the river's, and including it is what put the centreline into the bowl.
+    #   * a row whose ground does not stand above the previous one. Walking upstream, the recorded
+    #     ground must RISE at every step. It does inside the carve, because the floor there is the
+    #     bed and the bed is linear in v; it stops doing so exactly where the bowl takes over. Run
+    #     87e6c60 measured 5 climbing segments out of 591 for the version that walked past this, all
+    #     of them at that join, and the ceiling of the gate is zero.
     path = []
+    previous_m = None
     for row in range(SAMPLES):
         v = row / CELLS
-        if v > BOG_CENTRE_V:
+        if v > RIVER_HEAD_V:
             break
         x = int(round(river_centre_u(v) * CELLS))
         cell = row * SAMPLES + max(0, min(SAMPLES - 1, x))
-        if metres[cell] < river_bed_m(v) - 0.5:
+        ground_m = metres[cell]
+        if previous_m is not None and ground_m <= previous_m:
             break
+        previous_m = ground_m
         path.append(cell)
     path.reverse()
 
@@ -529,16 +529,17 @@ def main():
             }
         )
 
+    head_v = spline[0]["v"] if spline else 0.0
+
     spline_path = os.path.join(args.out, "terrain_river_splines.json")
     with open(spline_path, "w", encoding="utf-8") as handle:
         json.dump(
             {
                 "name": "terrain_river_splines",
-                "note": "The main stem: the highest-flow boundary cell's upstream chain, reversed, "
-                "so it runs from headwater to outlet and descends at every step. Flow is in "
-                "upstream cells. The depressions were filled before the routing, so the chain can "
-                "cross the level bog and the near-level channel instead of dying in the first "
-                "pit it meets.",
+                "note": "The main stem, sampled from the carved channel: it runs from the lake's "
+                "outlet to the mouth and descends at every step by construction. Flow is in "
+                "upstream cells. The depressions were filled before the routing, so the flow "
+                "figure is a catchment rather than a count of how many sinks gathered water.",
                 "samples": SAMPLES,
                 "flow_threshold_cells": int(RIVER_FLOW_CELLS),
                 "points": spline,
@@ -579,11 +580,11 @@ def main():
         json.dump(
             {
                 "name": "terrain_water_level_table",
-                "note": "The water surface at each river centreline point. The carved bed sits "
-                "below the lake level along the whole channel, so max(lake, bed + depth) is the "
-                "lake level at every point: one flat water surface, not a river stepping down "
-                "its bed. Whether the channel should instead sit above the lake is an open "
-                "design question, recorded in reports/phase2.md.",
+                "note": "The water surface at each river centreline point: the bed plus the "
+                "river's depth, so it descends from the lake's own level at the outlet to the "
+                "mouth. The lake is one level and the river's surface arrives at it rather than "
+                "stepping to it, which is what stops the channel cutting a groove through the "
+                "lake where the two bodies overlap.",
                 "lake_level_m": water_level_m,
                 "levels": levels,
             },
@@ -628,10 +629,17 @@ def main():
             "river_flow_threshold_cells": int(RIVER_FLOW_CELLS),
             "depressions_filled_cells": sum(1 for a, b in zip(heights, filled) if b != a),
             # The river's own numbers. A run should say whether it made a river or a flooded
-            # trench: the fall is the drop of the water surface from the lake to the mouth.
-            "river_surface_at_lake_m": round(river_surface_m(BOG_CENTRE_V), 2),
+            # trench: the fall is the drop of the water surface from the lake's outlet to the
+            # mouth, measured at RIVER_HEAD_V — where the two bodies meet — not at the bowl's
+            # centre, which the river does not reach.
+            "river_surface_at_lake_m": round(river_surface_m(RIVER_HEAD_V), 2),
             "river_surface_at_mouth_m": round(river_surface_m(0.0), 2),
-            "river_fall_m": round(river_surface_m(BOG_CENTRE_V) - river_surface_m(0.0), 2),
+            "river_fall_m": round(river_surface_m(RIVER_HEAD_V) - river_surface_m(0.0), 2),
+            # How far down the valley the centreline actually gets. A trace that stops early is
+            # the quiet version of a missing river: it still descends and is still on water, and
+            # it simply ends a third of the way down. This is the number a gate can hold.
+            "river_head_v": round(head_v, 5),
+            "river_head_missing_m": round(max(0.0, RIVER_HEAD_V - head_v) * 1000.0, 1),
             "filled_rise_max_m": round(
                 max((b - a for a, b in zip(heights, filled)), default=0) / 65535.0 * max_height_m,
                 3,

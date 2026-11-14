@@ -44,18 +44,23 @@ terrain maps or the successful checks recorded for them.
 `tools/validate/check_assets.py` opens every recorded built file and verifies its SHA-256 and
 recorded size. For the terrain, it also checks that the heightmap matches its sidecar, the splat
 weights sum to 255 and agree with the surface-ID map, the hydrology flow directions decode to unit
-vectors, the water masks agree, the river descends, and water sits above the bed. The generator job
+vectors, the water masks name the same texels, the river descends, water sits above its bed, and the
+water-level table starts at the lake's own level and falls from there. The generator job
 checks the declared PNG dimensions and channel layouts and gates terrain composition, height steps,
-walkability, river length and splat/ID agreement. These checks validate the generated terrain data;
-they do not measure model geometry, visual quality on device or every `[HARD-TECH]` criterion in
-section 2A.
+walkability, river length, the centreline reaching the lake, the river's wet width against its
+channel, both water ids existing and splat/ID agreement. These checks validate the generated terrain
+data; they do not measure model geometry, visual quality on device or every `[HARD-TECH]` criterion
+in section 2A.
 
 The last measurements recorded in `reports/phase2.md` — 43.8 % grass, 21.3 % moss, 17.3 % bare
 rock, 6.3 % water, a 29.1–135.1 m height range, a 321-point descending centreline and 100 %
 splat/ID agreement — describe generator 1.0.0. Generator 1.1.0 was measured and its river failed:
 1.4 % of 971 centreline points on water, 66 % of the map raised by the depression fill. Generator
-1.2.0, which gives the river its own descending surface, has not been run, so there are no current
-measurements to quote and none are quoted here.
+1.2.0 gave the river its own descending surface and was measured too; it failed differently, with
+5 of 591 centreline segments climbing where the channel met the lake, and with the river's surface
+2 m below the lake along the reach they share. Generator 1.3.0 — which makes the two bodies meet at
+one height, widens the channel to 80 m and deepens it to 2.6 m — has not been run, so there are no
+current measurements to quote and none are quoted here.
 
 ## Checks that are weaker than they look
 

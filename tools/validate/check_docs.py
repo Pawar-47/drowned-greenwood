@@ -155,6 +155,7 @@ def main():
     phase2 = read(os.path.join("reports", "phase2.md"))
     for phrase in (
         "%.0f m bank" % terrain_maps.RIVER_BANK_M,
+        "%.0f m channel" % (2.0 * terrain_maps.RIVER_HALF_WIDTH_M),
         "%.1f → %.1f m" % (terrain_maps.RIVER_BED_SOURCE_M, terrain_maps.RIVER_BED_OUTLET_M),
         "%.1f m water level" % terrain_maps.WATER_LEVEL_M,
     ):

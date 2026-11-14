@@ -219,6 +219,28 @@ jobs:
               )
           print("shape: largest neighbour step %.1f m, %.1f%% of land under 30 degrees, "
                 "%.1f%% of the inner valley" % (max_step, walkable, inner))
+
+          # A river at a kilometre across has to be wide enough to read as one, and deep enough to
+          # cross the water_deep threshold. Both were missing when the channel was 1.6 m deep in a
+          # tall bank: the water was shallow for the river's whole length, and "deep water" existed
+          # only in the lake. Neither is a format property, which is why no earlier gate saw it.
+          channel_width = coverage["river_channel_width_m"]
+          wet_width = coverage["river_wet_width_median_m"]
+          if wet_width < channel_width:
+              raise SystemExit(
+                  "the river's wet width is %.0f m across a %.0f m channel: the water is a thread "
+                  "inside the channel rather than filling it" % (wet_width, channel_width)
+              )
+          if percent.get("9", 0.0) <= 0.0:
+              raise SystemExit(
+                  "no water_deep texels at all: the river never reaches the %.1f m depth that "
+                  "separates the two water ids, so the whole channel is classified as shallow"
+                  % coverage["deep_water_depth_m"]
+              )
+          if percent.get("8", 0.0) <= 0.0:
+              raise SystemExit("no water_shallow texels at all: shallow water is unreachable")
+          print("river: %.0f m wet across a %.0f m channel, both water ids present"
+                % (wet_width, channel_width))
           for asset in report["assets"]:
               if not asset.get("sha256") or not asset.get("input_hash"):
                   raise SystemExit("%s has no sha256 or input_hash" % asset["name"])
@@ -276,21 +298,31 @@ jobs:
 
           with open(os.path.join(out, "terrain_river_splines.json"), encoding="utf-8") as handle:
               spline = json.load(handle)["points"]
-          # The channel is traced by following the downhill pointer, so consecutive points must
-          # descend. A polyline that climbs means the trace is not following the flow, and the
-          # first version of this extractor (highest-flow cell per row) failed here with 477 of
-          # 941 segments going uphill — a centreline zig-zagging along one reach.
+          # The centreline is the carved channel sampled row by row, so consecutive points must
+          # descend. A polyline that climbs means the trace has walked into the lake's own bed,
+          # where the ground stops rising — the failure the 1.2.0 run measured at 5 of 591 segments,
+          # and the first version of this extractor (highest-flow cell per row) failed it outright
+          # with 477 of 941 segments going uphill.
           climbs = sum(1 for a, b in zip(spline, spline[1:]) if b["height_m"] > a["height_m"])
           if climbs:
               raise SystemExit(
-                  "the river climbs at %d of %d segments: the trace is not following the flow"
+                  "the river climbs at %d of %d segments: the trace is not following the channel"
                   % (climbs, len(spline) - 1)
               )
-          # A trace that stops immediately means the headwater search found nothing useful.
+          # A trace that stops immediately means the carve or the heightmap produced nothing to
+          # sample.
           if len(spline) < 50:
               raise SystemExit(
-                  "the channel is only %d points long; the headwater search is not finding the "
-                  "main stem" % len(spline)
+                  "the channel is only %d points long; the carve is not reaching the map edge"
+                  % len(spline)
+              )
+          # A trace that stops halfway is the quiet version of a missing river: it still descends,
+          # it still lies on water, and it simply ends before the valley does. The head must reach
+          # the lake's outlet, not a third of the way up from the mouth.
+          if coverage["river_head_missing_m"] > 60.0:
+              raise SystemExit(
+                  "the centreline stops %.0f m short of the lake's outlet, so it is a reach of the "
+                  "river rather than the river" % coverage["river_head_missing_m"]
               )
 
           # "Every segment descends" is satisfied by a gully running down a hillside, which is

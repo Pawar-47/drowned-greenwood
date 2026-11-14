@@ -18,8 +18,10 @@ What this checks:
   * the committed terrain maps are consistent with each other: the heightmap hash and grid match
     the sidecar, splat channels sum to 255, the dominant splat matches the surface-ID map, the two
     water rules agree, flow vectors are unit length, and the river descends with water above its bed
-  * the water in the surface-ID map stands below the waterline in the heightmap beside it, so a
-    regenerated heightmap and a stale surface map cannot be committed as a pair
+  * the water-level table starts at the lake's own level and falls from it, which is the evidence
+    that the river and the lake are two bodies that meet at one height rather than one flat sheet
+  * the surface-ID map and the hydrology mask name exactly the same water texels, so a regenerated
+    heightmap and a stale surface map cannot be committed as a pair
   * every value in the surface-ID map is an id surface_ids.json still declares
   * the biome mask only sets its five declared bits, and is single-channel
   * every normal-map texel decodes to a unit vector, the same contract the flow vectors meet
@@ -257,8 +259,13 @@ def check_terrain(problems):
     hydro_rows = hydrology[3]
     disagree = 0
     disagree_at = None
-    wet_above_lake = 0
-    water_level = meta["water_level_m"]
+    # This loop used to require a water texel whose GROUND stood above the lake's level, as
+    # evidence that the river is a second body. It could never pass: water is ground below its own
+    # body's surface, and no body's surface exceeds the lake's — the river's starts at it and
+    # descends. The check only looked plausible because the committed maps were from an older
+    # generator, so the branch never ran. The evidence for two bodies is the water-level table,
+    # which stores the surfaces; check_river holds that to starting at the lake's level and falling
+    # from there.
     for y in range(samples):
         hydro_row = hydro_rows[y]
         for x in range(samples):
@@ -268,10 +275,6 @@ def check_terrain(problems):
                 disagree += 1
                 if disagree_at is None:
                     disagree_at = (x, y)
-            # Evidence that the river is a body of its own. Water standing above the lake's own
-            # level can only be the channel, whose surface descends from the lake to the mouth.
-            if wet_here and metres[y * samples + x] > water_level:
-                wet_above_lake += 1
 
     if committed_version != current_version:
         print(
@@ -286,12 +289,6 @@ def check_terrain(problems):
                 "%d texels disagree about whether they are water (first at x=%d y=%d): the "
                 "surface-ID map and the hydrology mask are not from one run"
                 % (disagree, disagree_at[0], disagree_at[1])
-            )
-        if wet_above_lake == 0:
-            problems.append(
-                "no water texel stands above the %.1f m lake level, so the river is not a second "
-                "water body: every water cell is at one level, which is the flooded channel this "
-                "replaced" % water_level
             )
 
     # An id is a contract. A value in the committed map that surface_ids.json no longer declares
@@ -440,6 +437,39 @@ def check_river(problems):
     if submerged:
         problems.append(
             "%d of %d river points have the water surface at or below the bed" % (len(submerged), len(levels))
+        )
+
+    # The evidence that water is two bodies, from the file that stores their surfaces. A committed
+    # set from an older generator is reported as stale rather than failed, exactly as the water
+    # cross-check is: the publish job regenerates the maps and then runs this against the new bytes.
+    meta = read_json(os.path.join(TERRAIN, "terrain_meta.json"))
+    if meta.get("version") != terrain_maps.GENERATOR_VERSION:
+        print(
+            "warning: the committed river predates generator %r, so the lake-and-river surface "
+            "checks are deferred to the publish job" % terrain_maps.GENERATOR_VERSION,
+            file=sys.stderr,
+        )
+        return
+    if len(levels) < 2:
+        problems.append("the water level table has %d rows for %d spline points" % (len(levels), len(spline)))
+        return
+
+    lake = meta["water_level_m"]
+    head = levels[0]["water_surface_m"]
+    mouth = levels[-1]["water_surface_m"]
+    # The river leaves the lake at the lake's level. If it started below, the lake would stand
+    # above the channel along the reach the two share: a groove through the water.
+    if abs(head - lake) > 0.5:
+        problems.append(
+            "the centreline's water surface starts at %.2f m against a %.2f m lake, so the river "
+            "and the lake do not meet at one height: %.2f m of water stands above the channel where "
+            "they overlap" % (head, lake, lake - head)
+        )
+    if head - mouth < 2.0:
+        problems.append(
+            "the water surface falls only %.2f m from the lake's outlet (%.2f m) to the mouth "
+            "(%.2f m): a flat sheet over a sloping bed is a flooded channel, not a river"
+            % (head - mouth, head, mouth)
         )
 
 

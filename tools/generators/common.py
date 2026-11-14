@@ -35,7 +35,14 @@ import zlib
 #         16-bit quantisation, which is what D8 needs to route it; the lake in the bog is level.
 #         hydrology and terrain_surfaces import the water rule from terrain_maps rather than
 #         restating it. Every terrain byte changes again.
-GENERATOR_VERSION = "1.2.0"
+# 1.3.0 — the two bodies meet at one height. The bed holds at one depth below the lake from the
+#         lake's outlet upwards, so the river's surface at the outlet IS the lake's level; the
+#         published 1.2.0 profile put it 2 m below the lake along the reach they share, which cut a
+#         groove through the water. The channel is 80 m wide and 2.6 m deep, so water_deep is
+#         reachable on the river and not only in the lake, and the meander is a real one. The
+#         centreline stops at the outlet and at the first row whose ground does not rise, which is
+#         what removes the five climbing segments. Every terrain byte changes.
+GENERATOR_VERSION = "1.3.0"
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
