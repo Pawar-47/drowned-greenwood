@@ -733,19 +733,50 @@ jobs:
       - name: Push to staging
         run: |
           set -euo pipefail
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
+          # The commit has to sit ON staging, not on the triggering commit. `staging` is the trunk of
+          # the publish chain: every run adds one commit there, so main is no longer its ancestor
+          # and `git push HEAD:staging` from main is rejected as non-fast-forward — which is exactly
+          # what happened on 687394b, after the pack had already been uploaded and verified.
+          #
+          # So the commit is built in a throwaway worktree of staging, with the two files this job
+          # owns copied in. The generated maps stay where they are: they are on disk in this
+          # checkout, and nothing needs them in the worktree.
+          git fetch origin staging
+          if git rev-parse --verify --quiet origin/staging >/dev/null; then
+            base=origin/staging
+          else
+            echo "::error::origin/staging does not exist; the publish branch is created once, by hand, not by this job"
+            exit 1
+          fi
+          worktree="${RUNNER_TEMP:-/tmp}/publish-staging"
+          rm -rf "$worktree"
+          git worktree add --detach "$worktree" "$base"
+
+          cp assets/built.json "$worktree/assets/built.json"
+          cp assets/packs.json "$worktree/assets/packs.json"
+
+          git -C "$worktree" add assets/built.json assets/packs.json
           # Only the evidence and the catalogue are committed. The maps themselves are packed, and
-          # this line is what removes them from the index — one commit, after the archive above was
-          # verified by download. `--ignore-unmatch` makes it a no-op on every run after that.
-          git add assets/built.json assets/packs.json
-          git rm -r --cached --ignore-unmatch assets/terrain >/dev/null
-          python tools/validate/check_packs.py --require-untracked
-          if git diff --cached --quiet; then
+          # this is what removes them from the index — after the archive above was verified by
+          # download. `--ignore-unmatch` makes it a no-op on every run after the first.
+          git -C "$worktree" rm -r --cached --ignore-unmatch assets/terrain >/dev/null
+
+          # The one invariant this whole mechanism exists for: a packed file must not also be in
+          # git. Checked here, in the worktree that is about to be pushed, so the answer is about
+          # the commit rather than about this checkout's index.
+          if git -C "$worktree" ls-files -- assets/terrain | grep -q .; then
+            echo "::error::packed terrain files are still tracked in the commit that is about to be pushed"
+            git -C "$worktree" ls-files -- assets/terrain
+            exit 1
+          fi
+
+          if git -C "$worktree" diff --cached --quiet; then
             echo "nothing changed; the pack and its evidence on staging already match this build"
             exit 0
           fi
-          git commit -m "Publish the terrain pack and its built evidence"
+          git -C "$worktree" -c user.name="github-actions" \
+            -c user.email="github-actions@users.noreply.github.com" \
+            commit -m "Publish the terrain pack and its built evidence"
           # A binary reaches main only by merging staging after the gates pass, never by a direct
           # push, so this is the branch it lands on.
-          git push origin HEAD:staging
+          git -C "$worktree" push origin HEAD:staging

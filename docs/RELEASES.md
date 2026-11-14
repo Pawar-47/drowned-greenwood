@@ -77,8 +77,11 @@ bytes there.
    catalogue.
 6. **Remove from the index.** `git rm -r --cached --ignore-unmatch assets/terrain` takes the files
    out of the tree. `.gitignore` already ignores them, so they cannot be added back by accident.
-7. **Push to `staging`.** Only `built.json` and `packs.json` are committed. `main` stays free of
-   binaries, and reaches them only by merging `staging` after the gates pass.
+7. **Push to `staging`.** Only `built.json` and `packs.json` are committed. The commit is built on
+   `staging` itself, in a throwaway worktree, because staging is the trunk of the publish chain and
+   a commit built on `main` can no longer fast-forward it. `main` stays free of binaries and reaches
+   them only by merging `staging` after the gates pass. The job refuses to push a commit that still
+   tracks a packed file, checked against that commit's own index rather than the build checkout's.
 8. **Fetch.** Every CI job runs `tools/fetch_packs.py` before it needs an asset. It is a no-op on an
    empty catalogue, so the same workflow holds before and after a category is packed.
 

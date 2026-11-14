@@ -74,10 +74,10 @@ happens when it is broken, because a rule with no consequence is a comment.
     `tools/fetch_packs.py` downloads and verifies them into the paths `built.json` names, and every
     CI job runs it before it checks anything; `tools/pack_release.py` builds a deterministic
     archive. The publish job uploads a pack, **downloads it again and compares the hash**, and only
-    then removes the files from the index — with `check_packs.py --require-untracked` failing the
-    build if a packed file is also tracked. A tag is immutable: re-publishing different bytes under
-    an existing tag fails rather than replacing it. This replaced "binaries reach main only through
-    the staging branch", which was true and not enough — staging still put the bytes in history.
+    then removes the files from the index, refusing to push a commit that still tracks a packed
+    file. A tag is immutable: re-publishing different bytes under an existing tag fails rather than
+    replacing it. This replaced "binaries reach main only through the staging branch", which was
+    true and not enough — staging still put the bytes in history.
 14. **An asset's path does not depend on where its bytes came from.** A packed asset and a committed
     one are the same path to every consumer, so moving a category to a pack is a `git rm --cached`
     and a catalogue entry, not a change to `built.json` or to whatever reads it.
