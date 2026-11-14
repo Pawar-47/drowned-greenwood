@@ -881,14 +881,18 @@ def test_the_river_surface_descends_and_the_lake_does_not():
         "sloping bed rather than a river" % (head - mouth)
     )
 
+    # v runs from 0 at the northern edge to 1 at the southern one, and the river runs the other
+    # way: it leaves the lake at v = BOG_CENTRE_V and reaches the mouth at v = 0. So the surface
+    # must be non-decreasing in v — descending as the water travels towards the mouth.
     previous = None
     for step in range(0, 101):
         v = step / 100.0
         surface = terrain.river_surface_m(v)
         if previous is not None:
-            assert surface <= previous + 1e-9, (
-                "the river surface rises between v=%.2f and v=%.2f, so it runs uphill"
-                % ((step - 1) / 100.0, v)
+            assert surface >= previous - 1e-9, (
+                "the river surface falls between v=%.2f and v=%.2f, which is the wrong way: it "
+                "must descend as the water travels from the lake at v=%.2f to the mouth at v=0"
+                % ((step - 1) / 100.0, v, terrain.BOG_CENTRE_V)
             )
         previous = surface
 
