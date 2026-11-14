@@ -110,6 +110,14 @@ jobs:
         # already declares (which is a compile error nothing else catches before Godot does).
         run: python tools/validate/check_materials.py
 
+      # A .tres is text Godot parses by property name, and its failure mode for a name it does not
+      # know is quiet: the line is ignored, or the resource loads with a default where a value was
+      # meant. So every weather preset is checked against the Godot 4.2 property list, and the
+      # drivers the weather system interpolates are checked to exist in both the profiles and the
+      # transition curves — a driver with no curve jumps, and a curve with no driver is dead.
+      - name: Weather presets agree with Godot and with each other
+        run: python tools/validate/check_environment.py
+
       # A number in prose is a claim about the code. README said "15 unit tests" when there were
       # 35, and ADDITIONS.md said 1024² twice while every generator wrote 1025². Both were found
       # by a person reading, which is not a gate.

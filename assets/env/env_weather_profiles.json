@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "name": "env_weather_profiles",
+  "description": "The numbers a weather state drives that a Godot Environment cannot carry. A .tres holds the render state Godot loads — sky, ambient, fog, tonemap, glow. This holds the rest: how hard it rains, how wet the world becomes, how much wind leans the foliage, and what each quality tier may spend. tools/validate/check_environment.py requires one row per state, the same driver set as env_transition_curves.json, and glow disabled on LOW.",
+  "note": "Sidecar, not a manifest asset — the same relationship terrain_meta.json has to the heightmap. The manifest declares the nine presets and the transition curves; this file is what the weather system reads before it hands the .tres to the renderer.",
+  "default_state": "drizzle",
+  "quality_tiers": {
+    "low": {
+      "glow": false,
+      "rain_particles_scale": 0.25,
+      "note": "glow costs a full-screen pass; on the weakest devices the weather is carried by fog and sound instead"
+    },
+    "medium": {
+      "glow": true,
+      "rain_particles_scale": 0.6
+    },
+    "high": {
+      "glow": true,
+      "rain_particles_scale": 1.0
+    }
+  },
+  "rain_particles_max": 1200,
+  "drivers": ["rain_intensity", "global_wetness", "puddle_amount", "wind_strength", "wind_gust"],
+  "states": {
+    "drizzle": {
+      "assets": "env_weather_drizzle",
+      "tres": "res://assets/env/env_weather_drizzle.tres",
+      "rain_intensity": 0.15,
+      "global_wetness": 0.35,
+      "puddle_amount": 0.02,
+      "wind_strength": 0.35,
+      "wind_gust": 0.15
+    },
+    "steady_rain": {
+      "assets": "env_weather_steady_rain",
+      "tres": "res://assets/env/env_weather_steady_rain.tres",
+      "rain_intensity": 0.45,
+      "global_wetness": 0.6,
+      "puddle_amount": 0.08,
+      "wind_strength": 0.45,
+      "wind_gust": 0.25
+    },
+    "heavy_rain": {
+      "assets": "env_weather_heavy_rain",
+      "tres": "res://assets/env/env_weather_heavy_rain.tres",
+      "rain_intensity": 0.75,
+      "global_wetness": 0.85,
+      "puddle_amount": 0.35,
+      "wind_strength": 0.7,
+      "wind_gust": 0.45
+    },
+    "storm": {
+      "assets": "env_weather_storm",
+      "tres": "res://assets/env/env_weather_storm.tres",
+      "rain_intensity": 1.0,
+      "global_wetness": 1.0,
+      "puddle_amount": 0.7,
+      "wind_strength": 1.0,
+      "wind_gust": 1.0
+    },
+    "fog": {
+      "assets": "env_weather_fog",
+      "tres": "res://assets/env/env_weather_fog.tres",
+      "rain_intensity": 0.1,
+      "global_wetness": 0.75,
+      "puddle_amount": 0.05,
+      "wind_strength": 0.15,
+      "wind_gust": 0.1
+    },
+    "clearing": {
+      "assets": "env_weather_clearing",
+      "tres": "res://assets/env/env_weather_clearing.tres",
+      "rain_intensity": 0.02,
+      "global_wetness": 0.5,
+      "puddle_amount": 0.0,
+      "wind_strength": 0.4,
+      "wind_gust": 0.2
+    },
+    "dusk": {
+      "assets": "env_weather_dusk",
+      "tres": "res://assets/env/env_weather_dusk.tres",
+      "rain_intensity": 0.0,
+      "global_wetness": 0.3,
+      "puddle_amount": 0.0,
+      "wind_strength": 0.25,
+      "wind_gust": 0.12
+    },
+    "night": {
+      "assets": "env_weather_night",
+      "tres": "res://assets/env/env_weather_night.tres",
+      "rain_intensity": 0.2,
+      "global_wetness": 0.45,
+      "puddle_amount": 0.02,
+      "wind_strength": 0.2,
+      "wind_gust": 0.1
+    },
+    "ridge_snow": {
+      "assets": "env_weather_ridge_snow",
+      "tres": "res://assets/env/env_weather_ridge_snow.tres",
+      "rain_intensity": 0.25,
+      "global_wetness": 0.1,
+      "puddle_amount": 0.0,
+      "wind_strength": 0.85,
+      "wind_gust": 0.6
+    }
+  }
+}

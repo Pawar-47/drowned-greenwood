@@ -343,9 +343,35 @@ centreline's head must reach the lake's outlet, the wet width must be at least t
 and both water ids must exist. Each one fails on some earlier version of this terrain, which is the
 point of adding them after the fact rather than at the value the generator happens to produce.
 
+## Weather presets
+
+Nine states and the curves between them, from approved addition 1: `drizzle`, `steady_rain`,
+`heavy_rain`, `storm`, `fog`, `clearing`, `dusk`, `night` and `ridge_snow`. Each is a Godot 4.2
+`Environment` resource that carries the render state — a `ProceduralSkyMaterial` with a sky colour for
+the weather, ambient light, fog depth and height, tone mapping and glow — and the drivers an
+`Environment` cannot express live in `assets/env/env_weather_profiles.json`: rain intensity, the
+wetness and puddle targets, and wind strength and gust, all in 0..1 so they map straight onto the
+globals `shaders/SHADER_GLOBALS.md` documents.
+
+`env_transition_curves.json` says how each driver moves, and the two files are checked against each
+other in both directions: a driver with no curve jumps, and a curve with no driver is dead. Rain
+changes in seconds and wetness in minutes — 10 s to start raining, 300 s for the ground to dry —
+because that is the difference between weather and a toggle. Glow is off on the `low` quality tier,
+as the addition requires.
+
+**What is checked, and what is not.** `tools/validate/check_environment.py` parses every `.tres` and
+requires each property name to be one Godot 4.2 actually defines, with a value in range — Godot's
+failure mode for an unknown name is silence, so a typo would otherwise reach a device. It also checks
+the manifest against the directory, the profiles against the manifest, the curves against the
+profiles, and that every quality tier says whether glow is on. It cannot check that the presets look
+right: no renderer runs here, and the Phase 0 shader gate compiles under Compatibility rather than
+Mobile.
+
+The sky is procedural for now. `PanoramaSkyMaterial` needs the panorama textures that are still on
+the Phase 2 list, so swapping them in is a one-line change per preset when they exist.
+
 ## Not yet done in Phase 2
 
-- `env_weather_<state>` presets and `env_transition_curves.json`
 - rocks, water surfaces, sky panoramas
 - the terrain mesh itself: the heightmap is data, and nothing yet turns it into geometry. This is
   the first asset that needs Blender, and would be the first binary committed.

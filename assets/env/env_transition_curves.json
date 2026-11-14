@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "name": "env_transition_curves",
+  "description": "How the weather moves between states. Rain changes in seconds because it is noise on the screen; wetness changes in minutes because water soaks in and dries out; wind leans fast and relaxes slowly, which is what makes a gust read as a gust rather than as a fade. A pair entry overrides the default for one ordered transition, so a storm can arrive in twenty seconds and take seventy-five to leave.",
+  "note": "Read by the weather system that also reads assets/env/env_weather_profiles.json. Every driver named in the profiles must have a curve here, and every curve must name a driver that exists — check_environment.py fails the build on either direction of that contract, because a driver with no curve jumps and a curve with no driver is dead.",
+  "default": {
+    "seconds": 30.0,
+    "curve": "ease_in_out"
+  },
+  "curves": {
+    "linear": "constant rate, for values the eye does not track",
+    "ease_in": "starts slowly, for weather arriving",
+    "ease_out": "starts quickly, for weather leaving",
+    "ease_in_out": "smooth at both ends, the default"
+  },
+  "drivers": {
+    "rain_intensity": {
+      "rise_seconds": 10.0,
+      "fall_seconds": 25.0,
+      "curve": "linear"
+    },
+    "global_wetness": {
+      "rise_seconds": 120.0,
+      "fall_seconds": 300.0,
+      "curve": "ease_in_out"
+    },
+    "puddle_amount": {
+      "rise_seconds": 240.0,
+      "fall_seconds": 600.0,
+      "curve": "ease_in_out"
+    },
+    "wind_strength": {
+      "rise_seconds": 20.0,
+      "fall_seconds": 45.0,
+      "curve": "ease_out"
+    },
+    "wind_gust": {
+      "rise_seconds": 2.0,
+      "fall_seconds": 8.0,
+      "curve": "ease_out"
+    }
+  },
+  "pairs": {
+    "clearing->storm": {
+      "seconds": 20.0,
+      "curve": "ease_in"
+    },
+    "storm->clearing": {
+      "seconds": 60.0,
+      "curve": "ease_out"
+    },
+    "storm->drizzle": {
+      "seconds": 75.0,
+      "curve": "ease_out"
+    },
+    "drizzle->steady_rain": {
+      "seconds": 25.0,
+      "curve": "ease_in_out"
+    },
+    "steady_rain->heavy_rain": {
+      "seconds": 20.0,
+      "curve": "ease_in"
+    },
+    "heavy_rain->storm": {
+      "seconds": 15.0,
+      "curve": "ease_in"
+    },
+    "fog->clearing": {
+      "seconds": 45.0,
+      "curve": "ease_out"
+    },
+    "clearing->dusk": {
+      "seconds": 90.0,
+      "curve": "ease_in_out"
+    },
+    "dusk->night": {
+      "seconds": 120.0,
+      "curve": "ease_in_out"
+    },
+    "night->dusk": {
+      "seconds": 120.0,
+      "curve": "ease_in_out"
+    },
+    "dusk->clearing": {
+      "seconds": 90.0,
+      "curve": "ease_in_out"
+    },
+    "ridge_snow->fog": {
+      "seconds": 60.0,
+      "curve": "ease_in_out"
+    }
+  }
+}

@@ -60,6 +60,9 @@ check_skeletons = load_module(
 pack_release = load_module("pack_release", os.path.join("tools", "pack_release.py"))
 fetch_packs = load_module("fetch_packs", os.path.join("tools", "fetch_packs.py"))
 check_packs = load_module("check_packs", os.path.join("tools", "validate", "check_packs.py"))
+check_environment = load_module(
+    "check_environment", os.path.join("tools", "validate", "check_environment.py")
+)
 
 
 def manifest_with(**categories):
@@ -1091,6 +1094,34 @@ def test_the_catalogue_rejects_a_url_that_does_not_follow_from_its_fields():
     assert any("outside assets/" in problem for problem in problems), problems
 
 
+def test_a_weather_preset_cannot_name_a_property_godot_does_not_have():
+    """Godot ignores a property name it does not know, so a typo is silent until a device shows it.
+
+    The checker's whole value is the name list and the range rules, so both directions are asserted:
+    a real property with a sane value passes, a value out of range fails, and a colour channel above
+    1 fails. The drizzle file is also read back, because a checker that passes on everything would
+    be indistinguishable from no checker at all.
+    """
+    problems = []
+    check_environment.check_value("preset.tres", "fog_density", "0.012", 7, problems)
+    assert problems == [], problems
+
+    check_environment.check_value("preset.tres", "fog_density", "1.7", 7, problems)
+    assert problems, "a fog density above 1 was accepted"
+
+    problems = []
+    check_environment.check_value("preset.tres", "sky_top_color", "Color(1.2, 0, 0, 1)", 9, problems)
+    assert problems, "a colour channel above 1 was accepted"
+
+    problems = []
+    check_environment.check_value("preset.tres", "background_mode", "9", 4, problems)
+    assert problems, "a background mode outside Godot's enum was accepted"
+
+    sections = check_environment.parse_tres("assets/env/env_weather_drizzle.tres", [])
+    assert sections["resource"]["fog_density"][0] == "0.012", sections["resource"]["fog_density"]
+    assert sections["resource"]["background_mode"][0] == "2", "the preset does not draw its sky"
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -1154,6 +1185,10 @@ TESTS = [
     (
         "packs: the catalogue rejects a stale URL",
         test_the_catalogue_rejects_a_url_that_does_not_follow_from_its_fields,
+    ),
+    (
+        "weather: a preset cannot name a property Godot does not have",
+        test_a_weather_preset_cannot_name_a_property_godot_does_not_have,
     ),
 ]
 
