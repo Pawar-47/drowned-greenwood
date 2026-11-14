@@ -62,9 +62,15 @@ bytes there.
 1. **Build.** The publish job in `validate.yml` generates the category, gates it and records the
    built evidence exactly as before.
 2. **Pack.** `tools/pack_release.py --source assets/terrain --category terrain --version <v> --out
-   <zip> --entry <json>` writes a deterministic archive: sorted entries, fixed timestamps, no
-   directory entries. Two runs over the same bytes produce the same SHA-256.
-3. **Upload.** `gh release create <tag> <zip>` publishes it under the version the generator reports.
+   <path>/terrain-<v>.zip --entry <json>` writes a deterministic archive: sorted entries, fixed
+   timestamps, no directory entries. Two runs over the same bytes produce the same SHA-256. **The
+   archive's file name is the release asset name** — `gh release upload` serves a file under its own
+   name, so the catalogue records that name rather than inventing one. A pack written as
+   `terrain.zip` while the catalogue says `terrain-1.3.0.zip` is a 404, and that is how the first
+   publish run failed.
+3. **Upload.** `gh release create <tag>`, then `gh release upload <tag> <archive> --clobber`. A
+   release is reused if the tag already exists; any asset on it that is not the one the catalogue
+   names is removed, so the release and the catalogue cannot describe different files.
 4. **Verify the upload by downloading it.** The job fetches the asset back from its own URL and
    compares the hash. Nothing is removed from git until that round trip matches.
 5. **Record.** The entry is merged into `assets/packs.json`, and `check_packs.py` re-validates the

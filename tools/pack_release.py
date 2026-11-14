@@ -90,8 +90,17 @@ def write_zip(source, names, out):
 
 
 def build_entry(source, names, category, version, dest, release_base, archive):
+    """The catalogue entry for an archive.
+
+    The asset name is the archive's own file name, because that is what GitHub serves: `gh release
+    upload` names the asset after the file it was given, so a catalogue that invented a different
+    name would record a URL that 404s. That is exactly how the first publish run failed — the pack
+    was written to `terrain.zip` while the catalogue pointed at `terrain-1.3.0.zip`.
+    """
     tag = "assets-%s-%s" % (category, version)
-    asset = "%s-%s.zip" % (category, version)
+    asset = os.path.basename(archive)
+    if not asset:
+        raise SystemExit("the archive path %r has no file name to use as the release asset" % archive)
     return {
         "name": "%s-%s" % (category, version),
         "category": category,

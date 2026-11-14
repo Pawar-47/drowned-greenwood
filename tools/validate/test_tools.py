@@ -1004,8 +1004,8 @@ def test_the_pack_archive_is_deterministic():
         names = pack_release.collect(source)
         assert names == ["a.bin", "b.txt"], "the pack did not sort its entries: %r" % (names,)
 
-        one = os.path.join(work, "one.zip")
-        two = os.path.join(work, "two.zip")
+        one = os.path.join(work, "flora-1.0.0.zip")
+        two = os.path.join(work, "second.zip")
         pack_release.write_zip(source, names, one)
         pack_release.write_zip(source, names, two)
         assert pack_release.sha256_file(one) == pack_release.sha256_file(two), (
@@ -1018,6 +1018,15 @@ def test_the_pack_archive_is_deterministic():
         assert set(entry["files"]) == {"a.bin", "b.txt"}, entry["files"]
         assert entry["url"] == "https://example.test/download/assets-flora-1.0.0/flora-1.0.0.zip"
         assert entry["size_bytes"] == os.path.getsize(one)
+        # The asset name is the archive's own file name, because that is what `gh release upload`
+        # serves. Inventing a different name records a URL that 404s — the first publish run did.
+        assert entry["asset"] == "flora-1.0.0.zip", entry["asset"]
+        other = pack_release.build_entry(
+            source, names, "flora", "1.0.0", "assets/flora", "https://example.test/download", two
+        )
+        assert other["asset"] == "second.zip", (
+            "the entry renamed the archive instead of using the name it will be served under"
+        )
 
 
 def test_a_pack_whose_file_does_not_match_is_refused():
